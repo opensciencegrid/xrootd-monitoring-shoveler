@@ -1,0 +1,14 @@
+amqp:
+  url: amqps://username:password@example.com/vhost
+  exchange: shoveled-xrd
+  topic:
+  token_location: /etc/xrootd-monitoring-shoveler/token
+
+listen:
+  port: 9993
+  ip: 127.0.0.1
+
+# Where to foward udp messages, if necessary
+outputs:
+  destinations: 
+    - 127.0.0.1:1234
