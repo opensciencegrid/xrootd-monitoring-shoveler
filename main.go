@@ -8,12 +8,17 @@ import (
 )
 
 var VERSION string
+var DEBUG bool = false
 
 func main() {
 	// Load the configuration
 	config := Config{}
 	config.ReadConfig()
-	log.SetLevel(log.WarnLevel)
+	if DEBUG {
+		log.SetLevel(log.DebugLevel)
+	} else {
+		log.SetLevel(log.WarnLevel)
+	}
 	textFormatter := log.TextFormatter{}
 	textFormatter.DisableLevelTruncation = true
 	textFormatter.FullTimestamp = true
@@ -27,8 +32,8 @@ func main() {
 
 	// Process incoming UDP packets
 	addr := net.UDPAddr{
-		Port: config.UDPPort,
-		IP:   net.ParseIP(config.UDPIp),
+		Port: config.ListenPort,
+		IP:   net.ParseIP(config.ListenIp),
 	}
 	conn, err := net.ListenUDP("udp", &addr)
 

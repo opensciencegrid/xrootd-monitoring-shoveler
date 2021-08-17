@@ -8,8 +8,10 @@ COPY go.sum ./
 
 RUN go mod download
 
-COPY . ./
-RUN make
+COPY *.go Makefile ./
+RUN mkdir queue
+COPY queue/*.go queue/
+RUN make bin/shoveler
 
 #COPY *.go ./
 #RUN mkdir queue

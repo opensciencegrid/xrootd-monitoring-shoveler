@@ -29,9 +29,7 @@ func StartAMQP(config *Config, msgQueue *queue.MessageQueue) {
 	}
 	// Set the username/password
 	amqpURL.User = url.UserPassword("shoveler", tokenContents)
-	
 	amqpQueue := New(*amqpURL)
-	
 
 	// Create a timer to check for changes in the token file ever 10 seconds
 	checkTokenFile := time.NewTicker(10 * time.Second)
@@ -60,14 +58,11 @@ func StartAMQP(config *Config, msgQueue *queue.MessageQueue) {
 				amqpURL.User = url.UserPassword("shoveler", tokenContents)
 				amqpQueue.newConnection(*amqpURL)
 
-
 			}
-		
+
 		case msg := <-msgQueue.Receive:
 			// Handle a new message to put on the message queue
 			amqpQueue.UnsafePush(config.AmqpExchange, msg)
-
-
 
 		}
 	}
@@ -84,7 +79,7 @@ func readToken(tokenLocation string) (string, error) {
 		return "", err
 	}
 	tokenContentsStr := strings.TrimSpace(string(tokenContents))
-	
+
 	return tokenContentsStr, nil
 }
 
@@ -100,7 +95,6 @@ type Session struct {
 	notifyConfirm   chan amqp.Confirmation
 	isReady         bool
 }
-
 
 const (
 	// When reconnecting to the server after connection failure
@@ -123,8 +117,8 @@ var (
 // attempts to connect to the server.
 func New(url url.URL) *Session {
 	session := Session{
-		url:   url,
-		done:   make(chan bool),
+		url:  url,
+		done: make(chan bool),
 	}
 	go session.handleReconnect()
 	return &session
@@ -149,7 +143,6 @@ func (session *Session) handleReconnect() {
 
 		if err != nil {
 			log.Warningln("Failed to connect. Retrying:", err.Error())
-
 
 			select {
 			case <-session.done:
@@ -281,10 +274,10 @@ func (session *Session) UnsafePush(exchange string, data []byte) error {
 		return errNotConnected
 	}
 	return session.channel.Publish(
-		exchange,     // Exchange
-		"", 		  // Routing key
-		false,        // Mandatory
-		false,        // Immediate
+		exchange, // Exchange
+		"",       // Routing key
+		false,    // Mandatory
+		false,    // Immediate
 		amqp.Publishing{
 			ContentType: "text/plain",
 			Body:        data,
@@ -309,4 +302,3 @@ func (session *Session) Close() error {
 	session.isReady = false
 	return nil
 }
-

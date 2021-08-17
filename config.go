@@ -5,17 +5,17 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/spf13/viper"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
-	AmqpURL *url.URL			// AMQP URL (password comes from the token)
-	AmqpExchange string			// Exchange to shovel messages
-	AmqpToken string			// File location of the token
-	UDPPort int
-	UDPIp   string
-	DestUdp []string
+	AmqpURL      *url.URL // AMQP URL (password comes from the token)
+	AmqpExchange string   // Exchange to shovel messages
+	AmqpToken    string   // File location of the token
+	ListenPort   int
+	ListenIp     string
+	DestUdp      []string
 }
 
 func (c *Config) ReadConfig() {
@@ -29,6 +29,7 @@ func (c *Config) ReadConfig() {
 	if err != nil {             // Handle errors reading the config file
 		panic(fmt.Errorf("Fatal error config file: %s \n", err))
 	}
+	viper.SetEnvPrefix("SHOVELER")
 
 	// Autmatically look to the ENV for all "Gets"
 	viper.AutomaticEnv()
@@ -55,8 +56,8 @@ func (c *Config) ReadConfig() {
 
 	// Get the UDP listening parameters
 	viper.SetDefault("listen.port", 9993)
-	c.UDPPort = viper.GetInt("listen.port")
-	c.UDPIp = viper.GetString("listen.ip")
+	c.ListenPort = viper.GetInt("listen.port")
+	c.ListenIp = viper.GetString("listen.ip")
 
 	c.DestUdp = viper.GetStringSlice("outputs.destinations")
 
