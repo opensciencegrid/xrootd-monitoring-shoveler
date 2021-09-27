@@ -8,7 +8,13 @@ This shoveling is to convert unreliable UDP to reliable message bus.
 Configuration
 -------------
 
-The shoveler will read from configuration file, environment variables, and finally command line arguments.
+The shoveler will read from:
+
+1. Configuration file.
+2. Environment Variables
+3. Command line arguments.
+
+
 
 Environment variables:
 
@@ -16,3 +22,6 @@ Environment variables:
 * SHOVELER_AMQP_URL
 * SHOVELER_LISTEN_PORT
 * SHOVELER_LISTEN_IP
+* SHOVELER_VERIFY
+
+
