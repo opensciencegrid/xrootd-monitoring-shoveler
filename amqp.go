@@ -62,7 +62,12 @@ func StartAMQP(config *Config, msgQueue *queue.MessageQueue) {
 
 		case msg := <-msgQueue.Receive:
 			// Handle a new message to put on the message queue
-			amqpQueue.UnsafePush(config.AmqpExchange, msg)
+			err = amqpQueue.UnsafePush(config.AmqpExchange, msg)
+			if err != nil {
+				// How to handle a failure to push?
+				// The UnsafePush function already should have tried to reconnect
+				log.Errorln("Failed to push message:", err)
+			}
 
 		}
 	}
@@ -86,7 +91,6 @@ func readToken(tokenLocation string) (string, error) {
 // Copied from the amqp documentation at: https://pkg.go.dev/github.com/streadway/amqp
 type Session struct {
 	url             url.URL
-	logger          *log.Logger
 	connection      *amqp.Connection
 	channel         *amqp.Channel
 	done            chan bool

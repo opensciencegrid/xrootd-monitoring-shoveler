@@ -6,7 +6,7 @@ import (
 )
 
 func TestInit(t *testing.T) {
-    q := MessageQueue{}
+	q := MessageQueue{}
 	q.Init()
 }
 
@@ -23,11 +23,11 @@ func TestInsert(t *testing.T) {
 	q.Insert([]byte("MSG 1"))
 	q.Insert([]byte("MSG 2"))
 	time.Sleep(100 * time.Millisecond)
-	
+
 	// There should be a message on the channel
 	select {
 	case msg := <-q.Receive:
-		if (string(msg) != "MSG 1") {
+		if string(msg) != "MSG 1" {
 			t.Error("Message is not the same as inserted:", msg)
 		}
 	default:
@@ -36,13 +36,12 @@ func TestInsert(t *testing.T) {
 
 	select {
 	case msg := <-q.Receive:
-		if (string(msg) != "MSG 2") {
+		if string(msg) != "MSG 2" {
 			t.Error("Message 2 is not the same as inserted:", msg)
 		}
 	default:
 		t.Error("Failed to send signal for receive")
 	}
-
 
 }
 
@@ -63,12 +62,10 @@ func TestTimeQueue(t *testing.T) {
 
 	start = time.Now()
 	for i := 0; i < numEntries; i++ {
-		select {
-		case <-q.Receive:
-		}
+		<-q.Receive
 	}
 	elapsed = time.Since(start)
 	t.Log("Receive took:", elapsed)
 	t.Log("Time:", elapsed/100000, "per op")
-	t.Logf("Ops per second: %.2f", 1/((elapsed/100000).Seconds()))
+	t.Logf("Ops per second: %.2f", 1/((elapsed / 100000).Seconds()))
 }

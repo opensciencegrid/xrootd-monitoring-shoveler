@@ -4,6 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net"
+	"strconv"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type Message struct {
@@ -11,7 +14,6 @@ type Message struct {
 	ShovelerVersion string `json:"version"`
 	Data            string `json:"data"`
 }
-
 
 func packageUdp(packet []byte, remote *net.UDPAddr) []byte {
 	msg := Message{}
@@ -21,13 +23,14 @@ func packageUdp(packet []byte, remote *net.UDPAddr) []byte {
 
 	// add the remote
 	msg.Remote = remote.IP.String()
+	msg.Remote += ":" + strconv.Itoa(remote.Port)
 
 	msg.ShovelerVersion = VERSION
 
 	b, err := json.Marshal(msg)
 
 	if err != nil {
-
+		log.Errorln("Failed to Marshal the msg to json:", err)
 	}
 	return b
 }
