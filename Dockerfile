@@ -13,13 +13,7 @@ RUN mkdir queue
 COPY queue/*.go queue/
 RUN make bin/shoveler
 
-#COPY *.go ./
-#RUN mkdir queue
-#COPY queue/*.go queue/
 
-FROM scratch
-WORKDIR /
-COPY --from=build /app/bin/shoveler /shoveler
 EXPOSE 9993
 
-CMD [ "/shoveler" ]
+CMD [ "/app/bin/shoveler" ]
