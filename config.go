@@ -16,6 +16,8 @@ type Config struct {
 	ListenPort   int
 	ListenIp     string
 	DestUdp      []string
+	Debug        bool
+	Verify       bool
 }
 
 func (c *Config) ReadConfig() {
@@ -27,7 +29,7 @@ func (c *Config) ReadConfig() {
 	viper.AddConfigPath("config/")
 	err := viper.ReadInConfig() // Find and read the config file
 	if err != nil {             // Handle errors reading the config file
-		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+		log.Warningln("Unable to read in config file, will check environment for configuration:", err)
 	}
 	viper.SetEnvPrefix("SHOVELER")
 
@@ -60,5 +62,10 @@ func (c *Config) ReadConfig() {
 	c.ListenIp = viper.GetString("listen.ip")
 
 	c.DestUdp = viper.GetStringSlice("outputs.destinations")
+
+	c.Debug = viper.GetBool("debug")
+
+	viper.SetDefault("verify", true)
+	c.Verify = viper.GetBool("verify")
 
 }

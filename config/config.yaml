@@ -6,9 +6,13 @@ amqp:
 
 listen:
   port: 9993
-  ip: 127.0.0.1
+  ip: 0.0.0.0
 
 # Where to foward udp messages, if necessary
 outputs:
   destinations: 
     - 127.0.0.1:1234
+
+# Whether to verify the header of the packet matches XRootD's monitoring
+# packet format
+verify: true
