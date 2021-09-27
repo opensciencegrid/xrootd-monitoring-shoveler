@@ -14,7 +14,7 @@ func main() {
 	// Load the configuration
 	config := Config{}
 	config.ReadConfig()
-	if DEBUG {
+	if DEBUG || config.Debug {
 		log.SetLevel(log.DebugLevel)
 	} else {
 		log.SetLevel(log.WarnLevel)
@@ -36,6 +36,7 @@ func main() {
 		IP:   net.ParseIP(config.ListenIp),
 	}
 	conn, err := net.ListenUDP("udp", &addr)
+	log.Debugln("Listening for UDP messages at:", addr.String())
 
 	if err != nil {
 		panic(err)
@@ -49,7 +50,7 @@ func main() {
 		for _, dest := range config.DestUdp {
 			udpConn, err := net.Dial("udp", dest)
 			if err != nil {
-				log.Warningln("Unable to parse destination:", dest, "Will not forward UDP packets to this destination")
+				log.Warningln("Unable to parse destination:", dest, "Will not forward UDP packets to this destination:", err)
 			}
 			udpDestinations = append(udpDestinations, udpConn)
 			log.Infoln("Adding udp forward destination:", dest)
@@ -67,6 +68,11 @@ func main() {
 			// sure what to do, maybe just continue as if nothing happened?
 			continue
 		}
+
+		if config.Verify && !verifyPacket(buf[:rlen]) {
+			continue
+		}
+
 		msg := packageUdp(buf[:rlen], remote)
 
 		// Send the message to the queue
@@ -76,7 +82,10 @@ func main() {
 		// Send to the UDP destinations
 		if len(udpDestinations) > 0 {
 			for _, udpConn := range udpDestinations {
-				udpConn.Write(msg)
+				_, err := udpConn.Write(msg)
+				if err != nil {
+					log.Errorln("Failed to send message to UDP destination "+udpConn.RemoteAddr().String()+":", err)
+				}
 			}
 		}
 
