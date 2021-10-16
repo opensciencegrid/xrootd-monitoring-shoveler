@@ -30,7 +30,7 @@ func main() {
 	log.SetFormatter(&textFormatter)
 
 	// Log the version information
-	log.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date)
+	log.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date, "built by:", builtBy)
 
 
 	// Start the message queue
