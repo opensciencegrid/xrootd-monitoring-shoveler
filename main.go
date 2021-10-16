@@ -7,7 +7,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var VERSION string
+var (
+	version string
+	commit string
+	date string
+	builtBy string
+)
 var DEBUG bool = false
 
 func main() {
@@ -23,6 +28,10 @@ func main() {
 	textFormatter.DisableLevelTruncation = true
 	textFormatter.FullTimestamp = true
 	log.SetFormatter(&textFormatter)
+
+	// Log the version information
+	log.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date)
+
 
 	// Start the message queue
 	q := queue.New()

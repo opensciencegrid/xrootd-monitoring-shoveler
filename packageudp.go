@@ -25,7 +25,7 @@ func packageUdp(packet []byte, remote *net.UDPAddr) []byte {
 	msg.Remote = remote.IP.String()
 	msg.Remote += ":" + strconv.Itoa(remote.Port)
 
-	msg.ShovelerVersion = VERSION
+	msg.ShovelerVersion = version
 
 	b, err := json.Marshal(msg)
 
