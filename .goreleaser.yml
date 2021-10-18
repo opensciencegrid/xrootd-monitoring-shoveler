@@ -90,10 +90,10 @@ nfpms:
 
 dockers:
   - image_templates:
-      - "hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-collector:{{ .Tag }}"
-      - "hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-collector:latest"
-      - "opensciencegrid/xrootd-monitoring-collector:{{ .Tag }}"
-      - "opensciencegrid/xrootd-monitoring-collector:latest"
+      - "hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler:{{ .Tag }}"
+      - "hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler:latest"
+      - "opensciencegrid/xrootd-monitoring-shoveler:{{ .Tag }}"
+      - "opensciencegrid/xrootd-monitoring-shoveler:latest"
     # GOOS of the built binaries/packages that should be used.
     goos: linux
 
