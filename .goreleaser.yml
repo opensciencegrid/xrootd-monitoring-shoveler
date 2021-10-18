@@ -66,7 +66,7 @@ nfpms:
       - xrootd-monitoring-shoveler
       - createtoken
     file_name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
-    id: xrootd-monitoring-shoveler
+    id: xrootd-monitoring-shoveler-nfpms
     vendor: Open Science Grid
     homepage: https://github.com/opensciencegrid/xrootd-monitoring-shoveler
     maintainer: Derek Weitzel <dweitzel@unl.edu>
@@ -102,8 +102,7 @@ dockers:
 
     # IDs to filter the binaries/packages.
     ids:
-      - xrootd-monitoring-shoveler
-      - createtoken
+      - xrootd-monitoring-shoveler-nfpms
     build_flag_templates:
       - "--pull"
       - "--label=org.opencontainers.image.created={{.Date}}"
