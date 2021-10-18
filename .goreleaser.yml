@@ -92,6 +92,8 @@ dockers:
   - image_templates:
       - "hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-collector:{{ .Tag }}"
       - "hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-collector:latest"
+      - "opensciencegrid/xrootd-monitoring-collector:{{ .Tag }}"
+      - "opensciencegrid/xrootd-monitoring-collector:latest"
     # GOOS of the built binaries/packages that should be used.
     goos: linux
 
@@ -108,22 +110,3 @@ dockers:
       - "--label=org.opencontainers.image.title={{.ProjectName}}"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
       - "--label=org.opencontainers.image.version={{.Version}}"
-  - image_templates:
-      - "opensciencegrid/xrootd-monitoring-collector:{{ .Tag }}"
-      - "opensciencegrid/xrootd-monitoring-collector:latest"
-      # GOOS of the built binaries/packages that should be used.
-      goos: linux
-
-      # GOARCH of the built binaries/packages that should be used.
-      goarch: amd64
-
-      # IDs to filter the binaries/packages.
-      ids:
-        - xrootd-monitoring-shoveler
-        - createtoken
-      build_flag_templates:
-        - "--pull"
-        - "--label=org.opencontainers.image.created={{.Date}}"
-        - "--label=org.opencontainers.image.title={{.ProjectName}}"
-        - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-        - "--label=org.opencontainers.image.version={{.Version}}"
