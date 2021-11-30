@@ -8,7 +8,7 @@ This shoveling is used to convert unreliable UDP to reliable message bus.
 Installation
 ------------
 
-Binaries and packages are provided in the latest Github [releases](/opensciencegrid/xrootd-monitoring-shoveler/releases).
+Binaries and packages are provided in the latest Github [releases](https://github.com/opensciencegrid/xrootd-monitoring-shoveler/releases).
 
 Configuration
 -------------
@@ -35,7 +35,7 @@ Running the Shoveler
 
 The shoveler is a statically linked binary, distributed as an RPM and uploaded to docker hub and OSG's container hub. You will need to configure the config.yaml before starting
 
-Install the RPM from the [latest release](/opensciencegrid/xrootd-monitoring-shoveler/releases).  Start the systemd service with:
+Install the RPM from the [latest release](https://github.com/opensciencegrid/xrootd-monitoring-shoveler/releases).  Start the systemd service with:
 
     systemctl start xrootd-monitoring-shoveler.service
 
