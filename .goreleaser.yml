@@ -80,11 +80,19 @@ nfpms:
     release: 1
     section: default
     priority: extra
+    contents:
+      - src: config/config.yaml
+        dst: /etc/xrootd-monitoring-shoveler/config.yaml
+        type: "config|noreplace"
+      - src: config/xrootd-monitoring-shoveler.service
+        dst: /usr/lib/systemd/system/xrootd-monitoring-shoveler.service
     overrides:
       rpm:
         replacements:
           amd64: x86_64
         file_name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Release }}.{{ .Arch }}"
+        dependencies:
+        - systemd
       deb:
         file_name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Release }}_{{ .Arch }}"
 

@@ -1,0 +1,8 @@
+[Unit]
+Description=XRootD Monitoring Shoveler for sending UDP Monitoring packets to a message bus
+
+[Service]
+ExecStart=/usr/bin/xrootd-monitoring-shoveler
+
+[Install]
+WantedBy=multi-user.target
