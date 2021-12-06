@@ -41,7 +41,11 @@ func StartMetrics() {
 		listenAddress := ":" + strconv.Itoa(metricsPort)
 		log.Debugln("Starting metrics at " + listenAddress + "/metrics")
 		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(listenAddress, nil)
+		err := http.ListenAndServe(listenAddress, nil)
+		if err != nil {
+			log.Errorln("Failed to listen and serve metrics:", err)
+			return
+		}
 	}()
 
 }
