@@ -144,7 +144,7 @@ func (session *Session) handleReconnect() {
 		log.Debugln("Attempting to connect")
 
 		conn, err := session.connect()
-
+		rabbitmqReconnects.Inc()
 		if err != nil {
 			log.Warningln("Failed to connect. Retrying:", err.Error())
 

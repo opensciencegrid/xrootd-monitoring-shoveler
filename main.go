@@ -9,8 +9,8 @@ import (
 
 var (
 	version string
-	commit string
-	date string
+	commit  string
+	date    string
 	builtBy string
 )
 var DEBUG bool = false
@@ -32,12 +32,14 @@ func main() {
 	// Log the version information
 	log.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date, "built by:", builtBy)
 
-
 	// Start the message queue
 	q := queue.New()
 
 	// Start the AMQP go func
 	go StartAMQP(&config, q)
+
+	// Start the metrics
+	StartMetrics()
 
 	// Process incoming UDP packets
 	addr := net.UDPAddr{
@@ -77,8 +79,10 @@ func main() {
 			// sure what to do, maybe just continue as if nothing happened?
 			continue
 		}
+		packetsReceived.Inc()
 
 		if config.Verify && !verifyPacket(buf[:rlen]) {
+			validationsFailed.Inc()
 			continue
 		}
 

@@ -17,3 +17,8 @@ listen:
 # Whether to verify the header of the packet matches XRootD's monitoring
 # packet format
 verify: true
+
+# Export metrics
+metrics:
+  enable: true
+  port: 8000

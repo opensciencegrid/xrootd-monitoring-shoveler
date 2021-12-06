@@ -68,4 +68,8 @@ func (c *Config) ReadConfig() {
 	viper.SetDefault("verify", true)
 	c.Verify = viper.GetBool("verify")
 
+	// Metrics defaults
+	viper.SetDefault("metrics.enable", true)
+	viper.SetDefault("metrics.port", 8000)
+
 }
