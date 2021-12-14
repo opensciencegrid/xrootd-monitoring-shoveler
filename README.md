@@ -30,6 +30,11 @@ Environment variables:
 * SHOVELER_LISTEN_IP
 * SHOVELER_VERIFY
 
+Message Bus Credentials
+-----------------------
+
+The shoveler uses a [JWT](https://jwt.io/) to authorize with the message bus.  The token will be issued by an automated process, but for now, long lived tokens are issued to sites.
+
 Running the Shoveler
 --------------------
 
