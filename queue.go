@@ -149,5 +149,5 @@ func (cq *ConfirmationQueue) Dequeue() ([]byte, error) {
 func (cq *ConfirmationQueue) Close() error {
 	cq.mutex.Lock()
 	defer cq.mutex.Unlock()
-	cq.msgQueue.Close()
+	return cq.msgQueue.Close()
 }
