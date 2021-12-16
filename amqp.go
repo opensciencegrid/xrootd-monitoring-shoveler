@@ -36,7 +36,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	triggerReconnect := make(chan bool)
 	go readMsg(messagesQueue, queue)
 
-	go CheckTokenFile(config, amqpQueue, tokenAge, triggerReconnect)
+	go CheckTokenFile(config, tokenAge, triggerReconnect)
 
 	// Listen to the channel for messages
 	for {
@@ -74,34 +74,32 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 }
 
 // Listen to the channel for messages
-func CheckTokenFile(config *Config, amqpQueue *Session, tokenAge time.Time, triggerReconnect chan<- bool) {
+func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- bool) {
 	// Create a timer to check for changes in the token file ever 10 seconds
 	amqpURL := config.AmqpURL
 	checkTokenFile := time.NewTicker(10 * time.Second)
 	for {
-		select {
-		case <-checkTokenFile.C:
-			log.Debugln("Checking the age of the token file...")
-			// Recheck the age of the token file
-			tokenStat, err := os.Stat(config.AmqpToken)
+		<-checkTokenFile.C
+		log.Debugln("Checking the age of the token file...")
+		// Recheck the age of the token file
+		tokenStat, err := os.Stat(config.AmqpToken)
+		if err != nil {
+			log.Fatalln("Failed to stat token file", config.AmqpToken, "error:", err)
+		}
+		newTokenAge := tokenStat.ModTime()
+		if newTokenAge.After(tokenAge) {
+			tokenAge = newTokenAge
+			log.Debugln("Token file was updated, recreating AMQP connection...")
+			// New Token, reload the connection
+			tokenContents, err := readToken(config.AmqpToken)
 			if err != nil {
-				log.Fatalln("Failed to stat token file", config.AmqpToken, "error:", err)
+				log.Fatalln("Failed to read token, cannot recover")
 			}
-			newTokenAge := tokenStat.ModTime()
-			if newTokenAge.After(tokenAge) {
-				tokenAge = newTokenAge
-				log.Debugln("Token file was updated, recreating AMQP connection...")
-				// New Token, reload the connection
-				tokenContents, err := readToken(config.AmqpToken)
-				if err != nil {
-					log.Fatalln("Failed to read token, cannot recover")
-				}
 
-				// Set the username/password
-				amqpURL.User = url.UserPassword("shoveler", tokenContents)
-				triggerReconnect <- true
+			// Set the username/password
+			amqpURL.User = url.UserPassword("shoveler", tokenContents)
+			triggerReconnect <- true
 
-			}
 		}
 
 	}
@@ -176,7 +174,10 @@ func New(url url.URL) *Session {
 // newConnection will close the current connection, cleaning
 // up the go-routines and connections.  Then attempt to reconnect
 func (session *Session) newConnection(url url.URL) {
-	session.Close()
+	err := session.Close()
+	if err != nil {
+		log.Errorln("Failed to close session:", err)
+	}
 	session.url = url
 	go session.handleReconnect()
 }

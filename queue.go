@@ -46,9 +46,12 @@ func (cq *ConfirmationQueue) Init() *ConfirmationQueue {
 	var err error
 	cq.msgQueue, err = dque.NewOrOpen(qName, qDir, segmentSize, ItemBuilder)
 	if err != nil {
-		log.Errorln("Failed to create queue", err)
+		log.Panicln("Failed to create queue:", err)
 	}
-	cq.msgQueue.TurboOn()
+	err = cq.msgQueue.TurboOn()
+	if err != nil {
+		log.Errorln("Failed to turn on dque Turbo mode, the queue will be safer but much slower:", err)
+	}
 
 	cq.emptyCond = sync.NewCond(&cq.mutex)
 
@@ -72,14 +75,12 @@ func (cq *ConfirmationQueue) queueMetrics() {
 	defer ticker.Stop()
 	// Do a select on the timer
 	for {
-		select {
-		case <-ticker.C:
-			// Update the prometheus
-			queueSizeInt := cq.Size()
-			queueSize.Set(float64(queueSizeInt))
-			log.Debugln("Queue Size:", queueSizeInt)
+		<-ticker.C
+		// Update the prometheus
+		queueSizeInt := cq.Size()
+		queueSize.Set(float64(queueSizeInt))
+		log.Debugln("Queue Size:", queueSizeInt)
 
-		}
 	}
 
 }
@@ -94,7 +95,10 @@ func (cq *ConfirmationQueue) Enqueue(msg []byte) {
 		cq.inMemory = append(cq.inMemory, msg)
 	} else {
 		// Add to on disk queue
-		cq.msgQueue.Enqueue(&MessageStruct{Message: msg})
+		err := cq.msgQueue.Enqueue(&MessageStruct{Message: msg})
+		if err != nil {
+			log.Errorln("Failed to enqueue message:", err)
+		}
 	}
 	cq.emptyCond.Broadcast()
 }

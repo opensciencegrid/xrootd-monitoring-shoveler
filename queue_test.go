@@ -37,7 +37,8 @@ func TestQueueEmptyDequeue(t *testing.T) {
 	assert.Equal(t, []byte("test1"), msg)
 	doneChan := make(chan bool)
 	go func() {
-		queue.Dequeue()
+		_, err := queue.Dequeue()
+		assert.NoError(t, err)
 		doneChan <- true
 	}()
 	select {
