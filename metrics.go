@@ -2,10 +2,10 @@ package main
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"net/http"
 	"strconv"
 )
@@ -24,6 +24,11 @@ var (
 	rabbitmqReconnects = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_rabbitmq_reconnects",
 		Help: "The total number of reconnections to rabbitmq bus",
+	})
+
+	queueSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_queue_size",
+		Help: "The number of messages in the queue",
 	})
 )
 
@@ -49,4 +54,3 @@ func StartMetrics() {
 	}()
 
 }
-

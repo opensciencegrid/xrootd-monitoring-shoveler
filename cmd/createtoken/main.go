@@ -15,6 +15,7 @@ import (
 func main() {
 
 	hoursPtr := flag.Int("hours", 1, "Number of hours the token should be valid")
+	exchangePtr := flag.String("exchange", "shoveled-xrd", "Exchange to set")
 
 	flag.Parse()
 	// Read in the private key from the command line
@@ -39,7 +40,7 @@ func main() {
 
 	// Create the Claims
 	claims := MyCustomClaims{
-		"my_rabbit_server.write:xrd-mon/shoveled-xrd",
+		"my_rabbit_server.write:xrd-mon/" + *exchangePtr + " my_rabbit_server.read:xrd-mon/" + *exchangePtr + " my_rabbit_server.configure:xrd-mon/" + *exchangePtr,
 		jwt.StandardClaims{
 			ExpiresAt: time.Now().Add(time.Hour * time.Duration(*hoursPtr)).Unix(),
 			Issuer:    "test",
