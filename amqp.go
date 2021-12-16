@@ -3,18 +3,18 @@ package main
 import (
 	"errors"
 	"io/ioutil"
+	"math/rand"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	queue "github.com/opensciencegrid/xrootd-monitoring-shoveler/queue"
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 )
 
 // This should run in a new go co-routine.
-func StartAMQP(config *Config, msgQueue *queue.MessageQueue) {
+func StartAMQP(config *Config, queue *ConfirmationQueue) {
 
 	// Get the configuration URL
 	amqpURL := config.AmqpURL
@@ -31,47 +31,90 @@ func StartAMQP(config *Config, msgQueue *queue.MessageQueue) {
 	amqpURL.User = url.UserPassword("shoveler", tokenContents)
 	amqpQueue := New(*amqpURL)
 
-	// Create a timer to check for changes in the token file ever 10 seconds
-	checkTokenFile := time.NewTicker(10 * time.Second)
+	// Constantly check for new messages
+	messagesQueue := make(chan []byte)
+	triggerReconnect := make(chan bool)
+	go readMsg(messagesQueue, queue)
+
+	go CheckTokenFile(config, tokenAge, triggerReconnect)
 
 	// Listen to the channel for messages
 	for {
 		select {
-		case <-checkTokenFile.C:
-			log.Debugln("Checking the age of the token file...")
-			// Recheck the age of the token file
-			tokenStat, err := os.Stat(config.AmqpToken)
-			if err != nil {
-				log.Fatalln("Failed to stat token file", config.AmqpToken, "error:", err)
-			}
-			newTokenAge := tokenStat.ModTime()
-			if newTokenAge.After(tokenAge) {
-				tokenAge = newTokenAge
-				log.Debugln("Token file was updated, recreating AMQP connection...")
-				// New Token, reload the connection
-				tokenContents, err := readToken(config.AmqpToken)
-				if err != nil {
-					log.Fatalln("Failed to read token, cannot recover")
-				}
-
-				// Set the username/password
-				amqpURL.User = url.UserPassword("shoveler", tokenContents)
-				amqpQueue.newConnection(*amqpURL)
-
-			}
-
-		case msg := <-msgQueue.Receive:
+		case <-triggerReconnect:
+			log.Debugln("Triggering reconnect")
+			amqpQueue.newConnection(*amqpURL)
+		case msg := <-messagesQueue:
 			// Handle a new message to put on the message queue
-			err = amqpQueue.UnsafePush(config.AmqpExchange, msg)
-			if err != nil {
-				// How to handle a failure to push?
-				// The UnsafePush function already should have tried to reconnect
-				log.Errorln("Failed to push message:", err)
-			}
+		TryPush:
+			for {
+				err = amqpQueue.Push(config.AmqpExchange, msg)
+				if err != nil {
+					// How to handle a failure to push?
+					// The UnsafePush function already should have tried to reconnect
+					log.Errorln("Failed to push message:", err)
+					// Try again in 1 second
+					// Sleep for random amount between 1 and 5 seconds
+					// Watch for new token files
+					randSleep := rand.Intn(4000) + 1000
+					log.Debugln("Sleeping for", randSleep/1000, "seconds")
+					select {
+					case <-triggerReconnect:
+						log.Debugln("Triggering reconnect from within failure")
+						amqpQueue.newConnection(*amqpURL)
+					case <-time.After(time.Duration(randSleep) * time.Millisecond):
+						continue TryPush
+					}
 
+				}
+				break TryPush
+			}
 		}
 	}
+}
 
+// Listen to the channel for messages
+func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- bool) {
+	// Create a timer to check for changes in the token file ever 10 seconds
+	amqpURL := config.AmqpURL
+	checkTokenFile := time.NewTicker(10 * time.Second)
+	for {
+		<-checkTokenFile.C
+		log.Debugln("Checking the age of the token file...")
+		// Recheck the age of the token file
+		tokenStat, err := os.Stat(config.AmqpToken)
+		if err != nil {
+			log.Fatalln("Failed to stat token file", config.AmqpToken, "error:", err)
+		}
+		newTokenAge := tokenStat.ModTime()
+		if newTokenAge.After(tokenAge) {
+			tokenAge = newTokenAge
+			log.Debugln("Token file was updated, recreating AMQP connection...")
+			// New Token, reload the connection
+			tokenContents, err := readToken(config.AmqpToken)
+			if err != nil {
+				log.Fatalln("Failed to read token, cannot recover")
+			}
+
+			// Set the username/password
+			amqpURL.User = url.UserPassword("shoveler", tokenContents)
+			triggerReconnect <- true
+
+		}
+
+	}
+}
+
+// Read a message from the queue
+func readMsg(messagesQueue chan<- []byte, queue *ConfirmationQueue) {
+	for {
+		msg, err := queue.Dequeue()
+		if err != nil {
+			log.Errorln("Failed to read from queue:", err)
+			continue
+		}
+		messagesQueue <- msg
+	}
 }
 
 // Read the token from the token location
@@ -131,7 +174,10 @@ func New(url url.URL) *Session {
 // newConnection will close the current connection, cleaning
 // up the go-routines and connections.  Then attempt to reconnect
 func (session *Session) newConnection(url url.URL) {
-	session.Close()
+	err := session.Close()
+	if err != nil {
+		log.Errorln("Failed to close session:", err)
+	}
 	session.url = url
 	go session.handleReconnect()
 }
@@ -198,11 +244,11 @@ func (session *Session) handleReInit(conn *amqp.Connection) bool {
 		select {
 		case <-session.done:
 			return true
-		case <-session.notifyConnClose:
-			log.Warningln("Connection closed. Reconnecting...")
+		case err := <-session.notifyConnClose:
+			log.Warningln("Connection closed. Reconnecting...", err)
 			return false
-		case <-session.notifyChanClose:
-			log.Warningln("Channel closed. Re-running init...")
+		case err := <-session.notifyChanClose:
+			log.Warningln("Channel closed. Re-running init...", err)
 		}
 	}
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"net"
 
-	queue "github.com/opensciencegrid/xrootd-monitoring-shoveler/queue"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -33,10 +32,10 @@ func main() {
 	log.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date, "built by:", builtBy)
 
 	// Start the message queue
-	q := queue.New()
+	cq := NewConfirmationQueue()
 
 	// Start the AMQP go func
-	go StartAMQP(&config, q)
+	go StartAMQP(&config, cq)
 
 	// Start the metrics
 	StartMetrics()
@@ -90,7 +89,7 @@ func main() {
 
 		// Send the message to the queue
 		log.Debugln("Sending msg:", string(msg))
-		q.Insert(msg)
+		cq.Enqueue(msg)
 
 		// Send to the UDP destinations
 		if len(udpDestinations) > 0 {
