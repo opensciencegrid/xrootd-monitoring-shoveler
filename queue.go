@@ -144,3 +144,10 @@ func (cq *ConfirmationQueue) Dequeue() ([]byte, error) {
 		return msg, nil
 	}
 }
+
+// Close will close the on-disk files
+func (cq *ConfirmationQueue) Close() error {
+	cq.mutex.Lock()
+	defer cq.mutex.Unlock()
+	cq.msgQueue.Close()
+}

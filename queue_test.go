@@ -14,6 +14,7 @@ func TestQueueInsert(t *testing.T) {
 	queuePath := path.Join(t.TempDir(), "shoveler-queue")
 	viper.Set("queue_directory", queuePath)
 	queue := NewConfirmationQueue()
+	defer queue.Close()
 	queue.Enqueue([]byte("test1"))
 	queue.Enqueue([]byte("test2"))
 	msg, err := queue.Dequeue()
@@ -32,6 +33,7 @@ func TestQueueEmptyDequeue(t *testing.T) {
 	viper.Set("queue_directory", queuePath)
 	queue := NewConfirmationQueue()
 	queue.Enqueue([]byte("test1"))
+	defer queue.Close()
 	msg, err := queue.Dequeue()
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("test1"), msg)
@@ -62,6 +64,7 @@ func TestQueueLotsEntries(t *testing.T) {
 	queuePath := path.Join(t.TempDir(), "shoveler-queue")
 	viper.Set("queue_directory", queuePath)
 	queue := NewConfirmationQueue()
+	defer queue.Close()
 	for i := 1; i <= 100000; i++ {
 		msgString := "test." + strconv.Itoa(i)
 		queue.Enqueue([]byte(msgString))
