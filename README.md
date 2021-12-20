@@ -29,6 +29,7 @@ Environment variables:
 * SHOVELER_LISTEN_PORT
 * SHOVELER_LISTEN_IP
 * SHOVELER_VERIFY
+* SHOVELER_QUEUE_DIRECTORY
 
 Message Bus Credentials
 -----------------------
@@ -53,3 +54,10 @@ Packet Verification
 -------------------
 
 If the `verify` option or `SHOVELER_VERIFY` env. var. is set to `true` (the default), the shoveler will perform simple verification that the incoming UDP packets conform to XRootD monitoring packets.
+
+Queue Design
+------------
+
+The shoveler receives UDP packets and stores them onto a queue before being sent to the message bus.  100 messages are stored in memory.  When the in memory messages reaches over 100, the messages are written to disk under the `SHOVELER_QUEUE_DIRECTORY` (env) or `queue_directory` (yaml) configured directories.  A good default is `/tmp/shoveler-queue`, though it could also go in `/var/...`.  The on-disk queue is persistent across shoveler restarts.
+
+The queue length can be monitored through the prometheus monitoring metric name: `shoveler_queue_size`.
