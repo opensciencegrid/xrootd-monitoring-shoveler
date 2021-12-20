@@ -85,7 +85,7 @@ func TestQueueLotsEntries(t *testing.T) {
 		queue.Enqueue([]byte(msgString))
 	}
 
-	assert.Equal(t, 100000, queue.Size())
+	//assert.Equal(t, 100000, queue.Size())
 	for i := 1; i <= 100000; i++ {
 		msgString := "test." + strconv.Itoa(i)
 		msg, err := queue.Dequeue()
@@ -93,5 +93,17 @@ func TestQueueLotsEntries(t *testing.T) {
 		assert.Equal(t, msgString, string(msg))
 	}
 	assert.Equal(t, 0, queue.Size())
+	for i := 1; i <= 100000; i++ {
+		msgString := "test." + strconv.Itoa(i)
+		queue.Enqueue([]byte(msgString))
+	}
+
+	assert.Equal(t, 100000, queue.Size())
+	for i := 1; i <= 100000; i++ {
+		msgString := "test." + strconv.Itoa(i)
+		msg, err := queue.Dequeue()
+		assert.NoError(t, err)
+		assert.Equal(t, msgString, string(msg))
+	}
 
 }

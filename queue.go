@@ -16,15 +16,17 @@ type MessageStruct struct {
 }
 
 type ConfirmationQueue struct {
-	msgQueue  *dque.DQue
+	diskQueue *dque.DQue
 	mutex     sync.Mutex
 	emptyCond *sync.Cond
-	inMemory  *list.List
+	memQueue  *list.List
+	usingDisk bool
 }
 
 var (
-	ErrEmpty    = errors.New("queue is empty")
-	MaxInMemory = 100
+	ErrEmpty     = errors.New("queue is empty")
+	MaxInMemory  = 100
+	LowWaterMark = 50
 )
 
 // NewConfirmationQueue returns an initialized list.
@@ -46,11 +48,11 @@ func (cq *ConfirmationQueue) Init() *ConfirmationQueue {
 	qDir := path.Dir(queueDir)
 	segmentSize := 10000
 	var err error
-	cq.msgQueue, err = dque.NewOrOpen(qName, qDir, segmentSize, ItemBuilder)
+	cq.diskQueue, err = dque.NewOrOpen(qName, qDir, segmentSize, ItemBuilder)
 	if err != nil {
 		log.Panicln("Failed to create queue:", err)
 	}
-	err = cq.msgQueue.TurboOn()
+	err = cq.diskQueue.TurboOn()
 	if err != nil {
 		log.Errorln("Failed to turn on dque Turbo mode, the queue will be safer but much slower:", err)
 	}
@@ -58,7 +60,7 @@ func (cq *ConfirmationQueue) Init() *ConfirmationQueue {
 	cq.emptyCond = sync.NewCond(&cq.mutex)
 
 	// Start the metrics goroutine
-	cq.inMemory = list.New()
+	cq.memQueue = list.New()
 	go cq.queueMetrics()
 	return cq
 
@@ -67,7 +69,11 @@ func (cq *ConfirmationQueue) Init() *ConfirmationQueue {
 func (cq *ConfirmationQueue) Size() int {
 	cq.mutex.Lock()
 	defer cq.mutex.Unlock()
-	return cq.inMemory.Len() + cq.msgQueue.SizeUnsafe()
+	if cq.usingDisk {
+		return cq.diskQueue.SizeUnsafe()
+	} else {
+		return cq.memQueue.Len()
+	}
 }
 
 // queueMetrics updates the queue size prometheus metric
@@ -93,12 +99,30 @@ func (cq *ConfirmationQueue) Enqueue(msg []byte) {
 	cq.mutex.Lock()
 	defer cq.mutex.Unlock()
 	// Check size of in memory queue
-	if cq.inMemory.Len() < MaxInMemory {
-		// Add to in memory queue
-		cq.inMemory.PushBack(msg)
+
+	// Still using in-memory
+	if !cq.usingDisk && (cq.memQueue.Len()+1) < MaxInMemory {
+		cq.memQueue.PushBack(msg)
+	} else if !cq.usingDisk && (cq.memQueue.Len()+1) >= MaxInMemory {
+		// Not using disk queue, but the next message would go over MaxInMemory
+		// Transfer everything to the on-disk queue
+		for cq.memQueue.Len() > 0 {
+			toEnqueue := cq.memQueue.Remove(cq.memQueue.Front()).([]byte)
+			err := cq.diskQueue.Enqueue(&MessageStruct{Message: toEnqueue})
+			if err != nil {
+				log.Errorln("Failed to enqueue message:", err)
+			}
+		}
+		// Enqueue the current
+		err := cq.diskQueue.Enqueue(&MessageStruct{Message: msg})
+		if err != nil {
+			log.Errorln("Failed to enqueue message:", err)
+		}
+		cq.usingDisk = true
+
 	} else {
-		// Add to on disk queue
-		err := cq.msgQueue.Enqueue(&MessageStruct{Message: msg})
+		// Last option is we are using disk
+		err := cq.diskQueue.Enqueue(&MessageStruct{Message: msg})
 		if err != nil {
 			log.Errorln("Failed to enqueue message:", err)
 		}
@@ -109,24 +133,34 @@ func (cq *ConfirmationQueue) Enqueue(msg []byte) {
 // dequeueLocked dequeues a message, assuming the queue has already been locked
 func (cq *ConfirmationQueue) dequeueLocked() ([]byte, error) {
 	// Check if we have a message available in the queue
-	if cq.inMemory.Len() == 0 {
+	if !cq.usingDisk && cq.memQueue.Len() == 0 {
+		return nil, ErrEmpty
+	} else if cq.usingDisk && cq.diskQueue.Size() == 0 {
 		return nil, ErrEmpty
 	}
-	// Remove the first element and get the value
-	toReturn := cq.inMemory.Remove(cq.inMemory.Front()).([]byte)
 
-	// See if we have anything on the on-disk
-	for cq.inMemory.Len() < MaxInMemory {
-		// Dequeue something from the on disk
-		msgStruct, err := cq.msgQueue.Dequeue()
-		if err == dque.ErrEmpty {
-			// Queue is empty
-			break
+	if !cq.usingDisk {
+		return cq.memQueue.Remove(cq.memQueue.Front()).([]byte), nil
+	} else if cq.usingDisk && (cq.diskQueue.Size()-1) >= LowWaterMark {
+		// If we are using disk, and the on disk size is larger than the low water mark
+		msgStruct, err := cq.diskQueue.Dequeue()
+		if err != nil {
+			log.Errorln("Failed to dequeue: ", err)
 		}
-		// Add the new message to the back of the in memory queue
-		cq.inMemory.PushBack(msgStruct.(*MessageStruct).Message)
+		return msgStruct.(*MessageStruct).Message, err
+	} else {
+		// Using disk, but the next enqueue makes it < LowWaterMark, transfer everything from on disk to in-memory
+		for cq.diskQueue.Size() > 0 {
+			msgStruct, err := cq.diskQueue.Dequeue()
+			if err != nil {
+				log.Errorln("Failed to dequeue: ", err)
+			}
+			cq.memQueue.PushBack(msgStruct.(*MessageStruct).Message)
+		}
+		cq.usingDisk = false
+		return cq.memQueue.Remove(cq.memQueue.Front()).([]byte), nil
 	}
-	return toReturn, nil
+
 }
 
 // Dequeue Blocking function to receive a message
@@ -151,5 +185,5 @@ func (cq *ConfirmationQueue) Dequeue() ([]byte, error) {
 func (cq *ConfirmationQueue) Close() error {
 	cq.mutex.Lock()
 	defer cq.mutex.Unlock()
-	return cq.msgQueue.Close()
+	return cq.diskQueue.Close()
 }
