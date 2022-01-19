@@ -7,7 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func StartStomp(config *Config, queue *ConfirmationQueue) error {
+func StartStomp(config *Config, queue *ConfirmationQueue) {
 
 	// TODO: Get the username, password, server, topic from the config
 	stompUser := config.StompUser
@@ -27,7 +27,15 @@ func StartStomp(config *Config, queue *ConfirmationQueue) error {
 		}
 		stompSession.publish(msg)
 		if err != nil {
-			return err
+		reconnectLoop:
+			for {
+				reconnectError := stompSession.handleReconnect()
+				if reconnectError == nil {
+					break reconnectLoop
+				} else {
+					log.Errorln("Failed to reconnect:", reconnectError.Error())
+				}
+			}
 		}
 	}
 
@@ -49,12 +57,12 @@ func NewStompConnection(username string, password string,
 		stompUrl: stompUrl,
 		topic:    topic,
 	}
-	go session.handleReconnect()
+	session.handleReconnect()
 	return &session
 }
 
 // handleReconnect reconnects to the stomp server
-func (session *StompSession) handleReconnect() {
+func (session *StompSession) handleReconnect() error {
 	// Close the current session
 	session.conn.Disconnect()
 
@@ -62,10 +70,11 @@ func (session *StompSession) handleReconnect() {
 	conn, err := stomp.Dial("tcp", session.stompUrl.String(),
 		stomp.ConnOpt.Login(session.username, session.password))
 	if err != nil {
-		log.Errorln("Failed to connect. Retrying:", err.Error)
+		return err
 	}
 
 	session.conn = conn
+	return nil
 }
 
 // publish will send the message to the stomp message bus
