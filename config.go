@@ -10,14 +10,19 @@ import (
 )
 
 type Config struct {
-	AmqpURL      *url.URL // AMQP URL (password comes from the token)
-	AmqpExchange string   // Exchange to shovel messages
-	AmqpToken    string   // File location of the token
-	ListenPort   int
-	ListenIp     string
-	DestUdp      []string
-	Debug        bool
-	Verify       bool
+	MQ            string   // Which technology to use for the MQ connection
+	AmqpURL       *url.URL // AMQP URL (password comes from the token)
+	AmqpExchange  string   // Exchange to shovel messages
+	AmqpToken     string   // File location of the token
+	ListenPort    int
+	ListenIp      string
+	DestUdp       []string
+	Debug         bool
+	Verify        bool
+	StompUser     string
+	StompPassword string
+	StompURL      *url.URL
+	StompTopic    string
 }
 
 func (c *Config) ReadConfig() {
@@ -38,24 +43,44 @@ func (c *Config) ReadConfig() {
 	// Look for environment variables with underscores
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	viper.SetDefault("amqp.exchange", "shoveled-xrd")
-	viper.SetDefault("amqp.token_location", "/etc/xrootd-monitoring-shoveler/token")
+	viper.SetDefault("mq", "amqp")
+	c.MQ = viper.GetString("mq")
 
-	// Get the AMQP URL
-	c.AmqpURL, err = url.Parse(viper.GetString("amqp.url"))
-	if err != nil {
-		panic(fmt.Errorf("Fatal error parsing AMQP URL: %s \n", err))
+	if c.MQ == "amqp" {
+		viper.SetDefault("amqp.exchange", "shoveled-xrd")
+		viper.SetDefault("amqp.token_location", "/etc/xrootd-monitoring-shoveler/token")
+
+		// Get the AMQP URL
+		c.AmqpURL, err = url.Parse(viper.GetString("amqp.url"))
+		if err != nil {
+			panic(fmt.Errorf("Fatal error parsing AMQP URL: %s \n", err))
+		}
+		log.Debugln("AMQP URL:", c.AmqpURL.String())
+
+		// Get the AMQP Exchange
+		c.AmqpExchange = viper.GetString("amqp.exchange")
+		log.Debugln("AMQP Exchange:", c.AmqpExchange)
+
+		// Get the Token location
+		c.AmqpToken = viper.GetString("amqp.token_location")
+		log.Debugln("AMQP Token location:", c.AmqpToken)
+	} else {
+		viper.SetDefault("stomp.topic", "xrootd.shoveler")
+
+		c.StompUser = viper.GetString("stomp.user")
+		log.Debugln("STOMP User:", c.StompUser)
+		c.StompPassword = viper.GetString("stomp.password")
+
+		// Get the STOMP URL
+		c.StompURL, err = url.Parse(viper.GetString("stomp.url"))
+		if err != nil {
+			panic(fmt.Errorf("Fatal error parsing STOMP URL: %s \n", err))
+		}
+		log.Debugln("STOMP URL:", c.StompURL.String())
+
+		c.StompTopic = viper.GetString("stomp.topic")
+		log.Debugln("STOMP Topic:", c.StompTopic)
 	}
-	log.Debugln("AMQP URL:", c.AmqpURL.String())
-
-	// Get the AMQP Exchange
-	c.AmqpExchange = viper.GetString("amqp.exchange")
-	log.Debugln("AMQP Exchange:", c.AmqpExchange)
-
-	// Get the Token location
-	c.AmqpToken = viper.GetString("amqp.token_location")
-	log.Debugln("AMQP Token location:", c.AmqpToken)
-
 	// Get the UDP listening parameters
 	viper.SetDefault("listen.port", 9993)
 	c.ListenPort = viper.GetInt("listen.port")

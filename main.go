@@ -34,8 +34,13 @@ func main() {
 	// Start the message queue
 	cq := NewConfirmationQueue()
 
-	// Start the AMQP go func
-	go StartAMQP(&config, cq)
+	if config.MQ == "amqp" {
+		// Start the AMQP go func
+		go StartAMQP(&config, cq)
+	} else {
+		// Start the STOMP go func
+		go StartStomp(&config, cq)
+	}
 
 	// Start the metrics
 	StartMetrics()
