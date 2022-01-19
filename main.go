@@ -37,7 +37,7 @@ func main() {
 	if config.MQ == "amqp" {
 		// Start the AMQP go func
 		go StartAMQP(&config, cq)
-	} else {
+	} else if config.MQ == "stomp" {
 		// Start the STOMP go func
 		go StartStomp(&config, cq)
 	}

@@ -64,7 +64,7 @@ func (c *Config) ReadConfig() {
 		// Get the Token location
 		c.AmqpToken = viper.GetString("amqp.token_location")
 		log.Debugln("AMQP Token location:", c.AmqpToken)
-	} else {
+	} else if c.MQ == "stomp" {
 		viper.SetDefault("stomp.topic", "xrootd.shoveler")
 
 		c.StompUser = viper.GetString("stomp.user")
@@ -80,6 +80,8 @@ func (c *Config) ReadConfig() {
 
 		c.StompTopic = viper.GetString("stomp.topic")
 		log.Debugln("STOMP Topic:", c.StompTopic)
+	} else {
+		log.Panic("MQ option is not one of the allowed ones (amqp, stomp)")
 	}
 	// Get the UDP listening parameters
 	viper.SetDefault("listen.port", 9993)
