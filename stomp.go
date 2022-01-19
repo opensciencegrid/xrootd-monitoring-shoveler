@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/url"
+	"time"
 
 	stomp "github.com/go-stomp/stomp/v3"
 	log "github.com/sirupsen/logrus"
@@ -78,13 +79,15 @@ sendMessageLoop:
 			msg)
 
 		if err != nil {
+			log.Errorln("Failed to publish message:", err)
 		reconnectLoop:
 			for {
 				reconnectError := session.handleReconnect()
 				if reconnectError == nil {
 					break reconnectLoop
 				} else {
-					log.Errorln("Failed to reconnect:", reconnectError.Error())
+					log.Errorln("Failed to reconnect, retrying:", reconnectError.Error())
+					<-time.After(reconnectDelay)
 				}
 			}
 		} else {

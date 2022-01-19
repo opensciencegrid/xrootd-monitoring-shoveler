@@ -143,17 +143,6 @@ type Session struct {
 	isReady         bool
 }
 
-const (
-	// When reconnecting to the server after connection failure
-	reconnectDelay = 5 * time.Second
-
-	// When setting up the channel after a channel exception
-	reInitDelay = 2 * time.Second
-
-	// When resending messages the server didn't confirm
-	resendDelay = 5 * time.Second
-)
-
 var (
 	errNotConnected  = errors.New("not connected to a server")
 	errAlreadyClosed = errors.New("already closed: not connected to the server")
