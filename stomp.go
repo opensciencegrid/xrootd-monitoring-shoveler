@@ -23,20 +23,10 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	for {
 		msg, err := queue.Dequeue()
 		if err != nil {
-			return err
+			log.Errorln("Failed to read from queue:", err)
+			continue
 		}
 		stompSession.publish(msg)
-		if err != nil {
-		reconnectLoop:
-			for {
-				reconnectError := stompSession.handleReconnect()
-				if reconnectError == nil {
-					break reconnectLoop
-				} else {
-					log.Errorln("Failed to reconnect:", reconnectError.Error())
-				}
-			}
-		}
 	}
 
 }
@@ -79,11 +69,26 @@ func (session *StompSession) handleReconnect() error {
 
 // publish will send the message to the stomp message bus
 // It will also handle any error in sending by calling handleReconnect
-func (session *StompSession) publish(msg []byte) error {
-	err := session.conn.Send(
-		session.topic,
-		"text/plain",
-		msg)
+func (session *StompSession) publish(msg []byte) {
+sendMessageLoop:
+	for {
+		err := session.conn.Send(
+			session.topic,
+			"text/plain",
+			msg)
 
-	return err
+		if err != nil {
+		reconnectLoop:
+			for {
+				reconnectError := session.handleReconnect()
+				if reconnectError == nil {
+					break reconnectLoop
+				} else {
+					log.Errorln("Failed to reconnect:", reconnectError.Error())
+				}
+			}
+		} else {
+			break sendMessageLoop
+		}
+	}
 }
