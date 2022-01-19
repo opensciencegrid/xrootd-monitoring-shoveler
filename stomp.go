@@ -48,24 +48,33 @@ func NewStompConnection(username string, password string,
 		stompUrl: stompUrl,
 		topic:    topic,
 	}
+
 	session.handleReconnect()
+
 	return &session
 }
 
 // handleReconnect reconnects to the stomp server
-func (session *StompSession) handleReconnect() error {
+func (session *StompSession) handleReconnect() {
 	// Close the current session
-	session.conn.Disconnect()
-
-	// Start a new session
-	conn, err := stomp.Dial("tcp", session.stompUrl.String(),
-		stomp.ConnOpt.Login(session.username, session.password))
+	err := session.conn.Disconnect()
 	if err != nil {
-		return err
+		log.Errorln("Error handling the diconnection:", err.Error())
 	}
 
-	session.conn = conn
-	return nil
+reconnectLoop:
+	for {
+		// Start a new session
+		conn, err := stomp.Dial("tcp", session.stompUrl.String(),
+			stomp.ConnOpt.Login(session.username, session.password))
+		if err == nil {
+			session.conn = conn
+			break reconnectLoop
+		} else {
+			log.Errorln("Failed to reconnect, retrying:", err.Error())
+			<-time.After(reconnectDelay)
+		}
+	}
 }
 
 // publish will send the message to the stomp message bus
@@ -80,16 +89,7 @@ sendMessageLoop:
 
 		if err != nil {
 			log.Errorln("Failed to publish message:", err)
-		reconnectLoop:
-			for {
-				reconnectError := session.handleReconnect()
-				if reconnectError == nil {
-					break reconnectLoop
-				} else {
-					log.Errorln("Failed to reconnect, retrying:", reconnectError.Error())
-					<-time.After(reconnectDelay)
-				}
-			}
+			session.handleReconnect()
 		} else {
 			break sendMessageLoop
 		}
