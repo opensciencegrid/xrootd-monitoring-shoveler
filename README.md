@@ -11,7 +11,7 @@ Requirements
 2. Outgoing network access to connect to the message bus.
 3. Disk space for a persistent message queue if the shoveler is disconnected from the message bus.
 [Calculations](https://gist.github.com/djw8605/79b3b5a3f5b928f2f50ff469ce57d028) have shown production servers 
-   generate <30 MB of data.
+   generate <30 MB of data a day.
 
 The shoveler can run on a dedicated server or on a shared server.  The shoveler does not require many resources.
 For example, a shoveler serving 12 production XRootD servers can be expected to consume 10-50 MB of ram, 
