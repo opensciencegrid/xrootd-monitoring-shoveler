@@ -57,9 +57,11 @@ func NewStompConnection(username string, password string,
 // handleReconnect reconnects to the stomp server
 func (session *StompSession) handleReconnect() {
 	// Close the current session
-	err := session.conn.Disconnect()
-	if err != nil {
-		log.Errorln("Error handling the diconnection:", err.Error())
+	if session.conn != nil {
+		err := session.conn.Disconnect()
+		if err != nil {
+			log.Errorln("Error handling the diconnection:", err.Error())
+		}
 	}
 
 reconnectLoop:
