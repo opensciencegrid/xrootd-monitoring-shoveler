@@ -14,7 +14,7 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	stompUser := config.StompUser
 	stompPassword := config.StompPassword
 	stompUrl := config.StompURL
-	stompTopic := config.StompTopic
+	stompTopic := "/topic/" + config.StompTopic
 
 	stompSession := NewStompConnection(stompUser, stompPassword,
 		*stompUrl, stompTopic)
@@ -87,7 +87,8 @@ sendMessageLoop:
 		err := session.conn.Send(
 			session.topic,
 			"text/plain",
-			msg)
+			msg,
+			stomp.SendOpt.Receipt)
 
 		if err != nil {
 			log.Errorln("Failed to publish message:", err)
