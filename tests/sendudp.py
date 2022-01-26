@@ -1,6 +1,10 @@
 
+from email import header
 import socket
 import sys
+import struct
+from collections import namedtuple
+import time
 
 def main():
     dest = sys.argv[1]
@@ -11,9 +15,14 @@ def main():
     print("UDP target port:", UDP_PORT)
     print("message:", MESSAGE)
 
+    # Pack the xrootd header
+    Header = namedtuple("header", ["code", "pseq", "plen", "server_start"])
+    header = Header(code=0, pseq=0, plen=len(MESSAGE) + 8, server_start=int(time.time()))
+    buf = struct.pack("!cBHI", header.code.to_bytes(1, byteorder="big"), header.pseq, header.plen, header.server_start) + MESSAGE.encode('utf-8')
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
-    for i in range(100000):
-        sock.sendto(bytes(MESSAGE + str(i), "utf-8"), (UDP_IP, UDP_PORT))
+    for i in range(10):
+        sock.sendto(buf, (UDP_IP, UDP_PORT))
 
 
 if __name__ == "__main__":
