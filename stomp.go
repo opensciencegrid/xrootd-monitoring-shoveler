@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/url"
+	"strings"
 	"time"
 
 	stomp "github.com/go-stomp/stomp/v3"
@@ -14,7 +15,11 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	stompUser := config.StompUser
 	stompPassword := config.StompPassword
 	stompUrl := config.StompURL
-	stompTopic := "/topic/" + config.StompTopic
+	stompTopic := config.StompTopic
+
+	if !strings.HasPrefix(stompTopic, "/topic/") {
+		stompTopic = "/topic/" + stompTopic
+	}
 
 	stompSession := NewStompConnection(stompUser, stompPassword,
 		*stompUrl, stompTopic)
