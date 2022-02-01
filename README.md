@@ -37,6 +37,7 @@ docker or kubernetes.  By default, the config is stored in `/etc/xrootd-monitori
 
 Environment variables:
 
+* SHOVELER_MQ
 * SHOVELER_AMQP_TOKEN_LOCATION
 * SHOVELER_AMQP_URL
 * SHOVELER_AMQP_EXCHANGE
@@ -44,12 +45,18 @@ Environment variables:
 * SHOVELER_LISTEN_IP
 * SHOVELER_VERIFY
 * SHOVELER_QUEUE_DIRECTORY
+* SHOVELER_STOMP_USER
+* SHOVELER_STOMP_PASSWORD
+* SHOVELER_STOMP_URL
+* SHOVELER_STOMP_TOPIC
 
 Message Bus Credentials
 -----------------------
 
-The shoveler uses a [JWT](https://jwt.io/) to authorize with the message bus.  The token will be issued by an 
+When running using AMQP as the protocol to connect the shoveler uses a [JWT](https://jwt.io/) to authorize with the message bus.  The token will be issued by an 
 automated process, but for now, long lived tokens are issued to sites. 
+
+On the other hand, if STOMP is the selected protocol user and password will need to be provided when configuring the shoveler.
 
 Running the Shoveler
 --------------------
