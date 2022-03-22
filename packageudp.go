@@ -22,7 +22,7 @@ func packageUdp(packet []byte, remote *net.UDPAddr) []byte {
 	msg.Data = str
 
 	// add the remote
-	msg.Remote = remote.IP.String()
+	msg.Remote = mapIp(remote)
 	msg.Remote += ":" + strconv.Itoa(remote.Port)
 
 	msg.ShovelerVersion = version
