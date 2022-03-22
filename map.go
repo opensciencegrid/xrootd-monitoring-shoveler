@@ -27,7 +27,7 @@ func mapIp(remote *net.UDPAddr) string {
 	if mapAll != "" {
 		return mapAll
 	}
-	if ipMap == nil || len(ipMap) == 0 {
+	if len(ipMap) == 0 {
 		return remote.IP.String()
 	}
 	return ipMap[remote.IP.String()]
