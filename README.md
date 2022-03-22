@@ -49,6 +49,8 @@ Environment variables:
 * SHOVELER_STOMP_PASSWORD
 * SHOVELER_STOMP_URL
 * SHOVELER_STOMP_TOPIC
+* SHOVELER_METRICS_PORT
+* SHOVELER_METRICS_ENABLE
 
 Message Bus Credentials
 -----------------------
