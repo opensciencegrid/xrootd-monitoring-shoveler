@@ -38,8 +38,13 @@ map:
   172.168.2.7: 129.93.10.5
 `)
 	err = viper.ReadConfig(bytes.NewBuffer(yamlExample))
+	defer viper.Reset()
 	assert.NoError(t, err, "Failed to read config file")
 	configureMap()
+	defer func() {
+		ipMap = nil
+		mapAll = ""
+	}()
 	ip = net.UDPAddr{IP: net.ParseIP("192.168.1.5"), Port: 514}
 	assert.Equal(t, "172.168.1.6", mapIp(&ip), "Test when map is set by config file")
 	ip = net.UDPAddr{IP: net.ParseIP("172.168.2.7"), Port: 514}
