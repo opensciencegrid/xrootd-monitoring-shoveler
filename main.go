@@ -23,6 +23,10 @@ func main() {
 	} else {
 		log.SetLevel(log.WarnLevel)
 	}
+
+	// Configure the mapper
+	configureMap()
+
 	textFormatter := log.TextFormatter{}
 	textFormatter.DisableLevelTruncation = true
 	textFormatter.FullTimestamp = true
@@ -57,7 +61,12 @@ func main() {
 		panic(err)
 	}
 
-	defer conn.Close()
+	defer func(conn *net.UDPConn) {
+		err := conn.Close()
+		if err != nil {
+			log.Errorln("Error closing UDP connection:", err)
+		}
+	}(conn)
 
 	// Create the UDP forwarding destinations
 	var udpDestinations []net.Conn

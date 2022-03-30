@@ -29,4 +29,15 @@ metrics:
 # the queue will be emptied.  The queue on disk is persistent between restarts.
 config_directory: /tmp/shoveler-queue
 
-
+# Mapping configuration
+# If map.all is set, all messages will be mapped to the configured origin.
+# For example, with the configuration
+# map:
+#   all: 172.0.0.4
+# If a packet comes in with the private ip address of 192.168.0.4, the packet origin will be changed to 172.0.0.4
+# The port is always preserved.
+# If you want multiple mappings, you can specify multiple map entries.
+# For example, with the configuration
+# map:
+#   192.168.0.5: 172.0.0.5
+#   192.168.0.6: 129.93.10.7
