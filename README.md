@@ -3,6 +3,25 @@ XRootD Monitoring Shoveler
 
 This shoveler gathers UDP monitoring messages from XRootD servers and sends them to a reliable message bus.
 
+```mermaid
+graph LR
+  subgraph Site
+    subgraph Node 1
+    node1[XRootD] -- UDP --> shoveler1{Shoveler};
+    end
+    subgraph Node 2
+    node2[XRootD] -- UDP --> shoveler1{Shoveler};
+    end
+  end;
+  subgraph OSG Operations
+  shoveler1 -- TCP/TLS --> C[Message Bus];
+  C -- Raw --> D[XRootD Collector];
+  D -- Summary --> C;
+  C --> E[(Storage)];
+  style shoveler1 font-weight:bolder,stroke-width:4px,stroke:#E74C3C,font-size:4em,color:#E74C3C
+  end;
+```
+
 Requirements
 ------------
 
@@ -51,6 +70,7 @@ Environment variables:
 * SHOVELER_STOMP_TOPIC
 * SHOVELER_METRICS_PORT
 * SHOVELER_METRICS_ENABLE
+* SHOVELER_MAP_ALL
 
 Message Bus Credentials
 -----------------------
@@ -92,3 +112,29 @@ are stored in memory.  When the in memory messages reaches over 100, the message
 restarts.
 
 The queue length can be monitored through the prometheus monitoring metric name: `shoveler_queue_size`.
+
+
+IP Mapping
+----------
+
+When the shoveler runs on the same node as the XRootD server, or in the same private network, the IP of the incoming XRootD
+packets may report the private IP address rather than the public IP address.  The public ip address is used for reverse
+DNS lookup when summarizing the records.  You may map incoming IP addresses to other addresses with the `map` configuration value.
+
+To map all incoming messages to a single IP:
+
+```
+map:
+  all: <ip address>
+```
+
+or the environment variable SHOVELER_MAP_ALL=<ip address>
+
+To map multiple ip addresses, the config file would be:
+   
+```
+map:
+   <ip address>: <ip address>
+   <ip address>: <ip address>
+   
+```
