@@ -1,10 +1,49 @@
-XRootD Monitoring Shoveler
-==========================
 
-This shoveler gathers UDP monitoring messages from XRootD servers and sends them to a reliable message bus.
+<div align="center">
 
-Requirements
-------------
+  <h1>XRootD Monitoring Shoveler</h1>
+  
+  <p>
+    This shoveler gathers UDP monitoring messages from XRootD servers and sends them to a reliable message bus.
+  </p>
+  
+  
+<!-- Badges -->
+<p>
+    <img src="https://img.shields.io/github/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/Test?label=Unit%20Testing" alt="Unit Tests" />
+    <img src="https://img.shields.io/github/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/golangci-lint?label=Go%20Linting" alt="Linting" />
+    <img src="https://img.shields.io/github/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/CodeQL?label=CodeQL%20Static%20Analysis" alt="Static Code Analysis" />
+  <a href="https://github.com/opensciencegrid/xrootd-monitoring-shoveler/blob/main/LICENSE.txt">
+    <img src="https://img.shields.io/github/license/opensciencegrid/xrootd-monitoring-shoveler" alt="license" />
+  </a>
+</p>
+   
+<h4>
+    <a href="https://opensciencegrid.org/docs/data/xrootd/install-shoveler/">Documentation</a>
+  <span> · </span>
+    <a href="https://github.com/opensciencegrid/xrootd-monitoring-shoveler/issues/">Report Bug</a>
+  <span> · </span>
+    <a href="https://github.com/opensciencegrid/xrootd-monitoring-shoveler/issues/">Request Feature</a>
+  </h4>
+</div>
+
+<!-- Table of Contents -->
+# :notebook_with_decorative_cover: Table of Contents
+
+- [Getting Started](#getting-started)
+  * [Requirements](#Requirements)
+  * [Installation](#installation)
+  * [Configuration](#Configuration)
+  * [Message Bus Credentials](#message-bus-credentials)
+- [Running the Shoveler](#running-the-shoveler)
+- [Design](#design)
+  * [Queue Design](#queue-design)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
+
+## Getting Started
+
+### Requirements
 
 1. An open UDP port from the XRootD servers, defaults to port 9993.  The port does not need to be open to the public 
    internet, only the XRootD servers.
@@ -17,13 +56,11 @@ The shoveler can run on a dedicated server or on a shared server.  The shoveler 
 For example, a shoveler serving 12 production XRootD servers can be expected to consume 10-50 MB of ram, 
 and require a small fraction of a CPU.
 
-Installation
-------------
+### :gear: Installation
 
 Binaries and packages are provided in the latest Github [releases](https://github.com/opensciencegrid/xrootd-monitoring-shoveler/releases).
 
-Configuration
--------------
+### Configuration
 
 The shoveler will read from:
 
@@ -52,16 +89,19 @@ Environment variables:
 * SHOVELER_METRICS_PORT
 * SHOVELER_METRICS_ENABLE
 
-Message Bus Credentials
------------------------
+### Message Bus Credentials
 
 When running using AMQP as the protocol to connect the shoveler uses a [JWT](https://jwt.io/) to authorize with the message bus.  The token will be issued by an 
 automated process, but for now, long lived tokens are issued to sites. 
 
 On the other hand, if STOMP is the selected protocol user and password will need to be provided when configuring the shoveler.
 
-Running the Shoveler
---------------------
+### Packet Verification
+
+If the `verify` option or `SHOVELER_VERIFY` env. var. is set to `true` (the default), the shoveler will perform 
+simple verification that the incoming UDP packets conform to XRootD monitoring packets.
+
+## Running the Shoveler
 
 The shoveler is a statically linked binary, distributed as an RPM and uploaded to docker hub and OSG's container hub.
 You will need to configure the config.yaml before starting.
@@ -75,15 +115,9 @@ From Docker, you can start the container from the OSG hub with the following com
 
     docker run -v config.yaml:/etc/xrootd-monitoring-shoveler/config.yaml hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler
 
+## :compass: Design 
 
-Packet Verification
--------------------
-
-If the `verify` option or `SHOVELER_VERIFY` env. var. is set to `true` (the default), the shoveler will perform 
-simple verification that the incoming UDP packets conform to XRootD monitoring packets.
-
-Queue Design
-------------
+### Queue Design
 
 The shoveler receives UDP packets and stores them onto a queue before being sent to the message bus.  100 messages 
 are stored in memory.  When the in memory messages reaches over 100, the messages are written to disk under the 
@@ -92,3 +126,12 @@ are stored in memory.  When the in memory messages reaches over 100, the message
 restarts.
 
 The queue length can be monitored through the prometheus monitoring metric name: `shoveler_queue_size`.
+
+## :warning: License
+
+Distributed under the [Apache 2.0](https://choosealicense.com/licenses/apache-2.0/) License. See LICENSE.txt for more information.
+
+
+## :gem: Acknowledgements
+
+This project is supported by the National Science Foundation under Cooperative Agreements [OAC-2030508](https://www.nsf.gov/awardsearch/showAward?AWD_ID=2030508) and [OAC-1836650](https://www.nsf.gov/awardsearch/showAward?AWD_ID=1836650).
