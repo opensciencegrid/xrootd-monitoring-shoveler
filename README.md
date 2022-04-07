@@ -6,8 +6,7 @@
   <p>
     This shoveler gathers UDP monitoring messages from XRootD servers and sends them to a reliable message bus.
   </p>
-  
-  
+
 <!-- Badges -->
 <p>
     <img src="https://img.shields.io/github/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/Test?label=Unit%20Testing" alt="Unit Tests" />
@@ -27,14 +26,35 @@
   </h4>
 </div>
 
+```mermaid
+graph LR
+  subgraph Site
+    subgraph Node 1
+    node1[XRootD] -- UDP --> shoveler1{Shoveler};
+    end
+    subgraph Node 2
+    node2[XRootD] -- UDP --> shoveler1{Shoveler};
+    end
+  end;
+  subgraph OSG Operations
+  shoveler1 -- TCP/TLS --> C[Message Bus];
+  C -- Raw --> D[XRootD Collector];
+  D -- Summary --> C;
+  C --> E[(Storage)];
+  style shoveler1 font-weight:bolder,stroke-width:4px,stroke:#E74C3C,font-size:4em,color:#E74C3C
+  end;
+```
+
 <!-- Table of Contents -->
 # :notebook_with_decorative_cover: Table of Contents
 
 - [Getting Started](#getting-started)
   * [Requirements](#Requirements)
   * [Installation](#installation)
-  * [Configuration](#Configuration)
+- [Configuration](#Configuration)
   * [Message Bus Credentials](#message-bus-credentials)
+  * [Packet Verification](#packet-verification)
+  * [IP Mapping](#ip-mapping)
 - [Running the Shoveler](#running-the-shoveler)
 - [Design](#design)
   * [Queue Design](#queue-design)
@@ -60,7 +80,7 @@ and require a small fraction of a CPU.
 
 Binaries and packages are provided in the latest Github [releases](https://github.com/opensciencegrid/xrootd-monitoring-shoveler/releases).
 
-### Configuration
+## Configuration
 
 The shoveler will read from:
 
@@ -88,6 +108,7 @@ Environment variables:
 * SHOVELER_STOMP_TOPIC
 * SHOVELER_METRICS_PORT
 * SHOVELER_METRICS_ENABLE
+* SHOVELER_MAP_ALL
 
 ### Message Bus Credentials
 
@@ -100,6 +121,30 @@ On the other hand, if STOMP is the selected protocol user and password will need
 
 If the `verify` option or `SHOVELER_VERIFY` env. var. is set to `true` (the default), the shoveler will perform 
 simple verification that the incoming UDP packets conform to XRootD monitoring packets.
+
+### IP Mapping
+
+When the shoveler runs on the same node as the XRootD server, or in the same private network, the IP of the incoming XRootD
+packets may report the private IP address rather than the public IP address.  The public ip address is used for reverse
+DNS lookup when summarizing the records.  You may map incoming IP addresses to other addresses with the `map` configuration value.
+
+To map all incoming messages to a single IP:
+
+```
+map:
+  all: <ip address>
+```
+
+or the environment variable SHOVELER_MAP_ALL=<ip address>
+
+To map multiple ip addresses, the config file would be:
+   
+```
+map:
+   <ip address>: <ip address>
+   <ip address>: <ip address>
+   
+```
 
 ## Running the Shoveler
 
@@ -135,3 +180,5 @@ Distributed under the [Apache 2.0](https://choosealicense.com/licenses/apache-2.
 ## :gem: Acknowledgements
 
 This project is supported by the National Science Foundation under Cooperative Agreements [OAC-2030508](https://www.nsf.gov/awardsearch/showAward?AWD_ID=2030508) and [OAC-1836650](https://www.nsf.gov/awardsearch/showAward?AWD_ID=1836650).
+
+
