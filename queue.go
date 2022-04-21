@@ -3,12 +3,13 @@ package main
 import (
 	"container/list"
 	"errors"
-	"github.com/joncrlsn/dque"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"path"
 	"sync"
 	"time"
+
+	"github.com/joncrlsn/dque"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 type MessageStruct struct {
@@ -55,6 +56,11 @@ func (cq *ConfirmationQueue) Init() *ConfirmationQueue {
 	err = cq.diskQueue.TurboOn()
 	if err != nil {
 		log.Errorln("Failed to turn on dque Turbo mode, the queue will be safer but much slower:", err)
+	}
+
+	// Check if we have any messages in the queue
+	if cq.diskQueue.Size() > 0 {
+		cq.usingDisk = true
 	}
 
 	cq.emptyCond = sync.NewCond(&cq.mutex)
