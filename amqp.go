@@ -25,7 +25,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	tokenAge := tokenStat.ModTime()
 	tokenContents, err := readToken(config.AmqpToken)
 	if err != nil {
-		token_monitor(config,0);
+		token_monitor(0);
 		log.Fatalln("Failed to read token, cannot recover")
 	}
 	// Set the username/password
@@ -51,7 +51,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 			for {
 				err = amqpQueue.Push(config.AmqpExchange, msg)
 				if err != nil {
-					token_monitor(config,0);
+					token_monitor(0);
 					// How to handle a failure to push?
 					// The UnsafePush function already should have tried to reconnect
 					log.Errorln("Failed to push message:", err)
@@ -69,7 +69,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 					}
 
 				}
-				token_monitor(config,1);
+				token_monitor(1);
 				break TryPush
 			}
 		}
@@ -88,7 +88,7 @@ func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- 
 		tokenStat, err := os.Stat(config.AmqpToken)
 		if err != nil {
 			log.Fatalln("Failed to stat token file", config.AmqpToken, "error:", err)
-	                token_monitor(config, 0)
+	                token_monitor(0)
 		}
 		newTokenAge := tokenStat.ModTime()
 		if newTokenAge.After(tokenAge) {
@@ -98,7 +98,7 @@ func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- 
 			tokenContents, err := readToken(config.AmqpToken)
 			if err != nil {
 				log.Fatalln("Failed to read token, cannot recover")
-	                        token_monitor(config,0);
+	                        token_monitor(0);
 			}
 
 			// Set the username/password
@@ -110,19 +110,8 @@ func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- 
 	}
 }
 // write a file to monitor the token
-func token_monitor(config *Config, status int){
-        msg := ""
-        if status == 0 {
-             msg = "fail"
-        } else {
-             msg = "ok"
-        }
-        f, err := os.Create(config.TokenMonitorFile)
-        s, err := f.WriteString(msg)
-        if (err != nil || s == 0) {
-             log.Debugln("Cannot write token monitor")
-        }
-        defer f.Close()
+func token_monitor(status float64){
+              tokenMonitor.Set(status);
 }
 
 // Read a message from the queue

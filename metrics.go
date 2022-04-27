@@ -30,6 +30,12 @@ var (
 		Name: "shoveler_queue_size",
 		Help: "The number of messages in the queue",
 	})
+
+	tokenMonitor = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_token_status",
+		Help: "The token status",
+	})
+
 )
 
 func StartMetrics() {
