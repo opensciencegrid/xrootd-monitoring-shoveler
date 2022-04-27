@@ -111,20 +111,20 @@ func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- 
 }
 // write a file to monitor the token
 func token_monitor(config *Config, status int){
-	var msg = ""
-	if status == 0 {
+        msg := ""
+        if status == 0 {
              msg = "fail"
-	} else {
-
+        } else {
              msg = "ok"
-	}
-	f, err := os.Create(config.TokenMonitorFile)
-        f.WriteString(msg)
-	if err != nil {
-	     log.Debugln("Cannot write token monitor")
         }
-	defer f.Close()
+        f, err := os.Create(config.TokenMonitorFile)
+        s, err := f.WriteString(msg)
+        if (err != nil || s == 0) {
+             log.Debugln("Cannot write token monitor")
+        }
+        defer f.Close()
 }
+
 // Read a message from the queue
 func readMsg(messagesQueue chan<- []byte, queue *ConfirmationQueue) {
 	for {
