@@ -23,7 +23,6 @@ type Config struct {
 	StompPassword string
 	StompURL      *url.URL
 	StompTopic    string
-	TokenMonitorFile    string
 }
 
 func (c *Config) ReadConfig() {
@@ -84,9 +83,6 @@ func (c *Config) ReadConfig() {
 	} else {
 		log.Panic("MQ option is not one of the allowed ones (amqp, stomp)")
 	}
-
-	viper.SetDefault("token_monitor_file", "/tmp/shoveler-queue/token-monitor")
-        c.TokenMonitorFile = viper.GetString("token_monitor_file")
 
 	// Get the UDP listening parameters
 	viper.SetDefault("listen.port", 9993)
