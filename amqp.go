@@ -20,6 +20,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	amqpURL := config.AmqpURL
 	tokenStat, err := os.Stat(config.AmqpToken)
 	if err != nil {
+	    token_monitor(0);
 		log.Fatalln("Failed to stat token file:", err)
 	}
 	tokenAge := tokenStat.ModTime()
@@ -31,7 +32,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	// Set the username/password
 	amqpURL.User = url.UserPassword("shoveler", tokenContents)
 	amqpQueue := New(*amqpURL)
-
+    token_monitor(1);
 	// Constantly check for new messages
 	messagesQueue := make(chan []byte)
 	triggerReconnect := make(chan bool)
@@ -87,8 +88,9 @@ func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- 
 		// Recheck the age of the token file
 		tokenStat, err := os.Stat(config.AmqpToken)
 		if err != nil {
+		    token_monitor(0)
 			log.Fatalln("Failed to stat token file", config.AmqpToken, "error:", err)
-	                token_monitor(0)
+	                
 		}
 		newTokenAge := tokenStat.ModTime()
 		if newTokenAge.After(tokenAge) {
@@ -97,8 +99,8 @@ func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- 
 			// New Token, reload the connection
 			tokenContents, err := readToken(config.AmqpToken)
 			if err != nil {
-				log.Fatalln("Failed to read token, cannot recover")
-	                        token_monitor(0);
+			    token_monitor(0);
+				log.Fatalln("Failed to read token, cannot recover")          
 			}
 
 			// Set the username/password
@@ -132,6 +134,7 @@ func readToken(tokenLocation string) (string, error) {
 	// Read in the token file
 	tokenContents, err := ioutil.ReadFile(tokenLocation)
 	if err != nil {
+	    token_monitor(0);
 		log.Errorln("Unable to read file:", tokenLocation)
 		return "", err
 	}
@@ -186,7 +189,6 @@ func (session *Session) handleReconnect() {
 	for {
 		session.isReady = false
 		log.Debugln("Attempting to connect")
-
 		conn, err := session.connect()
 		rabbitmqReconnects.Inc()
 		if err != nil {
@@ -300,12 +302,14 @@ func (session *Session) Push(exchange string, data []byte) error {
 	for {
 		err := session.UnsafePush(exchange, data)
 		if err != nil {
+		    token_monitor(0);
 			log.Warningln("Push failed. Retrying...")
 			select {
 			case <-session.done:
 				return errShutdown
 			case <-time.After(resendDelay):
 			}
+			token_monitor(1);
 			continue
 		}
 		return nil
