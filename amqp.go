@@ -178,17 +178,6 @@ func New(url url.URL) *Session {
 	return &session
 }
 
-// newConnection will close the current connection, cleaning
-// up the go-routines and connections.  Then attempt to reconnect
-func (session *Session) newConnection(url url.URL) {
-	err := session.Close()
-	if err != nil {
-		log.Errorln("Failed to close session:", err)
-	}
-	session.url = url
-	go session.handleReconnect()
-}
-
 // handleReconnect will wait for a connection error on
 // notifyConnClose, and then continuously attempt to reconnect.
 func (session *Session) handleReconnect() {
