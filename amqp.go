@@ -43,7 +43,10 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 		select {
 		case <-triggerReconnect:
 			log.Debugln("Triggering reconnect")
-			amqpQueue.newConnection(*amqpURL)
+			amqpQueue, err = reconnectAmqp(amqpURL, amqpQueue)
+			if err != nil {
+				log.Errorln("Failed to reconnect to AMQP:", err)
+			}
 		case msg := <-messagesQueue:
 			// Handle a new message to put on the message queue
 		TryPush:
@@ -61,7 +64,10 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 					select {
 					case <-triggerReconnect:
 						log.Debugln("Triggering reconnect from within failure")
-						amqpQueue.newConnection(*amqpURL)
+						amqpQueue, err = reconnectAmqp(amqpURL, amqpQueue)
+						if err != nil {
+							log.Errorln("Failed to reconnect to AMQP:", err)
+						}
 					case <-time.After(time.Duration(randSleep) * time.Millisecond):
 						continue TryPush
 					}
@@ -71,6 +77,18 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 			}
 		}
 	}
+}
+
+// reconnectAmqp reconnects to AMQP if something fails or if the token changes.
+// This is safer than just reconnecting, as it will ensure that
+// resources from the previous connection are cleaned up.
+func reconnectAmqp(amqpURL *url.URL, curSession *Session) (*Session, error) {
+	// close the current session
+	curSession.Close()
+
+	// Create a new session and return it
+	newSession := New(*amqpURL)
+	return newSession, nil
 }
 
 // Listen to the channel for messages
