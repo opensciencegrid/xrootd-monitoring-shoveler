@@ -15,6 +15,7 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	stompUser := config.StompUser
 	stompPassword := config.StompPassword
 	stompUrl := config.StompURL
+        stompHost := config.StompHost
 	stompTopic := config.StompTopic
 
 	if !strings.HasPrefix(stompTopic, "/topic/") {
@@ -22,7 +23,7 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	}
 
 	stompSession := NewStompConnection(stompUser, stompPassword,
-		*stompUrl, stompTopic)
+		*stompUrl, stompHost, stompTopic)
 
 	// Message loop, constantly be dequeing and sending the message
 	// No fancy stuff needed
@@ -41,16 +42,18 @@ type StompSession struct {
 	username string
 	password string
 	stompUrl url.URL
+        stompHost string
 	topic    string
 	conn     *stomp.Conn
 }
 
 func NewStompConnection(username string, password string,
-	stompUrl url.URL, topic string) *StompSession {
+	stompUrl url.URL, stompHost string, topic string) *StompSession {
 	session := StompSession{
 		username: username,
 		password: password,
 		stompUrl: stompUrl,
+                stompHost: stompHost,
 		topic:    topic,
 	}
 
@@ -73,7 +76,8 @@ reconnectLoop:
 	for {
 		// Start a new session
 		conn, err := stomp.Dial("tcp", session.stompUrl.String(),
-			stomp.ConnOpt.Login(session.username, session.password))
+			stomp.ConnOpt.Login(session.username, session.password),
+                        stomp.ConnOpt.Host(session.stompHost))
 		if err == nil {
 			session.conn = conn
 			break reconnectLoop

@@ -22,6 +22,7 @@ type Config struct {
 	StompUser     string
 	StompPassword string
 	StompURL      *url.URL
+	StompHost     string
 	StompTopic    string
 }
 
@@ -77,6 +78,9 @@ func (c *Config) ReadConfig() {
 			panic(fmt.Errorf("Fatal error parsing STOMP URL: %s \n", err))
 		}
 		log.Debugln("STOMP URL:", c.StompURL.String())
+
+                c.StompHost = viper.GetString("stomp.host")
+                log.Debugln("STOMP HOST:", c.StompHost)
 
 		c.StompTopic = viper.GetString("stomp.topic")
 		log.Debugln("STOMP Topic:", c.StompTopic)
