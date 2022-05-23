@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/url"
+	"crypto/tls"
 	"strings"
 	"time"
 
@@ -15,15 +16,16 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	stompUser := config.StompUser
 	stompPassword := config.StompPassword
 	stompUrl := config.StompURL
-        stompHost := config.StompHost
+	stompHost := config.StompHost
 	stompTopic := config.StompTopic
+	stompTLS := config.StompTLS
 
 	if !strings.HasPrefix(stompTopic, "/topic/") {
 		stompTopic = "/topic/" + stompTopic
 	}
 
 	stompSession := NewStompConnection(stompUser, stompPassword,
-		*stompUrl, stompHost, stompTopic)
+		*stompUrl, stompHost, stompTopic, stompTLS)
 
 	// Message loop, constantly be dequeing and sending the message
 	// No fancy stuff needed
@@ -45,16 +47,18 @@ type StompSession struct {
         stompHost string
 	topic    string
 	conn     *stomp.Conn
+        stompTLS bool
 }
 
 func NewStompConnection(username string, password string,
-	stompUrl url.URL, stompHost string, topic string) *StompSession {
+	stompUrl url.URL, stompHost string, topic string, stompTLS bool) *StompSession {
 	session := StompSession{
 		username: username,
 		password: password,
 		stompUrl: stompUrl,
-                stompHost: stompHost,
+		stompHost: stompHost,
 		topic:    topic,
+		stompTLS: stompTLS,
 	}
 
 	session.handleReconnect()
@@ -74,16 +78,38 @@ func (session *StompSession) handleReconnect() {
 
 reconnectLoop:
 	for {
-		// Start a new session
-		conn, err := stomp.Dial("tcp", session.stompUrl.String(),
-			stomp.ConnOpt.Login(session.username, session.password),
-                        stomp.ConnOpt.Host(session.stompHost))
-		if err == nil {
-			session.conn = conn
-			break reconnectLoop
-		} else {
-			log.Errorln("Failed to reconnect, retrying:", err.Error())
-			<-time.After(reconnectDelay)
+
+                if session.stompTLS {
+			netConn, err := tls.Dial("tcp", session.stompUrl.String(), &tls.Config{})
+			if err != nil {
+                        	log.Errorln("Failed to reconnect, retrying:", err.Error())
+				<-time.After(reconnectDelay)
+				continue
+			}
+			stompConn, err := stomp.Connect(netConn,
+					stomp.ConnOpt.Login(session.username, session.password),
+					stomp.ConnOpt.Host(session.stompHost))
+			if err != nil {
+				log.Errorln("Failed to reconnect, retrying:", err.Error())
+				<-time.After(reconnectDelay)
+			} else {
+				session.conn = stompConn
+			}
+
+                } else {
+
+			// Start a new session
+			conn, err := stomp.Dial("tcp", session.stompUrl.String(),
+				stomp.ConnOpt.Login(session.username, session.password),
+                        	stomp.ConnOpt.Host(session.stompHost))
+
+			if err == nil {
+				session.conn = conn
+				break reconnectLoop
+			} else {
+				log.Errorln("Failed to reconnect, retrying:", err.Error())
+				<-time.After(reconnectDelay)
+			}
 		}
 	}
 }

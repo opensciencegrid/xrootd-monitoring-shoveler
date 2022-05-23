@@ -24,6 +24,7 @@ type Config struct {
 	StompURL      *url.URL
 	StompHost     string
 	StompTopic    string
+        StompTLS      bool
 }
 
 func (c *Config) ReadConfig() {
@@ -79,11 +80,14 @@ func (c *Config) ReadConfig() {
 		}
 		log.Debugln("STOMP URL:", c.StompURL.String())
 
-                c.StompHost = viper.GetString("stomp.host")
-                log.Debugln("STOMP HOST:", c.StompHost)
+		c.StompHost = viper.GetString("stomp.host")
+		log.Debugln("STOMP HOST:", c.StompHost)
 
 		c.StompTopic = viper.GetString("stomp.topic")
 		log.Debugln("STOMP Topic:", c.StompTopic)
+
+		c.StompTLS = viper.GetBool("stomp.tls")
+                log.Debugln("STOMP TLS status:", c.StompTLS)
 	} else {
 		log.Panic("MQ option is not one of the allowed ones (amqp, stomp)")
 	}
