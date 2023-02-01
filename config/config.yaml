@@ -1,8 +1,21 @@
+# Select which protocol to use in order to connect to the MQ
+mq: amqp/stomp
+
+# If using amqp protocol
 amqp:
   url: amqps://username:password@example.com/vhost
   exchange: shoveled-xrd
   topic:
   token_location: /etc/xrootd-monitoring-shoveler/token
+
+# If using stomp protocol
+stomp:
+  user: username
+  password: password
+  url: messagebroker.org:port
+  topic: mytopic
+  cert: path/to/cert/file
+  certkey: path/to/certkey/file
 
 listen:
   port: 9993
