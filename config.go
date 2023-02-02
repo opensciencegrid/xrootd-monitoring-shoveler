@@ -23,8 +23,8 @@ type Config struct {
 	StompPassword string
 	StompURL      *url.URL
 	StompTopic    string
-  StompCert     string
-  StompCertKey  string
+	StompCert     string
+	StompCertKey  string
 }
 
 func (c *Config) ReadConfig() {
@@ -83,13 +83,13 @@ func (c *Config) ReadConfig() {
 		c.StompTopic = viper.GetString("stomp.topic")
 		log.Debugln("STOMP Topic:", c.StompTopic)
 
-    // Get the STOMP cert
-    c.StompCert = viper.GetString("stomp.cert")
-    log.Debugln("STOMP CERT:", c.StompCert)
+		// Get the STOMP cert
+		c.StompCert = viper.GetString("stomp.cert")
+		log.Debugln("STOMP CERT:", c.StompCert)
 
-    // Get the STOMP certkey
-    c.StompCertKey = viper.GetString("stomp.certkey")
-    log.Debugln("STOMP CERTKEY:", c.StompCertKey)
+		// Get the STOMP certkey
+		c.StompCertKey = viper.GetString("stomp.certkey")
+		log.Debugln("STOMP CERTKEY:", c.StompCertKey)
 	} else {
 		log.Panic("MQ option is not one of the allowed ones (amqp, stomp)")
 	}
