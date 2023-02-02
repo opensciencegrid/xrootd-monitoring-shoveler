@@ -1,5 +1,5 @@
 # Select which protocol to use in order to connect to the MQ
-mq: amqp/stomp
+# mq: amqp/stomp
 
 # If using amqp protocol
 amqp:
