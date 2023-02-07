@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"net/url"
 	"strings"
 	"time"
@@ -16,13 +17,15 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	stompPassword := config.StompPassword
 	stompUrl := config.StompURL
 	stompTopic := config.StompTopic
+	stompCert := config.StompCert
+	stompCertKey := config.StompCertKey
 
 	if !strings.HasPrefix(stompTopic, "/topic/") {
 		stompTopic = "/topic/" + stompTopic
 	}
 
-	stompSession := NewStompConnection(stompUser, stompPassword,
-		*stompUrl, stompTopic)
+	stompSession := GetNewStompConnection(stompUser, stompPassword,
+		*stompUrl, stompTopic, stompCert, stompCertKey)
 
 	// Message loop, constantly be dequeing and sending the message
 	// No fancy stuff needed
@@ -37,21 +40,39 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 
 }
 
+func GetNewStompConnection(username string, password string,
+	stompUrl url.URL, topic string, stompCert string, stompCertKey string) *StompSession {
+	if stompCert != "" && stompCertKey != "" {
+		cert, err := tls.LoadX509KeyPair(stompCert, stompCertKey)
+		if err != nil {
+			log.Errorln("Failed to load certificate:", err)
+		}
+
+		return NewStompConnection(username, password,
+			stompUrl, topic, cert)
+	} else {
+		return NewStompConnection(username, password,
+			stompUrl, topic)
+	}
+}
+
 type StompSession struct {
 	username string
 	password string
 	stompUrl url.URL
 	topic    string
+	cert     []tls.Certificate
 	conn     *stomp.Conn
 }
 
 func NewStompConnection(username string, password string,
-	stompUrl url.URL, topic string) *StompSession {
+	stompUrl url.URL, topic string, cert ...tls.Certificate) *StompSession {
 	session := StompSession{
 		username: username,
 		password: password,
 		stompUrl: stompUrl,
 		topic:    topic,
+		cert:     cert,
 	}
 
 	session.handleReconnect()
@@ -72,8 +93,7 @@ func (session *StompSession) handleReconnect() {
 reconnectLoop:
 	for {
 		// Start a new session
-		conn, err := stomp.Dial("tcp", session.stompUrl.String(),
-			stomp.ConnOpt.Login(session.username, session.password))
+		conn, err := GetStompConnection(session)
 		if err == nil {
 			session.conn = conn
 			break reconnectLoop
@@ -82,6 +102,18 @@ reconnectLoop:
 			<-time.After(reconnectDelay)
 		}
 	}
+}
+
+func GetStompConnection(session *StompSession) (*stomp.Conn, error) {
+	if session.cert != nil {
+		netConn, err := tls.Dial("tcp", session.stompUrl.String(), &tls.Config{Certificates: session.cert})
+		if err != nil {
+			log.Errorln("Failed to connect using TLS:", err.Error())
+		}
+		return stomp.Connect(netConn)
+	}
+	cfg := stomp.ConnOpt.Login(session.username, session.password)
+	return stomp.Dial("tcp", session.stompUrl.String(), cfg)
 }
 
 // publish will send the message to the stomp message bus
