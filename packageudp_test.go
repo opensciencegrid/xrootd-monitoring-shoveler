@@ -2,16 +2,17 @@ package shoveler
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/assert"
 	"net"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestPackageUdp(t *testing.T) {
 
 	// No mapping enabled
 	ip := net.UDPAddr{IP: net.ParseIP("192.168.0.7"), Port: 12345}
-	packaged := packageUdp([]byte("asdf"), &ip)
+	packaged := PackageUdp([]byte("asdf"), &ip)
 	assert.NotEmpty(t, packaged)
 	// Parse back the json
 	var pkg Message
@@ -25,7 +26,7 @@ func TestPackageUdp_Mapping(t *testing.T) {
 	// Mapping enabled
 	ip := net.UDPAddr{IP: net.ParseIP("192.168.0.8"), Port: 12345}
 	mapAll = "172.0.0.9"
-	packaged := packageUdp([]byte("asdf"), &ip)
+	packaged := PackageUdp([]byte("asdf"), &ip)
 	assert.NotEmpty(t, packaged)
 	// Parse back the json
 	var pkg Message
@@ -45,7 +46,7 @@ func TestPackageUdp_MappingMultiple(t *testing.T) {
 	}()
 	ipMap["192.168.0.8"] = "172.0.0.10"
 	ipMap["192.168.0.9"] = "172.0.0.11"
-	packaged := packageUdp([]byte("asdf"), &ip)
+	packaged := PackageUdp([]byte("asdf"), &ip)
 	assert.NotEmpty(t, packaged)
 	// Parse back the json
 	var pkg Message

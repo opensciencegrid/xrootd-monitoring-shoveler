@@ -2,10 +2,11 @@ package shoveler
 
 import (
 	"bytes"
-	"github.com/spf13/viper"
 	"net"
 	"os"
 	"testing"
+
+	"github.com/spf13/viper"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -16,7 +17,7 @@ func TestSingleIp(t *testing.T) {
 	// If the map is not set
 	config := Config{}
 	config.ReadConfig()
-	configureMap()
+	ConfigureMap()
 	ipStr := mapIp(&ip)
 	assert.Equal(t, "192.168.0.5", ipStr, "Test when map is not set")
 
@@ -24,7 +25,7 @@ func TestSingleIp(t *testing.T) {
 	err := os.Setenv("SHOVELER_MAP_ALL", "172.168.0.5")
 	assert.NoError(t, err, "Failed to set environment variable SHOVELER_MAP_ALL")
 	config.ReadConfig()
-	configureMap()
+	ConfigureMap()
 	ipStr = mapIp(&ip)
 	assert.Equal(t, "172.168.0.5", ipStr, "Test when map is set by environment variable")
 
@@ -40,7 +41,7 @@ map:
 	err = viper.ReadConfig(bytes.NewBuffer(yamlExample))
 	defer viper.Reset()
 	assert.NoError(t, err, "Failed to read config file")
-	configureMap()
+	ConfigureMap()
 	defer func() {
 		ipMap = nil
 		mapAll = ""
