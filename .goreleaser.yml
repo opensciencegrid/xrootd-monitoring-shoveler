@@ -120,6 +120,8 @@ dockers:
   - image_templates:
       - "hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler:{{ .Tag }}"
       - "hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler:latest"
+      - "ghcr.io/opensciencegrid/xrootd-monitoring-shoveler:latest"
+      - "ghcr.io/opensciencegrid/xrootd-monitoring-shoveler:{{ .Tag }}"
       - "opensciencegrid/xrootd-monitoring-shoveler:{{ .Tag }}"
       - "opensciencegrid/xrootd-monitoring-shoveler:latest"
     # GOOS of the built binaries/packages that should be used.
