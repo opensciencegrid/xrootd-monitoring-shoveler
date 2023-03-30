@@ -3,6 +3,7 @@ package main
 import (
 	"net"
 
+	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -15,8 +16,14 @@ var (
 var DEBUG bool = false
 
 func main() {
+
+	shoveler.ShovelerVersion = version
+	shoveler.ShovelerCommit = commit
+	shoveler.ShovelerDate = date
+	shoveler.ShovelerBuiltBy = builtBy
+
 	// Load the configuration
-	config := Config{}
+	config := shoveler.Config{}
 	config.ReadConfig()
 	if DEBUG || config.Debug {
 		log.SetLevel(log.DebugLevel)
@@ -25,7 +32,7 @@ func main() {
 	}
 
 	// Configure the mapper
-	configureMap()
+	shoveler.ConfigureMap()
 
 	textFormatter := log.TextFormatter{}
 	textFormatter.DisableLevelTruncation = true
@@ -36,18 +43,20 @@ func main() {
 	log.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date, "built by:", builtBy)
 
 	// Start the message queue
-	cq := NewConfirmationQueue()
+	cq := shoveler.NewConfirmationQueue()
 
 	if config.MQ == "amqp" {
 		// Start the AMQP go func
-		go StartAMQP(&config, cq)
+		go shoveler.StartAMQP(&config, cq)
 	} else if config.MQ == "stomp" {
 		// Start the STOMP go func
-		go StartStomp(&config, cq)
+		go shoveler.StartStomp(&config, cq)
 	}
 
 	// Start the metrics
-	StartMetrics()
+	if config.Metrics {
+		shoveler.StartMetrics(config.MetricsPort)
+	}
 
 	// Process incoming UDP packets
 	addr := net.UDPAddr{
@@ -92,14 +101,14 @@ func main() {
 			// sure what to do, maybe just continue as if nothing happened?
 			continue
 		}
-		packetsReceived.Inc()
+		shoveler.PacketsReceived.Inc()
 
-		if config.Verify && !verifyPacket(buf[:rlen]) {
-			validationsFailed.Inc()
+		if config.Verify && !shoveler.VerifyPacket(buf[:rlen]) {
+			shoveler.ValidationsFailed.Inc()
 			continue
 		}
 
-		msg := packageUdp(buf[:rlen], remote)
+		msg := shoveler.PackageUdp(buf[:rlen], remote)
 
 		// Send the message to the queue
 		log.Debugln("Sending msg:", string(msg))

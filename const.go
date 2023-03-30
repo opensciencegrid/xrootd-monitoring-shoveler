@@ -1,4 +1,4 @@
-package main
+package shoveler
 
 import (
 	"time"
@@ -13,4 +13,11 @@ const (
 
 	// When resending messages the server didn't confirm
 	resendDelay = 5 * time.Second
+)
+
+var (
+	ShovelerVersion string
+	ShovelerCommit  string
+	ShovelerDate    string
+	ShovelerBuiltBy string
 )

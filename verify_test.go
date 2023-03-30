@@ -1,11 +1,11 @@
-package main
+package shoveler
 
 import (
-	"math/rand"
-	"testing"
-	"github.com/stretchr/testify/assert"
 	"bytes"
 	"encoding/binary"
+	"github.com/stretchr/testify/assert"
+	"math/rand"
+	"testing"
 	"time"
 )
 
@@ -25,7 +25,6 @@ func TestGoodVerify(t *testing.T) {
 	assert.NoError(t, err, "Failed to write random to binary buffer")
 
 	assert.True(t, verifyPacket(buf.Bytes()), "Failed to verify packet")
-
 
 }
 

@@ -1,4 +1,4 @@
-package main
+package shoveler
 
 import (
 	"errors"
@@ -186,7 +186,7 @@ func (session *Session) handleReconnect() {
 		log.Debugln("Attempting to connect")
 
 		conn, err := session.connect()
-		rabbitmqReconnects.Inc()
+		RabbitmqReconnects.Inc()
 		if err != nil {
 			log.Warningln("Failed to connect. Retrying:", err.Error())
 

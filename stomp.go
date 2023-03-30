@@ -1,4 +1,4 @@
-package main
+package shoveler
 
 import (
 	"net/url"
