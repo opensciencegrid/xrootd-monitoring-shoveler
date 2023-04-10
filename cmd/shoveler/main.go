@@ -70,6 +70,13 @@ func main() {
 		panic(err)
 	}
 
+	// Set the read buffer size to 1 MB
+	err = conn.SetReadBuffer(1024 * 1024)
+
+	if err != nil {
+		log.Warningln("Failed to set read buffer size to 1 MB:", err)
+	}
+
 	defer func(conn *net.UDPConn) {
 		err := conn.Close()
 		if err != nil {
