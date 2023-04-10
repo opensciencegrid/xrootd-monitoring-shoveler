@@ -1,15 +1,17 @@
-package main
+package shoveler
 
 import (
 	"container/list"
-	"errors"
-	"path"
-	"sync"
-	"time"
-
 	"github.com/joncrlsn/dque"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"path"
+	"sync"
+	"time"
+)
+
+import (
+	"errors"
 )
 
 type MessageStruct struct {
@@ -93,7 +95,7 @@ func (cq *ConfirmationQueue) queueMetrics() {
 		<-ticker.C
 		// Update the prometheus
 		queueSizeInt := cq.Size()
-		queueSize.Set(float64(queueSizeInt))
+		QueueSize.Set(float64(queueSizeInt))
 		log.Debugln("Queue Size:", queueSizeInt)
 
 	}

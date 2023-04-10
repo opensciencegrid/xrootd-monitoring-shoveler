@@ -1,4 +1,4 @@
-package main
+package shoveler
 
 import (
 	"net"
@@ -11,8 +11,8 @@ var (
 	ipMap  map[string]string
 )
 
-// configureMap sets the mapping configuration
-func configureMap() {
+// ConfigureMap sets the mapping configuration
+func ConfigureMap() {
 	// First, check for the map environment variable
 	mapAll = viper.GetString("map.all")
 

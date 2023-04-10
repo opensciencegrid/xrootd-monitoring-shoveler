@@ -1,4 +1,4 @@
-package main
+package shoveler
 
 import (
 	"fmt"
@@ -23,6 +23,8 @@ type Config struct {
 	StompPassword string
 	StompURL      *url.URL
 	StompTopic    string
+	Metrics       bool
+	MetricsPort   int
 	StompCert     string
 	StompCertKey  string
 }
@@ -107,6 +109,8 @@ func (c *Config) ReadConfig() {
 
 	// Metrics defaults
 	viper.SetDefault("metrics.enable", true)
+	c.Metrics = viper.GetBool("metrics.enable")
 	viper.SetDefault("metrics.port", 8000)
+	c.MetricsPort = viper.GetInt("metrics.port")
 
 }

@@ -1,4 +1,4 @@
-package main
+package shoveler
 
 import (
 	"github.com/spf13/viper"

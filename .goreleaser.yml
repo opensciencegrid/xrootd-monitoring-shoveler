@@ -15,7 +15,7 @@ builds:
       - darwin
     id: "xrootd-monitoring-shoveler"
     binary: xrootd-monitoring-shoveler
-    main: .
+    main: ./cmd/shoveler
     ignore:
       - goos: windows
         goarch: arm64
@@ -28,6 +28,18 @@ builds:
     id: "createtoken"
     binary: createtoken
     main: ./cmd/createtoken
+    ignore:
+      - goos: windows
+        goarch: arm64
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    id: "shoveler-status"
+    binary: shoveler-status
+    main: ./cmd/shoveler-status
     ignore:
       - goos: windows
         goarch: arm64
@@ -45,6 +57,7 @@ archives:
     builds:
       - xrootd-monitoring-shoveler
       - createtoken
+      - shoveler-status
     wrap_in_directory: true
 
 checksum:
@@ -68,6 +81,7 @@ nfpms:
     builds:
       - xrootd-monitoring-shoveler
       - createtoken
+      - shoveler-status
     file_name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
     id: xrootd-monitoring-shoveler-nfpms
     vendor: Open Science Grid

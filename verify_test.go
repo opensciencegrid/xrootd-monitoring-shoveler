@@ -1,12 +1,13 @@
-package main
+package shoveler
 
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestGoodVerify tests the good validation
@@ -24,7 +25,7 @@ func TestGoodVerify(t *testing.T) {
 	err = binary.Write(buf, binary.BigEndian, token)
 	assert.NoError(t, err, "Failed to write random to binary buffer")
 
-	assert.True(t, verifyPacket(buf.Bytes()), "Failed to verify packet")
+	assert.True(t, VerifyPacket(buf.Bytes()), "Failed to verify packet")
 
 }
 
@@ -43,5 +44,5 @@ func TestBadVerify(t *testing.T) {
 	err = binary.Write(buf, binary.BigEndian, token)
 	assert.NoError(t, err, "Failed to write random to binary buffer")
 
-	assert.False(t, verifyPacket(buf.Bytes()), "Failed to verify packet")
+	assert.False(t, VerifyPacket(buf.Bytes()), "Failed to verify packet")
 }

@@ -1,4 +1,4 @@
-package main
+package shoveler
 
 import (
 	"bytes"
@@ -18,7 +18,7 @@ type Header struct {
 
 // verifyPacket will verify the packet matches the expected
 // format from XRootD
-func verifyPacket(packet []byte) bool {
+func VerifyPacket(packet []byte) bool {
 	// Try reading in the header, which is 8 bytes
 	if len(packet) < 8 {
 		// If it is less than 8 bytes, then it can't have the header, and discard it

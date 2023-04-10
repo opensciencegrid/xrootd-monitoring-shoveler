@@ -1,4 +1,4 @@
-package main
+package shoveler
 
 import (
 	"encoding/base64"
@@ -15,7 +15,7 @@ type Message struct {
 	Data            string `json:"data"`
 }
 
-func packageUdp(packet []byte, remote *net.UDPAddr) []byte {
+func PackageUdp(packet []byte, remote *net.UDPAddr) []byte {
 	msg := Message{}
 	// Base64 encode the packet
 	str := base64.StdEncoding.EncodeToString(packet)
@@ -25,7 +25,7 @@ func packageUdp(packet []byte, remote *net.UDPAddr) []byte {
 	msg.Remote = mapIp(remote)
 	msg.Remote += ":" + strconv.Itoa(remote.Port)
 
-	msg.ShovelerVersion = version
+	msg.ShovelerVersion = ShovelerVersion
 
 	b, err := json.Marshal(msg)
 

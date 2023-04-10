@@ -38,9 +38,12 @@ func main() {
 		jwt.StandardClaims
 	}
 
+	// scopes
+	// "my_rabbit_server.write:xrd-mon/" + *exchangePtr + " my_rabbit_server.read:xrd-mon/" + *exchangePtr + " my_rabbit_server.configure:xrd-mon/" + *exchangePtr,
+
 	// Create the Claims
 	claims := MyCustomClaims{
-		"my_rabbit_server.write:xrd-mon/" + *exchangePtr + " my_rabbit_server.read:xrd-mon/" + *exchangePtr + " my_rabbit_server.configure:xrd-mon/" + *exchangePtr,
+		"my_rabbit_server.write:xrd-mon/" + *exchangePtr,
 		jwt.StandardClaims{
 			ExpiresAt: time.Now().Add(time.Hour * time.Duration(*hoursPtr)).Unix(),
 			Issuer:    "test",
