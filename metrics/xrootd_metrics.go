@@ -248,7 +248,7 @@ func GetSIDRest(info []byte) (UserId, string, error) {
 	// form: 82215220691948@localhost
 	sidAtHostname := sidInfo[len(sidInfo)-1]
 	sidAtHostnameInfo := strings.SplitN(sidAtHostname, "@", 2)
-	sid, err := strconv.Atoi(sidAtHostnameInfo[0])
+	sid, err := strconv.ParseUint(sidAtHostnameInfo[0], 10, 32)
 	if err != nil {
 		return UserId{}, "", err
 	}
