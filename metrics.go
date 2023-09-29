@@ -31,6 +31,11 @@ var (
 		Name: "shoveler_queue_size",
 		Help: "The number of messages in the queue",
 	})
+
+	MetricsProcessFailures = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_process_failure",
+		Help: "The number of packets that failed to be processed by the metrics library",
+	})
 )
 
 func StartMetrics(metricsPort int) {
@@ -50,5 +55,10 @@ func StartMetrics(metricsPort int) {
 }
 
 func ProcessMetricsPacket(bytes []byte) {
-	metrics.HandlePacket(bytes)
+	err := metrics.HandlePacket(bytes)
+	if err != nil {
+		log.Errorln("Failed to process metrics packet:", err)
+		MetricsProcessFailures.Inc()
+		return
+	}
 }
