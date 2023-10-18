@@ -1,12 +1,14 @@
 package shoveler
 
 import (
+	"net/http"
+	"strconv"
+
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
-	"net/http"
-	"strconv"
 )
 
 var (
@@ -29,6 +31,11 @@ var (
 		Name: "shoveler_queue_size",
 		Help: "The number of messages in the queue",
 	})
+
+	MetricsProcessFailures = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "metrics_process_failure",
+		Help: "The number of packets that failed to be processed by the metrics library",
+	})
 )
 
 func StartMetrics(metricsPort int) {
@@ -45,4 +52,13 @@ func StartMetrics(metricsPort int) {
 		}
 	}()
 
+}
+
+func ProcessMetricsPacket(bytes []byte) {
+	err := metrics.HandlePacket(bytes)
+	if err != nil {
+		log.Errorln("Failed to process metrics packet:", err)
+		MetricsProcessFailures.Inc()
+		return
+	}
 }

@@ -115,6 +115,11 @@ func main() {
 			continue
 		}
 
+		// Send to the metrics processor, if enabled
+		if config.Metrics {
+			shoveler.ProcessMetricsPacket(buf[:rlen])
+		}
+
 		msg := shoveler.PackageUdp(buf[:rlen], remote)
 
 		// Send the message to the queue

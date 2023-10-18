@@ -2,10 +2,9 @@ package shoveler
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
-	"math/rand"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -20,8 +19,10 @@ func TestGoodVerify(t *testing.T) {
 
 	// Generate 8 random bytes
 	token := make([]byte, 8)
-	rand.Seed(time.Now().UnixNano())
-	rand.Read(token)
+	_, err = rand.Read(token)
+	if err != nil {
+		t.Fatal("Failed to generate random bytes:", err)
+	}
 	err = binary.Write(buf, binary.BigEndian, token)
 	assert.NoError(t, err, "Failed to write random to binary buffer")
 
@@ -39,8 +40,10 @@ func TestBadVerify(t *testing.T) {
 
 	// Generate 8 random bytes
 	token := make([]byte, 8)
-	rand.Seed(time.Now().UnixNano())
-	rand.Read(token)
+	_, err = rand.Read(token)
+	if err != nil {
+		t.Fatal("Failed to generate random bytes:", err)
+	}
 	err = binary.Write(buf, binary.BigEndian, token)
 	assert.NoError(t, err, "Failed to write random to binary buffer")
 
