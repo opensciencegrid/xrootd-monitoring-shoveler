@@ -14,6 +14,6 @@ require (
 	github.com/pterm/pterm v0.12.49
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/viper v1.10.0
-	github.com/streadway/amqp v1.0.0
+	github.com/streadway/amqp v1.1.0
 	github.com/stretchr/testify v1.8.4
 )
