@@ -16,3 +16,123 @@ jobs:
       uses: actions/checkout@v4
     - name: Test
       run: go test ./...
+
+  build-packages:
+    strategy:
+      matrix:
+        go-version: [1.21.x]
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v4
+      with:
+        distribution: goreleaser
+        version: latest
+        args: release --skip=publish --snapshot
+
+    - name: List build result
+      run: |
+        tree
+
+    - name: Upload amd64 DEB
+      uses: actions/upload-artifact@v3
+      with:
+        name: amd64-deb
+        path: dist/xrootd-monitoring-shoveler*amd64.deb
+
+    - name: Upload x86_64 RPM
+      uses: actions/upload-artifact@v3
+      with:
+        name: x86_64-rpm
+        path: dist/xrootd-monitoring-shoveler*x86_64.rpm
+
+  test-deb-packages:
+    needs: [ build-packages ]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os-container: ["debian:oldstable","debian:stable","debian:testing","debian:unstable","rockylinux:8","rockylinux:9"]
+
+    steps:
+    - name: Download amd64 DEB
+      if: ${{ startsWith(matrix.os-container, 'debian:') }}
+      uses: actions/download-artifact@v3
+      with:
+        name: amd64-deb
+
+    - name: Download x86_64 RPM
+      if: ${{ startsWith(matrix.os-container, 'rockylinux:') }}
+      uses: actions/download-artifact@v3
+      with:
+        name: x86_64-rpm
+
+    - name: List packages
+      run: |
+        tree
+
+    - name: Start Debian container
+      if: ${{ startsWith(matrix.os-container, 'debian:') }}
+      run: podman run --privileged --detach --name pkgtest --ipc=host -v ${RUNNER_WORKSPACE}:/root ${{ matrix.os-container }} bash -c "apt-get update && apt-get -y install systemd-sysv && /sbin/init"
+
+    - name: Start RockyLinux container
+      if: ${{ startsWith(matrix.os-container, 'rockylinux:') }}
+      run: |
+        podman run --privileged --detach --name pkgtest --ipc=host -v ${RUNNER_WORKSPACE}:/root ${{ matrix.os-container }} bash -c "dnf -y install systemd && /usr/sbin/init"
+
+    - name: Wait until container is ready
+      run: |
+        while ! $(podman top pkgtest | grep -q journald); do
+          sleep 1
+        done
+
+    - name: Install package on Debian
+      if: ${{ startsWith(matrix.os-container, 'debian:') }}
+      run: |
+        podman exec pkgtest bash -c "dpkg -i /root/xrootd-monitoring-shoveler/xrootd-monitoring-shoveler*amd64.deb"
+
+    - name: Install package on RockyLinux
+      if: ${{ startsWith(matrix.os-container, 'rockylinux:') }}
+      run: |
+        podman exec pkgtest bash -c "dnf -y install /root/xrootd-monitoring-shoveler/xrootd-monitoring-shoveler*x86_64.rpm"
+
+    - name: Test createtoken command
+      run: |
+        podman exec pkgtest createtoken --help
+
+    - name: Create basic config file
+      shell: bash
+      run: |
+        cat > ${RUNNER_WORKSPACE}/basic-config.yaml <<EOF
+        mq: stomp
+
+        listen:
+          port: 9993
+          ip: 0.0.0.0
+
+        verify: true
+
+        metrics:
+          enable: true
+          port: 8000
+
+        queue_directory: /var/spool/xrootd-monitoring-shoveler/queue
+        EOF
+        podman exec pkgtest cp /root/basic-config.yaml /etc/xrootd-monitoring-shoveler/config.yaml
+
+    - name: Test shoveler service
+      run: |
+        podman exec pkgtest systemctl start xrootd-monitoring-shoveler
+        podman exec pkgtest systemctl status xrootd-monitoring-shoveler
+
+    - name: Test shoveler-status
+      run: |
+        podman exec pkgtest shoveler-status
