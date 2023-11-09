@@ -8,9 +8,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.4.2
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/joncrlsn/dque v0.0.0-20211108142734-c2ef48c5192a
-	github.com/prometheus/client_golang v1.11.0
-	github.com/prometheus/common v0.32.1 // indirect
-	github.com/prometheus/procfs v0.7.3 // indirect
+	github.com/prometheus/client_golang v1.17.0
 	github.com/pterm/pterm v0.12.49
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/viper v1.10.0
