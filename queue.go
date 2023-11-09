@@ -44,7 +44,7 @@ func ItemBuilder() interface{} {
 // Init initializes the queue
 func (cq *ConfirmationQueue) Init() *ConfirmationQueue {
 	// Set the attributes
-	viper.SetDefault("queue_directory", "/tmp/shoveler-queue")
+	viper.SetDefault("queue_directory", "/var/spool/xrootd-monitoring-shoveler/queue")
 	queueDir := viper.GetString("queue_directory")
 
 	qName := path.Base(queueDir)
