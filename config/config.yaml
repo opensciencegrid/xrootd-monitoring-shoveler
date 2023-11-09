@@ -39,8 +39,8 @@ metrics:
 # Directory to store overflow of queue onto disk.
 # The queue keeps 100 messages in memory.  If the shoveler is disconnected from the message bus,
 # it will store messages over the 100 in memory onto disk into this directory.  Once the connection has been re-established
-# the queue will be emptied.  The queue on disk is persistent between restarts.
-queue_directory: /tmp/shoveler-queue
+# the queue will be emptied.  The queue on disk is persistent between restarts, so a persistent directory should be used.
+queue_directory: /var/spool/xrootd-monitoring-shoveler/queue
 
 # Mapping configuration
 # If map.all is set, all messages will be mapped to the configured origin.
