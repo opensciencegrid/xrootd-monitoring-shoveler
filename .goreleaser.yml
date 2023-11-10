@@ -121,6 +121,8 @@ nfpms:
           preinstall: "scripts/rpm-preinstall.sh"
       deb:
         file_name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Release }}_{{ .Arch }}"
+        scripts:
+          preinstall: "scripts/deb-preinstall.sh"
 
 dockers:
   - image_templates:
