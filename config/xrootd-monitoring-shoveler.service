@@ -1,9 +1,13 @@
 [Unit]
 Description=XRootD Monitoring Shoveler for sending UDP Monitoring packets to a message bus
+Requires=network-online.target
+After=network-online.target
 
 [Service]
 ExecStart=/usr/bin/xrootd-monitoring-shoveler
 EnvironmentFile=-/etc/sysconfig/xrootd-monitoring-shoveler
+User=xrootd-monitoring-shoveler
+Group=xrootd-monitoring-shoveler
 
 [Install]
 WantedBy=multi-user.target
