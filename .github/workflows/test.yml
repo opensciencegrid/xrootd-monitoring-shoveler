@@ -57,7 +57,7 @@ jobs:
         name: x86_64-rpm
         path: dist/xrootd-monitoring-shoveler*x86_64.rpm
 
-  test-deb-packages:
+  test-packages:
     needs: [ build-packages ]
     runs-on: ubuntu-latest
     strategy:
