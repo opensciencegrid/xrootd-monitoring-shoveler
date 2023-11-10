@@ -117,6 +117,8 @@ nfpms:
           {{- else }}{{ .Arch }}{{ end }}
         dependencies:
         - systemd
+        scripts:
+          preinstall: "scripts/rpm-preinstall.sh"
       deb:
         file_name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Release }}_{{ .Arch }}"
 
