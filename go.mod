@@ -11,7 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.17.0
 	github.com/pterm/pterm v0.12.49
 	github.com/sirupsen/logrus v1.8.1
-	github.com/spf13/viper v1.10.0
+	github.com/spf13/viper v1.18.1
 	github.com/streadway/amqp v1.0.0
 	github.com/stretchr/testify v1.8.4
 )
