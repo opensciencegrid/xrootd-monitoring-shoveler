@@ -10,7 +10,7 @@ require (
 	github.com/joncrlsn/dque v0.0.0-20211108142734-c2ef48c5192a
 	github.com/prometheus/client_golang v1.17.0
 	github.com/pterm/pterm v0.12.49
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.18.2
 	github.com/streadway/amqp v1.0.0
 	github.com/stretchr/testify v1.8.4
