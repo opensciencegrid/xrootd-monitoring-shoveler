@@ -103,6 +103,10 @@ nfpms:
         type: "config|noreplace"
       - src: config/xrootd-monitoring-shoveler.service
         dst: /usr/lib/systemd/system/xrootd-monitoring-shoveler.service
+      - dst: /var/spool/xrootd-monitoring-shoveler/queue
+        type: dir
+        file_info:
+          mode: 0700
     overrides:
       rpm:
         file_name_template: >-
