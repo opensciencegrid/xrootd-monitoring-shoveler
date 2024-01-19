@@ -29,7 +29,13 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 
 	// Message loop, constantly be dequeing and sending the message
 	// No fancy stuff needed
+  dt := time.Now()
 	for {
+    // Add reconnection every hour to make sure connection to brokers is kept balanced
+    if time.Now().After(dt.Add(1 * time.Hour)) {
+      stompSession.handleReconnect()
+      dt = time.Now()
+    }
 		msg, err := queue.Dequeue()
 		if err != nil {
 			log.Errorln("Failed to read from queue:", err)
@@ -86,7 +92,7 @@ func (session *StompSession) handleReconnect() {
 	if session.conn != nil {
 		err := session.conn.Disconnect()
 		if err != nil {
-			log.Errorln("Error handling the diconnection:", err.Error())
+			log.Errorln("Error handling the disconnection:", err.Error())
 		}
 	}
 
