@@ -92,6 +92,9 @@ An example configuration file, [config.yaml](config/config.yaml) is in the repo.
 file has a corresponding environment variable, listed below.  The environment variables are useful for deployment in 
 docker or kubernetes.  By default, the config is stored in `/etc/xrootd-monitoring-shoveler`.
 
+When running as a daemon, environment variables can still be used for configuration. The service will be looking for
+them under `/etc/sysconfig/xrootd-monitoring-shoveler`.
+
 Environment variables:
 
 * SHOVELER_MQ

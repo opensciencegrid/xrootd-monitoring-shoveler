@@ -3,6 +3,7 @@ Description=XRootD Monitoring Shoveler for sending UDP Monitoring packets to a m
 
 [Service]
 ExecStart=/usr/bin/xrootd-monitoring-shoveler
+EnvironmentFile=-/etc/sysconfig/xrootd-monitoring-shoveler
 
 [Install]
 WantedBy=multi-user.target
