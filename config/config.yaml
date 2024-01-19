@@ -8,14 +8,14 @@ amqp:
   topic:
   token_location: /etc/xrootd-monitoring-shoveler/token
 
-# If using stomp protocol
-stomp:
-  user: username
-  password: password
-  url: messagebroker.org:port
-  topic: mytopic
-  cert: path/to/cert/file
-  certkey: path/to/certkey/file
+# If using stomp protocol please configure the following commented lines as needed
+#stomp:
+#  user: username
+#  password: password
+#  url: messagebroker.org:port
+#  topic: mytopic
+#  cert: path/to/cert/file
+#  certkey: path/to/certkey/file
 
 listen:
   port: 9993
