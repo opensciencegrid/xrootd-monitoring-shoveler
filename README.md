@@ -8,16 +8,19 @@
   </p>
 
 <!-- Badges -->
-<p>
-    <img src="https://img.shields.io/github/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/Test?label=Unit%20Testing" alt="Unit Tests" />
-    <img src="https://img.shields.io/github/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/golangci-lint?label=Go%20Linting" alt="Linting" />
-    <img src="https://img.shields.io/github/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/CodeQL?label=CodeQL%20Static%20Analysis" alt="Static Code Analysis" />
-  <a href="https://github.com/opensciencegrid/xrootd-monitoring-shoveler/blob/main/LICENSE.txt">
-    <img src="https://img.shields.io/github/license/opensciencegrid/xrootd-monitoring-shoveler" alt="license" />
-  </a>
-</p>
-   
-<h4>
+  <p>
+    <img src="https://img.shields.io/github/actions/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/test.yml?label=Unit%20Testing" alt="Unit Tests" />
+    <img src="https://img.shields.io/github/actions/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/golangci-lint.yml?label=Go%20Linting" alt="Linting" />
+    <img src="https://img.shields.io/github/actions/workflow/status/opensciencegrid/xrootd-monitoring-shoveler/codeql-analysis.yml?label=CodeQL%20Static%20Analysis" alt="Static Code Analysis" />
+    <a href="https://pkg.go.dev/github.com/opensciencegrid/xrootd-monitoring-shoveler">
+       <img src="https://pkg.go.dev/badge/github.com/opensciencegrid/xrootd-monitoring-shoveler.svg" alt="Go Reference">
+    </a>
+    <a href="https://github.com/opensciencegrid/xrootd-monitoring-shoveler/blob/main/LICENSE.txt">
+       <img src="https://img.shields.io/github/license/opensciencegrid/xrootd-monitoring-shoveler" alt="license" />
+    </a>
+  </p>
+ 
+  <h4>
     <a href="https://opensciencegrid.org/docs/data/xrootd/install-shoveler/">Documentation</a>
   <span> · </span>
     <a href="https://github.com/opensciencegrid/xrootd-monitoring-shoveler/issues/">Report Bug</a>
@@ -48,18 +51,19 @@ graph LR
 <!-- Table of Contents -->
 # :notebook_with_decorative_cover: Table of Contents
 
-- [Getting Started](#getting-started)
-  * [Requirements](#Requirements)
-  * [Installation](#installation)
-- [Configuration](#Configuration)
-  * [Message Bus Credentials](#message-bus-credentials)
-  * [Packet Verification](#packet-verification)
-  * [IP Mapping](#ip-mapping)
-- [Running the Shoveler](#running-the-shoveler)
-- [Design](#design)
-  * [Queue Design](#queue-design)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
+- [:notebook\_with\_decorative\_cover: Table of Contents](#notebook_with_decorative_cover-table-of-contents)
+  - [Getting Started](#getting-started)
+    - [Requirements](#requirements)
+    - [:gear: Installation](#gear-installation)
+  - [Configuration](#configuration)
+    - [Message Bus Credentials](#message-bus-credentials)
+    - [Packet Verification](#packet-verification)
+    - [IP Mapping](#ip-mapping)
+  - [Running the Shoveler](#running-the-shoveler)
+  - [:compass: Design](#compass-design)
+    - [Queue Design](#queue-design)
+  - [:warning: License](#warning-license)
+  - [:gem: Acknowledgements](#gem-acknowledgements)
 
 ## Getting Started
 
