@@ -7,7 +7,6 @@ import (
 	"time"
 
 	stomp "github.com/go-stomp/stomp/v3"
-	log "github.com/sirupsen/logrus"
 )
 
 func StartStomp(config *Config, queue *ConfirmationQueue) {

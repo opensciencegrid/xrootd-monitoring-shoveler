@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net"
 	"strconv"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type Message struct {

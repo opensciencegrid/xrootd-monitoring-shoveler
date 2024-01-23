@@ -3,8 +3,6 @@ package shoveler
 import (
 	"bytes"
 	"encoding/binary"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // Header is the XRootD structure
