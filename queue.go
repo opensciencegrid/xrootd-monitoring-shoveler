@@ -2,16 +2,15 @@ package shoveler
 
 import (
 	"container/list"
+
 	"github.com/joncrlsn/dque"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
+
+	"errors"
 	"path"
 	"sync"
 	"time"
-)
 
-import (
-	"errors"
+	"github.com/spf13/viper"
 )
 
 type MessageStruct struct {

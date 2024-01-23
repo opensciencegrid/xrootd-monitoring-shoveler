@@ -2,14 +2,12 @@ package shoveler
 
 import (
 	"errors"
-	"io/ioutil"
 	"math/rand"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 )
 
@@ -139,7 +137,7 @@ func readMsg(messagesQueue chan<- []byte, queue *ConfirmationQueue) {
 func readToken(tokenLocation string) (string, error) {
 	// Get the token password
 	// Read in the token file
-	tokenContents, err := ioutil.ReadFile(tokenLocation)
+	tokenContents, err := os.ReadFile(tokenLocation)
 	if err != nil {
 		log.Errorln("Unable to read file:", tokenLocation)
 		return "", err

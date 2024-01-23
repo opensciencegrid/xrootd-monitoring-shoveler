@@ -4,7 +4,7 @@ import (
 	"net"
 
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -22,25 +22,29 @@ func main() {
 	shoveler.ShovelerDate = date
 	shoveler.ShovelerBuiltBy = builtBy
 
+	logger := logrus.New()
+	textFormatter := logrus.TextFormatter{}
+	textFormatter.DisableLevelTruncation = true
+	textFormatter.FullTimestamp = true
+	logrus.SetFormatter(&textFormatter)
+
+	shoveler.SetLogger(logger)
+
 	// Load the configuration
 	config := shoveler.Config{}
 	config.ReadConfig()
-	if DEBUG || config.Debug {
-		log.SetLevel(log.DebugLevel)
-	} else {
-		log.SetLevel(log.WarnLevel)
-	}
 
 	// Configure the mapper
 	shoveler.ConfigureMap()
 
-	textFormatter := log.TextFormatter{}
-	textFormatter.DisableLevelTruncation = true
-	textFormatter.FullTimestamp = true
-	log.SetFormatter(&textFormatter)
+	if DEBUG || config.Debug {
+		logger.SetLevel(logrus.DebugLevel)
+	} else {
+		logger.SetLevel(logrus.WarnLevel)
+	}
 
 	// Log the version information
-	log.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date, "built by:", builtBy)
+	logrus.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date, "built by:", builtBy)
 
 	// Start the message queue
 	cq := shoveler.NewConfirmationQueue()
@@ -64,7 +68,7 @@ func main() {
 		IP:   net.ParseIP(config.ListenIp),
 	}
 	conn, err := net.ListenUDP("udp", &addr)
-	log.Debugln("Listening for UDP messages at:", addr.String())
+	logger.Debugln("Listening for UDP messages at:", addr.String())
 
 	if err != nil {
 		panic(err)
@@ -74,13 +78,13 @@ func main() {
 	err = conn.SetReadBuffer(1024 * 1024)
 
 	if err != nil {
-		log.Warningln("Failed to set read buffer size to 1 MB:", err)
+		logger.Warningln("Failed to set read buffer size to 1 MB:", err)
 	}
 
 	defer func(conn *net.UDPConn) {
 		err := conn.Close()
 		if err != nil {
-			log.Errorln("Error closing UDP connection:", err)
+			logger.Errorln("Error closing UDP connection:", err)
 		}
 	}(conn)
 
@@ -90,10 +94,10 @@ func main() {
 		for _, dest := range config.DestUdp {
 			udpConn, err := net.Dial("udp", dest)
 			if err != nil {
-				log.Warningln("Unable to parse destination:", dest, "Will not forward UDP packets to this destination:", err)
+				logger.Warningln("Unable to parse destination:", dest, "Will not forward UDP packets to this destination:", err)
 			}
 			udpDestinations = append(udpDestinations, udpConn)
-			log.Infoln("Adding udp forward destination:", dest)
+			logger.Infoln("Adding udp forward destination:", dest)
 		}
 	}
 
@@ -103,7 +107,7 @@ func main() {
 		// Do stuff with the read bytes
 		if err != nil {
 			// output errors
-			log.Errorln("Failed to read from UDP connection:", err)
+			logger.Errorln("Failed to read from UDP connection:", err)
 			// If we failed to read from the UDP connection, I'm not
 			// sure what to do, maybe just continue as if nothing happened?
 			continue
@@ -118,7 +122,7 @@ func main() {
 		msg := shoveler.PackageUdp(buf[:rlen], remote)
 
 		// Send the message to the queue
-		log.Debugln("Sending msg:", string(msg))
+		logger.Debugln("Sending msg:", string(msg))
 		cq.Enqueue(msg)
 
 		// Send to the UDP destinations
@@ -126,7 +130,7 @@ func main() {
 			for _, udpConn := range udpDestinations {
 				_, err := udpConn.Write(msg)
 				if err != nil {
-					log.Errorln("Failed to send message to UDP destination "+udpConn.RemoteAddr().String()+":", err)
+					logger.Errorln("Failed to send message to UDP destination "+udpConn.RemoteAddr().String()+":", err)
 				}
 			}
 		}

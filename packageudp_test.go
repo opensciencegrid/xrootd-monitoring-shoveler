@@ -5,11 +5,13 @@ import (
 	"net"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPackageUdp(t *testing.T) {
-
+	log = logrus.New()
+	
 	// No mapping enabled
 	ip := net.UDPAddr{IP: net.ParseIP("192.168.0.7"), Port: 12345}
 	packaged := PackageUdp([]byte("asdf"), &ip)
