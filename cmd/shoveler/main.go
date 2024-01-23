@@ -22,6 +22,14 @@ func main() {
 	shoveler.ShovelerDate = date
 	shoveler.ShovelerBuiltBy = builtBy
 
+	logger := logrus.New()
+	textFormatter := logrus.TextFormatter{}
+	textFormatter.DisableLevelTruncation = true
+	textFormatter.FullTimestamp = true
+	logrus.SetFormatter(&textFormatter)
+
+	shoveler.SetLogger(logger)
+
 	// Load the configuration
 	config := shoveler.Config{}
 	config.ReadConfig()
@@ -29,19 +37,11 @@ func main() {
 	// Configure the mapper
 	shoveler.ConfigureMap()
 
-	logger := logrus.New()
 	if DEBUG || config.Debug {
 		logger.SetLevel(logrus.DebugLevel)
 	} else {
 		logger.SetLevel(logrus.WarnLevel)
 	}
-
-	textFormatter := logrus.TextFormatter{}
-	textFormatter.DisableLevelTruncation = true
-	textFormatter.FullTimestamp = true
-	logrus.SetFormatter(&textFormatter)
-
-	shoveler.SetLogger(logger)
 
 	// Log the version information
 	logrus.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date, "built by:", builtBy)
