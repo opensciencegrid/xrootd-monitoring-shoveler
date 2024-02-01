@@ -34,9 +34,6 @@ func main() {
 	config := shoveler.Config{}
 	config.ReadConfig()
 
-	// Configure the mapper
-	shoveler.ConfigureMap()
-
 	if DEBUG || config.Debug {
 		logger.SetLevel(logrus.DebugLevel)
 	} else {
@@ -47,7 +44,7 @@ func main() {
 	logrus.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date, "built by:", builtBy)
 
 	// Start the message queue
-	cq := shoveler.NewConfirmationQueue()
+	cq := shoveler.NewConfirmationQueue(&config)
 
 	if config.MQ == "amqp" {
 		// Start the AMQP go func
@@ -119,7 +116,7 @@ func main() {
 			continue
 		}
 
-		msg := shoveler.PackageUdp(buf[:rlen], remote)
+		msg := shoveler.PackageUdp(buf[:rlen], remote, &config)
 
 		// Send the message to the queue
 		logger.Debugln("Sending msg:", string(msg))
