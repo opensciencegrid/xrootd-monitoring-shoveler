@@ -19,16 +19,14 @@ func TestSingleIp(t *testing.T) {
 	// If the map is not set
 	config := Config{}
 	config.ReadConfig()
-	ConfigureMap()
-	ipStr := mapIp(&ip)
+	ipStr := mapIp(&ip, &config)
 	assert.Equal(t, "192.168.0.5", ipStr, "Test when map is not set")
 
 	// If the map is set by environment variable
 	err := os.Setenv("SHOVELER_MAP_ALL", "172.168.0.5")
 	assert.NoError(t, err, "Failed to set environment variable SHOVELER_MAP_ALL")
 	config.ReadConfig()
-	ConfigureMap()
-	ipStr = mapIp(&ip)
+	ipStr = mapIp(&ip, &config)
 	assert.Equal(t, "172.168.0.5", ipStr, "Test when map is set by environment variable")
 
 	// If the map is set by config file
@@ -43,13 +41,9 @@ map:
 	err = viper.ReadConfig(bytes.NewBuffer(yamlExample))
 	defer viper.Reset()
 	assert.NoError(t, err, "Failed to read config file")
-	ConfigureMap()
-	defer func() {
-		ipMap = nil
-		mapAll = ""
-	}()
+	config = Config{IpMapAll: viper.GetString("map.all"), IpMap: viper.GetStringMapString("map")}
 	ip = net.UDPAddr{IP: net.ParseIP("192.168.1.5"), Port: 514}
-	assert.Equal(t, "172.168.1.6", mapIp(&ip), "Test when map is set by config file")
+	assert.Equal(t, "172.168.1.6", mapIp(&ip, &config), "Test when map is set by config file")
 	ip = net.UDPAddr{IP: net.ParseIP("172.168.2.7"), Port: 514}
-	assert.Equal(t, "129.93.10.5", mapIp(&ip), "Test when map is set by config file")
+	assert.Equal(t, "129.93.10.5", mapIp(&ip, &config), "Test when map is set by config file")
 }

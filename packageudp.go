@@ -13,14 +13,14 @@ type Message struct {
 	Data            string `json:"data"`
 }
 
-func PackageUdp(packet []byte, remote *net.UDPAddr) []byte {
+func PackageUdp(packet []byte, remote *net.UDPAddr, config *Config) []byte {
 	msg := Message{}
 	// Base64 encode the packet
 	str := base64.StdEncoding.EncodeToString(packet)
 	msg.Data = str
 
 	// add the remote
-	msg.Remote = mapIp(remote)
+	msg.Remote = mapIp(remote, config)
 	msg.Remote += ":" + strconv.Itoa(remote.Port)
 
 	msg.ShovelerVersion = ShovelerVersion
