@@ -28,6 +28,16 @@ func TestGoodVerify(t *testing.T) {
 
 }
 
+func TestVerifySummaryPacket(t *testing.T) {
+	summaryPacket := `<statistics  
+     tod="int64" ver="chars" src=”chars” tos=”int64”
+     pgm=”chars” ins=”chars” pid=”int” site=”chars”>
+	</statistics>
+	`
+
+	assert.True(t, VerifyPacket([]byte(summaryPacket)), "Failed to verify packet")
+}
+
 // TestBadVerify tests the validation if the packets are not good (random bits)
 func TestBadVerify(t *testing.T) {
 	badHeader := Header{}
