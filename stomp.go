@@ -26,17 +26,22 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	stompSession := GetNewStompConnection(stompUser, stompPassword,
 		*stompUrl, stompTopic, stompCert, stompCertKey)
 
-	// Message loop, constantly be dequeing and sending the message
-	// No fancy stuff needed
-	for {
-		msg, err := queue.Dequeue()
-		if err != nil {
-			log.Errorln("Failed to read from queue:", err)
-			continue
-		}
-		stompSession.publish(msg)
-	}
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
 
+	messagesQueue := make(chan []byte)
+	go readMsgStomp(messagesQueue, queue)
+
+	// Message loop, constantly be dequeing and sending the message
+	for {
+		select {
+		// Add reconnection every hour to make sure connection to brokers is kept balanced
+		case <-ticker.C:
+			stompSession.handleReconnect()
+		case msg := <-messagesQueue:
+			stompSession.publish(msg)
+		}
+	}
 }
 
 func GetNewStompConnection(username string, password string,
@@ -79,13 +84,24 @@ func NewStompConnection(username string, password string,
 	return &session
 }
 
+func readMsgStomp(messagesQueue chan<- []byte, queue *ConfirmationQueue) {
+	for {
+		msg, err := queue.Dequeue()
+		if err != nil {
+			log.Errorln("Failed to read from queue:", err)
+			continue
+		}
+		messagesQueue <- msg
+	}
+}
+
 // handleReconnect reconnects to the stomp server
 func (session *StompSession) handleReconnect() {
 	// Close the current session
 	if session.conn != nil {
 		err := session.conn.Disconnect()
 		if err != nil {
-			log.Errorln("Error handling the diconnection:", err.Error())
+			log.Errorln("Error handling the disconnection:", err.Error())
 		}
 	}
 
