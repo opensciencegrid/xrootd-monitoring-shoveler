@@ -6,14 +6,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSingleIp(t *testing.T) {
-	log = logrus.New()
 	ip := net.UDPAddr{IP: net.ParseIP("192.168.0.5"), Port: 514}
 
 	// If the map is not set

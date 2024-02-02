@@ -6,13 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
 // TestQueueInsert tests the good validation
 func TestQueueInsert(t *testing.T) {
-	log = logrus.New()
 	queuePath := path.Join(t.TempDir(), "shoveler-queue")
 	config := Config{QueueDir: queuePath}
 	queue := NewConfirmationQueue(&config)
