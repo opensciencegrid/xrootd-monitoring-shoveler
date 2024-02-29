@@ -107,6 +107,11 @@ jobs:
       run: |
         podman exec pkgtest bash -c "dnf -y install /root/xrootd-monitoring-shoveler/xrootd-monitoring-shoveler*x86_64.rpm"
 
+    - name: Check user/group, permissions on queue directory
+      run: |
+        podman exec pkgtest bash -c "getent passwd xrootd-monitoring-shoveler"
+        podman exec pkgtest bash -c "ls -la /var/spool/"
+
     - name: Test createtoken command
       run: |
         podman exec pkgtest createtoken --help
