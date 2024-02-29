@@ -46,13 +46,13 @@ jobs:
         tree
 
     - name: Upload amd64 DEB
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: amd64-deb
         path: dist/xrootd-monitoring-shoveler*amd64.deb
 
     - name: Upload x86_64 RPM
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: x86_64-rpm
         path: dist/xrootd-monitoring-shoveler*x86_64.rpm
