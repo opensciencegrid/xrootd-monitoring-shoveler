@@ -133,8 +133,8 @@ jobs:
 
     - name: Test shoveler service
       run: |
-        podman exec pkgtest systemctl start xrootd-monitoring-shoveler
-        podman exec pkgtest systemctl status xrootd-monitoring-shoveler
+        podman exec pkgtest systemctl --full --lines=100 start xrootd-monitoring-shoveler
+        podman exec pkgtest systemctl --full --lines=100 status xrootd-monitoring-shoveler
 
     - name: Test shoveler-status
       run: |
