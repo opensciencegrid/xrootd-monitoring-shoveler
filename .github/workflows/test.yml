@@ -68,13 +68,13 @@ jobs:
     steps:
     - name: Download amd64 DEB
       if: ${{ startsWith(matrix.os-container, 'debian:') }}
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: amd64-deb
 
     - name: Download x86_64 RPM
       if: ${{ startsWith(matrix.os-container, 'rockylinux:') }}
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: x86_64-rpm
 
