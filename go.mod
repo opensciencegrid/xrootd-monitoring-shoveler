@@ -13,7 +13,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/viper v1.18.2
 	github.com/streadway/amqp v1.0.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 )
 
 require (
