@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -27,6 +26,9 @@ type Config struct {
 	MetricsPort   int
 	StompCert     string
 	StompCertKey  string
+	QueueDir      string
+	IpMapAll      string
+	IpMap         map[string]string
 }
 
 func (c *Config) ReadConfig() {
@@ -113,4 +115,13 @@ func (c *Config) ReadConfig() {
 	viper.SetDefault("metrics.port", 8000)
 	c.MetricsPort = viper.GetInt("metrics.port")
 
+	viper.SetDefault("queue_directory", "/var/spool/xrootd-monitoring-shoveler/queue")
+	c.QueueDir = viper.GetString("queue_directory")
+
+	// Configure the mapper
+	// First, check for the map environment variable
+	c.IpMapAll = viper.GetString("map.all")
+
+	// If the map is not set
+	c.IpMap = viper.GetStringMapString("map")
 }

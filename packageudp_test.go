@@ -9,10 +9,10 @@ import (
 )
 
 func TestPackageUdp(t *testing.T) {
-
 	// No mapping enabled
 	ip := net.UDPAddr{IP: net.ParseIP("192.168.0.7"), Port: 12345}
-	packaged := PackageUdp([]byte("asdf"), &ip)
+	config := Config{}
+	packaged := PackageUdp([]byte("asdf"), &ip, &config)
 	assert.NotEmpty(t, packaged)
 	// Parse back the json
 	var pkg Message
@@ -25,8 +25,8 @@ func TestPackageUdp(t *testing.T) {
 func TestPackageUdp_Mapping(t *testing.T) {
 	// Mapping enabled
 	ip := net.UDPAddr{IP: net.ParseIP("192.168.0.8"), Port: 12345}
-	mapAll = "172.0.0.9"
-	packaged := PackageUdp([]byte("asdf"), &ip)
+	config := Config{IpMapAll: "172.0.0.9"}
+	packaged := PackageUdp([]byte("asdf"), &ip, &config)
 	assert.NotEmpty(t, packaged)
 	// Parse back the json
 	var pkg Message
@@ -34,19 +34,16 @@ func TestPackageUdp_Mapping(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "172.0.0.9:12345", pkg.Remote, "Remote IP should be the same")
 	assert.Equal(t, "YXNkZg==", pkg.Data, "Data should be base64 encoded")
-	mapAll = ""
 }
 
 func TestPackageUdp_MappingMultiple(t *testing.T) {
 	// Mapping enabled
 	ip := net.UDPAddr{IP: net.ParseIP("192.168.0.8"), Port: 12345}
-	ipMap = make(map[string]string)
-	defer func() {
-		ipMap = nil
-	}()
-	ipMap["192.168.0.8"] = "172.0.0.10"
-	ipMap["192.168.0.9"] = "172.0.0.11"
-	packaged := PackageUdp([]byte("asdf"), &ip)
+	config := Config{}
+	config.IpMap = make(map[string]string)
+	config.IpMap["192.168.0.8"] = "172.0.0.10"
+	config.IpMap["192.168.0.9"] = "172.0.0.11"
+	packaged := PackageUdp([]byte("asdf"), &ip, &config)
 	assert.NotEmpty(t, packaged)
 	// Parse back the json
 	var pkg Message

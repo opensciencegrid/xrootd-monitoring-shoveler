@@ -1,12 +1,12 @@
 package shoveler
 
 import (
+	"net/http"
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	log "github.com/sirupsen/logrus"
-	"net/http"
-	"strconv"
 )
 
 var (

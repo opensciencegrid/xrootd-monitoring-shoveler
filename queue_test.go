@@ -1,19 +1,19 @@
 package shoveler
 
 import (
-	"github.com/spf13/viper"
-	"github.com/stretchr/testify/assert"
 	"path"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestQueueInsert tests the good validation
 func TestQueueInsert(t *testing.T) {
 	queuePath := path.Join(t.TempDir(), "shoveler-queue")
-	viper.Set("queue_directory", queuePath)
-	queue := NewConfirmationQueue()
+	config := Config{QueueDir: queuePath}
+	queue := NewConfirmationQueue(&config)
 	defer func(queue *ConfirmationQueue) {
 		err := queue.Close()
 		if err != nil {
@@ -35,8 +35,8 @@ func TestQueueInsert(t *testing.T) {
 // TestQueueEmptyDequeue Make sure the queue stalls on a third dequeue
 func TestQueueEmptyDequeue(t *testing.T) {
 	queuePath := path.Join(t.TempDir(), "shoveler-queue")
-	viper.Set("queue_directory", queuePath)
-	queue := NewConfirmationQueue()
+	config := Config{QueueDir: queuePath}
+	queue := NewConfirmationQueue(&config)
 	queue.Enqueue([]byte("test1"))
 	defer func(queue *ConfirmationQueue) {
 		err := queue.Close()
@@ -72,8 +72,8 @@ func TestQueueEmptyDequeue(t *testing.T) {
 func TestQueueLotsEntries(t *testing.T) {
 
 	queuePath := path.Join(t.TempDir(), "shoveler-queue")
-	viper.Set("queue_directory", queuePath)
-	queue := NewConfirmationQueue()
+	config := Config{QueueDir: queuePath}
+	queue := NewConfirmationQueue(&config)
 	defer func(queue *ConfirmationQueue) {
 		err := queue.Close()
 		if err != nil {

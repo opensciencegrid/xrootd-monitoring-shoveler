@@ -1,10 +1,7 @@
 package shoveler
 
 import (
-	"bytes"
 	"encoding/binary"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // Header is the XRootD structure
@@ -13,7 +10,7 @@ type Header struct {
 	Code        byte
 	Pseq        uint8
 	Plen        uint16
-	ServerStart uint32
+	ServerStart int32
 }
 
 // verifyPacket will verify the packet matches the expected
@@ -25,13 +22,18 @@ func VerifyPacket(packet []byte) bool {
 		log.Infoln("Packet not large enough for XRootD header of 8 bytes, dropping.")
 		return false
 	}
-	header := Header{}
-	buffer := bytes.NewBuffer(packet[:8])
-	err := binary.Read(buffer, binary.BigEndian, &header)
-	if err != nil {
-		log.Warningln("Failed to read the binary packet into header structure:", err)
-		return false
+
+	// XML '<' character indicates a summary packet
+	if len(packet) > 0 && packet[0] == '<' {
+		return true
 	}
+
+	header := Header{}
+	header.Code = packet[0]
+	header.Pseq = packet[1]
+	header.Plen = binary.BigEndian.Uint16(packet[2:4])
+	header.ServerStart = int32(binary.BigEndian.Uint32(packet[4:8]))
+
 	// If the beginning of the packet doesn't match some expectations, then continue
 	if len(packet) != int(header.Plen) {
 		log.Warningln("Packet length does not match header.  Packet:", len(packet), "Header:", int(header.Plen))

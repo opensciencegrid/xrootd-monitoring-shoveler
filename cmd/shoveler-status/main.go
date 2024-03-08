@@ -3,12 +3,6 @@ package main
 import (
 	_ "embed"
 	"errors"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/jessevdk/go-flags"
-	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
-	"github.com/pterm/pterm"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	"io"
 	"math/big"
 	"net/http"
@@ -16,6 +10,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/jessevdk/go-flags"
+	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
+	"github.com/pterm/pterm"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 //go:embed shoveler-public.pem
@@ -27,6 +28,8 @@ var (
 	date    string
 	builtBy string
 )
+
+var logger *logrus.Logger
 
 type Options struct {
 	Verbose []bool `short:"v" long:"verbose" description:"Show verbose debug information"`
@@ -52,6 +55,9 @@ func main() {
 	shoveler.ShovelerDate = date
 	shoveler.ShovelerBuiltBy = builtBy
 
+	logger := logrus.New()
+	shoveler.SetLogger(logger)
+
 	// Parse flags from `args'. Note that here we use flags.ParseArgs for
 	// the sake of making a working example. Normally, you would simply use
 	// flags.Parse(&opts) which uses os.Args
@@ -59,7 +65,7 @@ func main() {
 		if flagsErr, ok := err.(*flags.Error); ok && flagsErr.Type == flags.ErrHelp {
 			os.Exit(0)
 		} else {
-			log.Errorln(err)
+			logger.Errorln(err)
 			os.Exit(1)
 		}
 	}
@@ -69,13 +75,14 @@ func main() {
 	// Load the configuration
 	config := shoveler.Config{}
 	config.ReadConfig()
+
 	if len(options.Verbose) > 0 {
-		log.SetLevel(log.DebugLevel)
+		logger.SetLevel(logrus.DebugLevel)
 		viper.Debug()
 	} else {
-		log.SetLevel(log.WarnLevel)
+		logger.SetLevel(logrus.WarnLevel)
 	}
-	log.Debugln("Using configuration file:", viper.ConfigFileUsed())
+	logger.Debugln("Using configuration file:", viper.ConfigFileUsed())
 	spinnerConfig.Success()
 
 	CheckToken(config)
@@ -83,13 +90,13 @@ func main() {
 	// Try to connect to the prometheus endpoint
 	if !config.Metrics {
 		pterm.Error.Println("Metrics are disabled in the configuration file")
-		log.Errorln("Metrics are disabled in the configuration file, unable to determine if shoveler is running")
+		logger.Errorln("Metrics are disabled in the configuration file, unable to determine if shoveler is running")
 	}
 	// Try downloading the metrics page
 	initialStats, err := CheckPrometheusEndpoint(config.MetricsPort)
 	if err != nil {
 		//pterm.Error.Println("Unable to connect to the shoveler metrics endpoint")
-		log.Errorln("Unable to connect to the shoveler metrics endpoint, unable to determine if shoveler is running", err)
+		logger.Errorln("Unable to connect to the shoveler metrics endpoint, unable to determine if shoveler is running", err)
 		os.Exit(1)
 	}
 
@@ -116,7 +123,7 @@ func main() {
 	secondStats, err := CheckPrometheusEndpoint(config.MetricsPort)
 	if err != nil {
 		spinnerPeriod.Fail("Unable to connect to the shoveler metrics endpoint: ", err)
-		//log.Errorln("Unable to connect to the shoveler metrics endpoint, unable to determine if shoveler is running", err)
+		//logger.Errorln("Unable to connect to the shoveler metrics endpoint, unable to determine if shoveler is running", err)
 		os.Exit(1)
 	}
 
@@ -167,7 +174,7 @@ func CheckToken(config shoveler.Config) {
 	token, err := parser.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		pubKey, err := jwt.ParseRSAPublicKeyFromPEM(publicKey)
 		if err != nil {
-			log.Errorln("Unable to parse the public key:", err)
+			logger.Errorln("Unable to parse the public key:", err)
 			return nil, err
 		}
 		return pubKey, nil
@@ -239,7 +246,7 @@ func CheckPrometheusEndpoint(metricsPort int) (ShovelerStats, error) {
 func parsePrometheusMetric(line string) int64 {
 	flt, _, err := big.ParseFloat(strings.Split(line, " ")[1], 10, 0, big.ToNearestEven)
 	if err != nil {
-		log.Errorln("Unable to parse prometheus metric", line, ":", err)
+		logger.Errorln("Unable to parse prometheus metric", line, ":", err)
 		return 0
 	}
 	int, _ := flt.Int64()

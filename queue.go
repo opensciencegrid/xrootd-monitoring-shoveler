@@ -2,16 +2,13 @@ package shoveler
 
 import (
 	"container/list"
+
 	"github.com/joncrlsn/dque"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
+
+	"errors"
 	"path"
 	"sync"
 	"time"
-)
-
-import (
-	"errors"
 )
 
 type MessageStruct struct {
@@ -33,7 +30,9 @@ var (
 )
 
 // NewConfirmationQueue returns an initialized list.
-func NewConfirmationQueue() *ConfirmationQueue { return new(ConfirmationQueue).Init() }
+func NewConfirmationQueue(config *Config) *ConfirmationQueue {
+	return new(ConfirmationQueue).Init(config)
+}
 
 // ItemBuilder creates a new item and returns a pointer to it.
 // This is used when we load a segment of the queue from disk.
@@ -42,13 +41,9 @@ func ItemBuilder() interface{} {
 }
 
 // Init initializes the queue
-func (cq *ConfirmationQueue) Init() *ConfirmationQueue {
-	// Set the attributes
-	viper.SetDefault("queue_directory", "/tmp/shoveler-queue")
-	queueDir := viper.GetString("queue_directory")
-
-	qName := path.Base(queueDir)
-	qDir := path.Dir(queueDir)
+func (cq *ConfirmationQueue) Init(config *Config) *ConfirmationQueue {
+	qName := path.Base(config.QueueDir)
+	qDir := path.Dir(config.QueueDir)
 	segmentSize := 10000
 	var err error
 	cq.diskQueue, err = dque.NewOrOpen(qName, qDir, segmentSize, ItemBuilder)

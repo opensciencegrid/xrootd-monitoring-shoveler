@@ -5,7 +5,6 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"time"
 
@@ -25,7 +24,7 @@ func main() {
 	}
 
 	// Read in the private key
-	pemString, err := ioutil.ReadFile(flag.Args()[0])
+	pemString, err := os.ReadFile(flag.Args()[0])
 	if err != nil {
 		fmt.Println("Failed to read in private key:", os.Args[1], ":", err)
 		os.Exit(1)
