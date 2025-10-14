@@ -29,7 +29,7 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
-	messagesQueue := make(chan []byte)
+	messagesQueue := make(chan *MessageStruct)
 	go readMsgStomp(messagesQueue, queue)
 
 	// Message loop, constantly be dequeing and sending the message
@@ -38,8 +38,10 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 		// Add reconnection every hour to make sure connection to brokers is kept balanced
 		case <-ticker.C:
 			stompSession.handleReconnect()
-		case msg := <-messagesQueue:
-			stompSession.publish(msg)
+		case msgStruct := <-messagesQueue:
+			// STOMP doesn't support routing keys in the same way as AMQP
+			// so we just send the message body
+			stompSession.publish(msgStruct.Message)
 		}
 	}
 }
@@ -84,7 +86,7 @@ func NewStompConnection(username string, password string,
 	return &session
 }
 
-func readMsgStomp(messagesQueue chan<- []byte, queue *ConfirmationQueue) {
+func readMsgStomp(messagesQueue chan<- *MessageStruct, queue *ConfirmationQueue) {
 	for {
 		msg, err := queue.Dequeue()
 		if err != nil {
