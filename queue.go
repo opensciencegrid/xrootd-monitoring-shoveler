@@ -12,7 +12,8 @@ import (
 )
 
 type MessageStruct struct {
-	Message []byte
+	Message    []byte
+	RoutingKey string
 }
 
 type ConfirmationQueue struct {
@@ -97,27 +98,29 @@ func (cq *ConfirmationQueue) queueMetrics() {
 
 }
 
-// Enqueue the message
-func (cq *ConfirmationQueue) Enqueue(msg []byte) {
+// Enqueue the message with routing key
+func (cq *ConfirmationQueue) Enqueue(msg []byte, routingKey string) {
 	cq.mutex.Lock()
 	defer cq.mutex.Unlock()
 	// Check size of in memory queue
 
+	msgStruct := &MessageStruct{Message: msg, RoutingKey: routingKey}
+
 	// Still using in-memory
 	if !cq.usingDisk && (cq.memQueue.Len()+1) < MaxInMemory {
-		cq.memQueue.PushBack(msg)
+		cq.memQueue.PushBack(msgStruct)
 	} else if !cq.usingDisk && (cq.memQueue.Len()+1) >= MaxInMemory {
 		// Not using disk queue, but the next message would go over MaxInMemory
 		// Transfer everything to the on-disk queue
 		for cq.memQueue.Len() > 0 {
-			toEnqueue := cq.memQueue.Remove(cq.memQueue.Front()).([]byte)
-			err := cq.diskQueue.Enqueue(&MessageStruct{Message: toEnqueue})
+			toEnqueue := cq.memQueue.Remove(cq.memQueue.Front()).(*MessageStruct)
+			err := cq.diskQueue.Enqueue(toEnqueue)
 			if err != nil {
 				log.Errorln("Failed to enqueue message:", err)
 			}
 		}
 		// Enqueue the current
-		err := cq.diskQueue.Enqueue(&MessageStruct{Message: msg})
+		err := cq.diskQueue.Enqueue(msgStruct)
 		if err != nil {
 			log.Errorln("Failed to enqueue message:", err)
 		}
@@ -125,7 +128,7 @@ func (cq *ConfirmationQueue) Enqueue(msg []byte) {
 
 	} else {
 		// Last option is we are using disk
-		err := cq.diskQueue.Enqueue(&MessageStruct{Message: msg})
+		err := cq.diskQueue.Enqueue(msgStruct)
 		if err != nil {
 			log.Errorln("Failed to enqueue message:", err)
 		}
@@ -134,23 +137,26 @@ func (cq *ConfirmationQueue) Enqueue(msg []byte) {
 }
 
 // dequeueLocked dequeues a message, assuming the queue has already been locked
-func (cq *ConfirmationQueue) dequeueLocked() ([]byte, error) {
+func (cq *ConfirmationQueue) dequeueLocked() ([]byte, string, error) {
 	// Check if we have a message available in the queue
 	if !cq.usingDisk && cq.memQueue.Len() == 0 {
-		return nil, ErrEmpty
+		return nil, "", ErrEmpty
 	} else if cq.usingDisk && cq.diskQueue.Size() == 0 {
-		return nil, ErrEmpty
+		return nil, "", ErrEmpty
 	}
 
 	if !cq.usingDisk {
-		return cq.memQueue.Remove(cq.memQueue.Front()).([]byte), nil
+		msgStruct := cq.memQueue.Remove(cq.memQueue.Front()).(*MessageStruct)
+		return msgStruct.Message, msgStruct.RoutingKey, nil
 	} else if cq.usingDisk && (cq.diskQueue.Size()-1) >= LowWaterMark {
 		// If we are using disk, and the on disk size is larger than the low water mark
 		msgStruct, err := cq.diskQueue.Dequeue()
 		if err != nil {
 			log.Errorln("Failed to dequeue: ", err)
+			return nil, "", err
 		}
-		return msgStruct.(*MessageStruct).Message, err
+		msg := msgStruct.(*MessageStruct)
+		return msg.Message, msg.RoutingKey, nil
 	} else {
 		// Using disk, but the next enqueue makes it < LowWaterMark, transfer everything from on disk to in-memory
 		for cq.diskQueue.Size() > 0 {
@@ -158,29 +164,30 @@ func (cq *ConfirmationQueue) dequeueLocked() ([]byte, error) {
 			if err != nil {
 				log.Errorln("Failed to dequeue: ", err)
 			}
-			cq.memQueue.PushBack(msgStruct.(*MessageStruct).Message)
+			cq.memQueue.PushBack(msgStruct.(*MessageStruct))
 		}
 		cq.usingDisk = false
-		return cq.memQueue.Remove(cq.memQueue.Front()).([]byte), nil
+		msgStruct := cq.memQueue.Remove(cq.memQueue.Front()).(*MessageStruct)
+		return msgStruct.Message, msgStruct.RoutingKey, nil
 	}
 
 }
 
-// Dequeue Blocking function to receive a message
-func (cq *ConfirmationQueue) Dequeue() ([]byte, error) {
+// Dequeue Blocking function to receive a message and routing key
+func (cq *ConfirmationQueue) Dequeue() ([]byte, string, error) {
 	cq.mutex.Lock()
 	defer cq.mutex.Unlock()
 	for {
-		msg, err := cq.dequeueLocked()
+		msg, routingKey, err := cq.dequeueLocked()
 		if err == ErrEmpty {
 			cq.emptyCond.Wait()
 			// Wait() atomically unlocks mutexEmptyCond and suspends execution of the calling goroutine.
 			// Receiving the signal does not guarantee an item is available, let's loop and check again.
 			continue
 		} else if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return msg, nil
+		return msg, routingKey, nil
 	}
 }
 

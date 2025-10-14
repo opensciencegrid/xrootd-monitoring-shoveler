@@ -29,7 +29,7 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
-	messagesQueue := make(chan []byte)
+	messagesQueue := make(chan MessageWithKey)
 	go readMsgStomp(messagesQueue, queue)
 
 	// Message loop, constantly be dequeing and sending the message
@@ -38,8 +38,10 @@ func StartStomp(config *Config, queue *ConfirmationQueue) {
 		// Add reconnection every hour to make sure connection to brokers is kept balanced
 		case <-ticker.C:
 			stompSession.handleReconnect()
-		case msg := <-messagesQueue:
-			stompSession.publish(msg)
+		case msgWithKey := <-messagesQueue:
+			// Note: STOMP doesn't use routing keys in the same way as AMQP
+			// but we still need to receive the message with its key
+			stompSession.publish(msgWithKey.Message)
 		}
 	}
 }
@@ -84,14 +86,14 @@ func NewStompConnection(username string, password string,
 	return &session
 }
 
-func readMsgStomp(messagesQueue chan<- []byte, queue *ConfirmationQueue) {
+func readMsgStomp(messagesQueue chan<- MessageWithKey, queue *ConfirmationQueue) {
 	for {
-		msg, err := queue.Dequeue()
+		msg, routingKey, err := queue.Dequeue()
 		if err != nil {
 			log.Errorln("Failed to read from queue:", err)
 			continue
 		}
-		messagesQueue <- msg
+		messagesQueue <- MessageWithKey{Message: msg, RoutingKey: routingKey}
 	}
 }
 

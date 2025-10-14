@@ -20,15 +20,17 @@ func TestQueueInsert(t *testing.T) {
 			assert.NoError(t, err)
 		}
 	}(queue)
-	queue.Enqueue([]byte("test1"))
-	queue.Enqueue([]byte("test2"))
-	msg, err := queue.Dequeue()
+	queue.Enqueue([]byte("test1"), "key1")
+	queue.Enqueue([]byte("test2"), "key2")
+	msg, routingKey, err := queue.Dequeue()
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("test1"), msg)
+	assert.Equal(t, "key1", routingKey)
 
-	msg, err = queue.Dequeue()
+	msg, routingKey, err = queue.Dequeue()
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("test2"), msg)
+	assert.Equal(t, "key2", routingKey)
 
 }
 
@@ -37,19 +39,20 @@ func TestQueueEmptyDequeue(t *testing.T) {
 	queuePath := path.Join(t.TempDir(), "shoveler-queue")
 	config := Config{QueueDir: queuePath}
 	queue := NewConfirmationQueue(&config)
-	queue.Enqueue([]byte("test1"))
+	queue.Enqueue([]byte("test1"), "key1")
 	defer func(queue *ConfirmationQueue) {
 		err := queue.Close()
 		if err != nil {
 			assert.NoError(t, err)
 		}
 	}(queue)
-	msg, err := queue.Dequeue()
+	msg, routingKey, err := queue.Dequeue()
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("test1"), msg)
+	assert.Equal(t, "key1", routingKey)
 	doneChan := make(chan bool)
 	go func() {
-		_, err := queue.Dequeue()
+		_, _, err := queue.Dequeue()
 		assert.NoError(t, err)
 		doneChan <- true
 	}()
@@ -59,7 +62,7 @@ func TestQueueEmptyDequeue(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	queue.Enqueue([]byte("test1"))
+	queue.Enqueue([]byte("test1"), "key1")
 	select {
 	case <-doneChan:
 	case <-time.After(100 * time.Millisecond):
@@ -82,28 +85,30 @@ func TestQueueLotsEntries(t *testing.T) {
 	}(queue)
 	for i := 1; i <= 100000; i++ {
 		msgString := "test." + strconv.Itoa(i)
-		queue.Enqueue([]byte(msgString))
+		queue.Enqueue([]byte(msgString), strconv.Itoa(i))
 	}
 
 	//assert.Equal(t, 100000, queue.Size())
 	for i := 1; i <= 100000; i++ {
 		msgString := "test." + strconv.Itoa(i)
-		msg, err := queue.Dequeue()
+		msg, routingKey, err := queue.Dequeue()
 		assert.NoError(t, err)
 		assert.Equal(t, msgString, string(msg))
+		assert.Equal(t, strconv.Itoa(i), routingKey)
 	}
 	assert.Equal(t, 0, queue.Size())
 	for i := 1; i <= 100000; i++ {
 		msgString := "test." + strconv.Itoa(i)
-		queue.Enqueue([]byte(msgString))
+		queue.Enqueue([]byte(msgString), strconv.Itoa(i))
 	}
 
 	assert.Equal(t, 100000, queue.Size())
 	for i := 1; i <= 100000; i++ {
 		msgString := "test." + strconv.Itoa(i)
-		msg, err := queue.Dequeue()
+		msg, routingKey, err := queue.Dequeue()
 		assert.NoError(t, err)
 		assert.Equal(t, msgString, string(msg))
+		assert.Equal(t, strconv.Itoa(i), routingKey)
 	}
 
 }

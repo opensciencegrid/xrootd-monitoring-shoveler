@@ -30,7 +30,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	amqpQueue := New(*amqpURL)
 
 	// Constantly check for new messages
-	messagesQueue := make(chan []byte)
+	messagesQueue := make(chan MessageWithKey)
 	triggerReconnect := make(chan bool)
 	go readMsg(messagesQueue, queue)
 
@@ -45,11 +45,11 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 			if err != nil {
 				log.Errorln("Failed to reconnect to AMQP:", err)
 			}
-		case msg := <-messagesQueue:
+		case msgWithKey := <-messagesQueue:
 			// Handle a new message to put on the message queue
 		TryPush:
 			for {
-				err = amqpQueue.Push(config.AmqpExchange, msg)
+				err = amqpQueue.Push(config.AmqpExchange, msgWithKey.Message, msgWithKey.RoutingKey)
 				if err != nil {
 					// How to handle a failure to push?
 					// The UnsafePush function already should have tried to reconnect
@@ -121,15 +121,21 @@ func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- 
 	}
 }
 
+// MessageWithKey wraps a message with its routing key
+type MessageWithKey struct {
+	Message    []byte
+	RoutingKey string
+}
+
 // Read a message from the queue
-func readMsg(messagesQueue chan<- []byte, queue *ConfirmationQueue) {
+func readMsg(messagesQueue chan<- MessageWithKey, queue *ConfirmationQueue) {
 	for {
-		msg, err := queue.Dequeue()
+		msg, routingKey, err := queue.Dequeue()
 		if err != nil {
 			log.Errorln("Failed to read from queue:", err)
 			continue
 		}
-		messagesQueue <- msg
+		messagesQueue <- MessageWithKey{Message: msg, RoutingKey: routingKey}
 	}
 }
 
@@ -290,12 +296,12 @@ func (session *Session) changeChannel(channel *amqp.Channel) {
 // it continuously re-sends messages until a confirm is received.
 // This will block until the server sends a confirm. Errors are
 // only returned if the push action itself fails, see UnsafePush.
-func (session *Session) Push(exchange string, data []byte) error {
+func (session *Session) Push(exchange string, data []byte, routingKey string) error {
 	if !session.isReady {
 		return errors.New("failed to push push: not connected")
 	}
 	for {
-		err := session.UnsafePush(exchange, data)
+		err := session.UnsafePush(exchange, data, routingKey)
 		if err != nil {
 			log.Warningln("Push failed. Retrying...")
 			select {
@@ -313,15 +319,15 @@ func (session *Session) Push(exchange string, data []byte) error {
 // confirmation. It returns an error if it fails to connect.
 // No guarantees are provided for whether the server will
 // recieve the message.
-func (session *Session) UnsafePush(exchange string, data []byte) error {
+func (session *Session) UnsafePush(exchange string, data []byte, routingKey string) error {
 	if !session.isReady {
 		return errNotConnected
 	}
 	return session.channel.Publish(
-		exchange, // Exchange
-		"",       // Routing key
-		false,    // Mandatory
-		false,    // Immediate
+		exchange,   // Exchange
+		routingKey, // Routing key
+		false,      // Mandatory
+		false,      // Immediate
 		amqp.Publishing{
 			ContentType: "text/plain",
 			Body:        data,
