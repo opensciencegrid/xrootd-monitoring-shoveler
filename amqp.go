@@ -1,7 +1,11 @@
 package shoveler
 
 import (
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net/url"
 	"os"
@@ -30,7 +34,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	amqpQueue := New(*amqpURL)
 
 	// Constantly check for new messages
-	messagesQueue := make(chan MessageWithKey)
+	messagesQueue := make(chan []byte)
 	triggerReconnect := make(chan bool)
 	go readMsg(messagesQueue, queue)
 
@@ -45,11 +49,15 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 			if err != nil {
 				log.Errorln("Failed to reconnect to AMQP:", err)
 			}
-		case msgWithKey := <-messagesQueue:
+		case msg := <-messagesQueue:
+			// Extract routing key from the message
+			routingKey := extractRoutingKeyFromMessage(msg)
+			log.Debugln("Extracted routing key:", routingKey)
+			
 			// Handle a new message to put on the message queue
 		TryPush:
 			for {
-				err = amqpQueue.Push(config.AmqpExchange, msgWithKey.Message, msgWithKey.RoutingKey)
+				err = amqpQueue.Push(config.AmqpExchange, msg, routingKey)
 				if err != nil {
 					// How to handle a failure to push?
 					// The UnsafePush function already should have tried to reconnect
@@ -121,21 +129,57 @@ func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- 
 	}
 }
 
-// MessageWithKey wraps a message with its routing key
-type MessageWithKey struct {
-	Message    []byte
-	RoutingKey string
+// extractRoutingKeyFromMessage extracts the server startup time from the message
+// to use as a routing key for consistent hashing in RabbitMQ.
+// The message is JSON with a base64-encoded packet in the Data field.
+func extractRoutingKeyFromMessage(messageBytes []byte) string {
+	// Parse the JSON message
+	var msg Message
+	err := json.Unmarshal(messageBytes, &msg)
+	if err != nil {
+		log.Debugln("Failed to unmarshal message for routing key extraction:", err)
+		// Return random routing key on error
+		return fmt.Sprintf("%d", rand.Int31())
+	}
+
+	// Decode the base64 data
+	packetData, err := base64.StdEncoding.DecodeString(msg.Data)
+	if err != nil {
+		log.Debugln("Failed to decode base64 data for routing key extraction:", err)
+		// Return random routing key on error
+		return fmt.Sprintf("%d", rand.Int31())
+	}
+
+	// Check if packet is large enough to have the header
+	if len(packetData) < 8 {
+		log.Debugln("Packet too small for header, using random routing key")
+		// Return random routing key for small packets
+		return fmt.Sprintf("%d", rand.Int31())
+	}
+
+	// Check for special packets (XML or JSON)
+	if len(packetData) > 0 && (packetData[0] == '<' || packetData[0] == '{') {
+		log.Debugln("Special packet detected (XML/JSON), using random routing key")
+		// Return random routing key for special packets
+		return fmt.Sprintf("%d", rand.Int31())
+	}
+
+	// Extract the ServerStart field from the XRootD header (bytes 4-8)
+	serverStart := int32(binary.BigEndian.Uint32(packetData[4:8]))
+	
+	// Use the server start time as the routing key
+	return fmt.Sprintf("%d", serverStart)
 }
 
 // Read a message from the queue
-func readMsg(messagesQueue chan<- MessageWithKey, queue *ConfirmationQueue) {
+func readMsg(messagesQueue chan<- []byte, queue *ConfirmationQueue) {
 	for {
-		msg, routingKey, err := queue.Dequeue()
+		msg, err := queue.Dequeue()
 		if err != nil {
 			log.Errorln("Failed to read from queue:", err)
 			continue
 		}
-		messagesQueue <- MessageWithKey{Message: msg, RoutingKey: routingKey}
+		messagesQueue <- msg
 	}
 }
 
