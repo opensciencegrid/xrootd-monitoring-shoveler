@@ -111,16 +111,27 @@ func main() {
 		}
 		shoveler.PacketsReceived.Inc()
 
-		if config.Verify && !shoveler.VerifyPacket(buf[:rlen]) {
-			shoveler.ValidationsFailed.Inc()
-			continue
+		var routingKey string
+		if config.Verify {
+			routingKey, err = shoveler.VerifyPacket(buf[:rlen])
+			if err != nil {
+				shoveler.ValidationsFailed.Inc()
+				continue
+			}
+		} else {
+			// If verification is disabled, still extract the routing key
+			routingKey, _ = shoveler.VerifyPacket(buf[:rlen])
+			// If we can't get a routing key, use a default one
+			if routingKey == "" {
+				routingKey = "unverified"
+			}
 		}
 
 		msg := shoveler.PackageUdp(buf[:rlen], remote, &config)
 
 		// Send the message to the queue
 		logger.Debugln("Sending msg:", string(msg))
-		cq.Enqueue(msg)
+		cq.Enqueue(msg, routingKey)
 
 		// Send to the UDP destinations
 		if len(udpDestinations) > 0 {
