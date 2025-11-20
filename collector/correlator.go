@@ -3,6 +3,7 @@ package collector
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
@@ -209,6 +210,85 @@ func (c *Correlator) getUserInfo(userID uint32, sid int32) *UserState {
 	return userState
 }
 
+// extractDirnames extracts dirname1, dirname2, and logical_dirname from a filepath
+func extractDirnames(filename string) (dirname1, dirname2, logicalDirname string) {
+	if filename == "" || filename == "unknown" || filename == "/" {
+		return "unknown directory", "unknown directory", "unknown directory"
+	}
+
+	// Split the path by /
+	parts := strings.Split(filename, "/")
+	
+	// dirname1 is the first component (skip empty string from leading /)
+	if len(parts) > 1 && parts[1] != "" {
+		dirname1 = "/" + parts[1]
+	} else {
+		dirname1 = "unknown directory"
+	}
+	
+	// dirname2 is the first 2 components joined with /
+	if len(parts) > 2 && parts[1] != "" {
+		dirname2 = "/" + parts[1] + "/" + parts[2]
+	} else {
+		dirname2 = dirname1
+	}
+	
+	// Determine logical_dirname based on path patterns
+	// Ref: https://github.com/opensciencegrid/xrootd-monitoring-collector/blob/master/Collectors/DetailedCollector.py#L174
+	switch {
+	case strings.HasPrefix(filename, "/user"):
+		logicalDirname = dirname2
+	case strings.HasPrefix(filename, "/osgconnect/public") || strings.HasPrefix(filename, "/osgconnect/protected") || strings.HasPrefix(filename, "/ospool/PROTECTED"):
+		if len(parts) >= 4 {
+			logicalDirname = "/" + strings.Join(parts[1:4], "/")
+		} else {
+			logicalDirname = dirname2
+		}
+	case strings.HasPrefix(filename, "/ospool"):
+		if len(parts) >= 5 {
+			logicalDirname = "/" + strings.Join(parts[1:5], "/")
+		} else {
+			logicalDirname = dirname2
+		}
+	case strings.HasPrefix(filename, "/path-facility"):
+		if len(parts) >= 4 {
+			logicalDirname = "/" + strings.Join(parts[1:4], "/")
+		} else {
+			logicalDirname = dirname2
+		}
+	case strings.HasPrefix(filename, "/hcc"):
+		if len(parts) >= 6 {
+			logicalDirname = "/" + strings.Join(parts[1:6], "/")
+		} else {
+			logicalDirname = dirname2
+		}
+	case strings.HasPrefix(filename, "/pnfs/fnal.gov/usr"):
+		if len(parts) >= 5 {
+			logicalDirname = "/" + strings.Join(parts[1:5], "/")
+		} else {
+			logicalDirname = dirname2
+		}
+	case strings.HasPrefix(filename, "/gwdata"):
+		logicalDirname = dirname2
+	case strings.HasPrefix(filename, "/chtc/"):
+		logicalDirname = "/chtc"
+	case strings.HasPrefix(filename, "/icecube/"):
+		logicalDirname = "/icecube"
+	case strings.HasPrefix(filename, "/igwn"):
+		if len(parts) >= 4 {
+			logicalDirname = "/" + strings.Join(parts[1:4], "/")
+		} else {
+			logicalDirname = dirname2
+		}
+	case strings.HasPrefix(filename, "/store") || strings.HasPrefix(filename, "/user/dteam"):
+		logicalDirname = dirname2
+	default:
+		logicalDirname = "unknown directory"
+	}
+	
+	return dirname1, dirname2, logicalDirname
+}
+
 // createCorrelatedRecord creates a collector record from correlated state
 func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileCloseRecord, packet *parser.Packet) *CollectorRecord {
 	now := time.Now()
@@ -264,6 +344,9 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		}
 	}
 
+	// Extract directory names from filename
+	dirname1, dirname2, logicalDirname := extractDirnames(state.Filename)
+
 	return &CollectorRecord{
 		Timestamp:               now,
 		StartTime:               state.OpenTime,
@@ -278,9 +361,9 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		UserDN:                  userDN,
 		Host:                    host,
 		Filename:                state.Filename,
-		Dirname1:                "unknown directory",
-		Dirname2:                "unknown directory",
-		LogicalDirname:          "unknown directory",
+		Dirname1:                dirname1,
+		Dirname2:                dirname2,
+		LogicalDirname:          logicalDirname,
 		Protocol:                protocol,
 		AppInfo:                 appInfo,
 		IPv6:                    ipv6,

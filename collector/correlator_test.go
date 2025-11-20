@@ -390,3 +390,121 @@ func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
 	assert.Equal(t, "ipv6user", record.User)
 	assert.Equal(t, "2001:db8::1", record.Host)
 }
+
+func TestExtractDirnames(t *testing.T) {
+	tests := []struct {
+		name            string
+		filename        string
+		expectedDir1    string
+		expectedDir2    string
+		expectedLogical string
+	}{
+		{
+			name:            "user path",
+			filename:        "/user/johndoe/data/file.txt",
+			expectedDir1:    "/user",
+			expectedDir2:    "/user/johndoe",
+			expectedLogical: "/user/johndoe",
+		},
+		{
+			name:            "osgconnect public",
+			filename:        "/osgconnect/public/user/project/file.txt",
+			expectedDir1:    "/osgconnect",
+			expectedDir2:    "/osgconnect/public",
+			expectedLogical: "/osgconnect/public/user",
+		},
+		{
+			name:            "ospool path",
+			filename:        "/ospool/ap21/data/username/file.txt",
+			expectedDir1:    "/ospool",
+			expectedDir2:    "/ospool/ap21",
+			expectedLogical: "/ospool/ap21/data/username",
+		},
+		{
+			name:            "path-facility",
+			filename:        "/path-facility/data/username/file.txt",
+			expectedDir1:    "/path-facility",
+			expectedDir2:    "/path-facility/data",
+			expectedLogical: "/path-facility/data/username",
+		},
+		{
+			name:            "hcc path",
+			filename:        "/hcc/part1/part2/part3/part4/part5/file.txt",
+			expectedDir1:    "/hcc",
+			expectedDir2:    "/hcc/part1",
+			expectedLogical: "/hcc/part1/part2/part3/part4",
+		},
+		{
+			name:            "pnfs fnal",
+			filename:        "/pnfs/fnal.gov/usr/dir1/dir2/file.txt",
+			expectedDir1:    "/pnfs",
+			expectedDir2:    "/pnfs/fnal.gov",
+			expectedLogical: "/pnfs/fnal.gov/usr/dir1",
+		},
+		{
+			name:            "gwdata",
+			filename:        "/gwdata/project/file.txt",
+			expectedDir1:    "/gwdata",
+			expectedDir2:    "/gwdata/project",
+			expectedLogical: "/gwdata/project",
+		},
+		{
+			name:            "chtc path",
+			filename:        "/chtc/data/file.txt",
+			expectedDir1:    "/chtc",
+			expectedDir2:    "/chtc/data",
+			expectedLogical: "/chtc",
+		},
+		{
+			name:            "icecube path",
+			filename:        "/icecube/data/file.txt",
+			expectedDir1:    "/icecube",
+			expectedDir2:    "/icecube/data",
+			expectedLogical: "/icecube",
+		},
+		{
+			name:            "igwn path",
+			filename:        "/igwn/ligo/data/file.txt",
+			expectedDir1:    "/igwn",
+			expectedDir2:    "/igwn/ligo",
+			expectedLogical: "/igwn/ligo/data",
+		},
+		{
+			name:            "store path (CMS)",
+			filename:        "/store/user/data/file.txt",
+			expectedDir1:    "/store",
+			expectedDir2:    "/store/user",
+			expectedLogical: "/store/user",
+		},
+		{
+			name:            "unknown path",
+			filename:        "/some/random/path/file.txt",
+			expectedDir1:    "/some",
+			expectedDir2:    "/some/random",
+			expectedLogical: "unknown directory",
+		},
+		{
+			name:            "empty filename",
+			filename:        "",
+			expectedDir1:    "unknown directory",
+			expectedDir2:    "unknown directory",
+			expectedLogical: "unknown directory",
+		},
+		{
+			name:            "root only",
+			filename:        "/",
+			expectedDir1:    "unknown directory",
+			expectedDir2:    "unknown directory",
+			expectedLogical: "unknown directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir1, dir2, logical := extractDirnames(tt.filename)
+			assert.Equal(t, tt.expectedDir1, dir1, "dirname1 mismatch")
+			assert.Equal(t, tt.expectedDir2, dir2, "dirname2 mismatch")
+			assert.Equal(t, tt.expectedLogical, logical, "logical_dirname mismatch")
+		})
+	}
+}
