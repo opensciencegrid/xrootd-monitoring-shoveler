@@ -8,7 +8,26 @@ import (
 	"github.com/spf13/viper"
 )
 
+type InputConfig struct {
+	Type        string // "udp" or "message_bus"
+	Host        string
+	Port        int
+	BufferSize  int
+	BrokerURL   string
+	Topic       string
+	Subscription string
+	Base64Encoded bool
+}
+
+type StateConfig struct {
+	EntryTTL   int // TTL in seconds for state entries
+	MaxEntries int // Max entries in state map (0 for unlimited)
+}
+
 type Config struct {
+	Mode          string   // "shoveling" or "collector"
+	Input         InputConfig
+	State         StateConfig
 	MQ            string   // Which technology to use for the MQ connection
 	AmqpURL       *url.URL // AMQP URL (password comes from the token)
 	AmqpExchange  string   // Exchange to shovel messages
@@ -48,6 +67,29 @@ func (c *Config) ReadConfig() {
 	viper.AutomaticEnv()
 	// Look for environment variables with underscores
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	// Mode configuration - default to "shoveling" for backward compatibility
+	viper.SetDefault("mode", "shoveling")
+	c.Mode = viper.GetString("mode")
+
+	// Input configuration
+	viper.SetDefault("input.type", "udp")
+	c.Input.Type = viper.GetString("input.type")
+	c.Input.Host = viper.GetString("input.host")
+	c.Input.Port = viper.GetInt("input.port")
+	viper.SetDefault("input.buffer_size", 65536)
+	c.Input.BufferSize = viper.GetInt("input.buffer_size")
+	c.Input.BrokerURL = viper.GetString("input.broker_url")
+	c.Input.Topic = viper.GetString("input.topic")
+	c.Input.Subscription = viper.GetString("input.subscription")
+	viper.SetDefault("input.base64_encoded", true)
+	c.Input.Base64Encoded = viper.GetBool("input.base64_encoded")
+
+	// State configuration (for collector mode)
+	viper.SetDefault("state.entry_ttl", 300) // 5 minutes default
+	c.State.EntryTTL = viper.GetInt("state.entry_ttl")
+	viper.SetDefault("state.max_entries", 0) // unlimited by default
+	c.State.MaxEntries = viper.GetInt("state.max_entries")
 
 	viper.SetDefault("mq", "amqp")
 	c.MQ = viper.GetString("mq")

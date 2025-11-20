@@ -29,6 +29,49 @@ var (
 		Name: "shoveler_queue_size",
 		Help: "The number of messages in the queue",
 	})
+
+	// Collector mode metrics
+	PacketsParsedOK = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_packets_parsed_ok",
+		Help: "The total number of packets parsed successfully",
+	})
+
+	ParseErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "shoveler_parse_errors",
+		Help: "The total number of parse errors by reason",
+	}, []string{"reason"})
+
+	TTLEvictions = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_ttl_evictions",
+		Help: "The total number of state entries evicted due to TTL",
+	})
+
+	StateCollisions = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_state_collisions",
+		Help: "The total number of state key collisions",
+	})
+
+	StateSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_state_size",
+		Help: "Current number of entries in the state map",
+	})
+
+	RecordsEmitted = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_records_emitted",
+		Help: "The total number of collector records emitted",
+	})
+
+	ParseTimeMs = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "shoveler_parse_time_ms",
+		Help:    "Packet parsing time in milliseconds",
+		Buckets: prometheus.ExponentialBuckets(0.01, 2, 10),
+	})
+
+	RequestLatencyMs = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "shoveler_request_latency_ms",
+		Help:    "Request latency in milliseconds (collector mode)",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 15),
+	})
 )
 
 func StartMetrics(metricsPort int) {

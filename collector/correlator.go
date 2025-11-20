@@ -1,0 +1,262 @@
+package collector
+
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
+)
+
+// CollectorRecord represents a correlated file access record
+type CollectorRecord struct {
+	Timestamp               time.Time `json:"@timestamp"`
+	StartTime               int64     `json:"start_time"`
+	EndTime                 int64     `json:"end_time"`
+	OperationTime           int64     `json:"operation_time"`
+	ServerID                string    `json:"serverID"`
+	ServerHostname          string    `json:"server_hostname"`
+	Server                  string    `json:"server"`
+	ServerIP                string    `json:"server_ip"`
+	Site                    string    `json:"site"`
+	User                    string    `json:"user"`
+	UserDN                  string    `json:"user_dn"`
+	Host                    string    `json:"host"`
+	Filename                string    `json:"filename"`
+	Dirname1                string    `json:"dirname1"`
+	Dirname2                string    `json:"dirname2"`
+	LogicalDirname          string    `json:"logical_dirname"`
+	Protocol                string    `json:"protocol"`
+	AppInfo                 string    `json:"appinfo"`
+	IPv6                    bool      `json:"ipv6"`
+	Filesize                int64     `json:"filesize"`
+	ReadOperations          int32     `json:"read_operations"`
+	ReadSingleOperations    int32     `json:"read_single_operations"`
+	ReadVectorOperations    int32     `json:"read_vector_operations"`
+	WriteOperations         int32     `json:"write_operations"`
+	Read                    int64     `json:"read"`
+	ReadSingleBytes         int64     `json:"read_single_bytes"`
+	Readv                   int64     `json:"readv"`
+	Write                   int64     `json:"write"`
+	ReadMin                 int32     `json:"read_min"`
+	ReadMax                 int32     `json:"read_max"`
+	ReadAverage             int64     `json:"read_average"`
+	ReadSingleMin           int32     `json:"read_single_min"`
+	ReadSingleMax           int32     `json:"read_single_max"`
+	ReadSingleAverage       int64     `json:"read_single_average"`
+	ReadVectorMin           int32     `json:"read_vector_min"`
+	ReadVectorMax           int32     `json:"read_vector_max"`
+	ReadVectorAverage       int64     `json:"read_vector_average"`
+	WriteMin                int32     `json:"write_min"`
+	WriteMax                int32     `json:"write_max"`
+	WriteAverage            int64     `json:"write_average"`
+	ReadVectorCountMin      int16     `json:"read_vector_count_min"`
+	ReadVectorCountMax      int16     `json:"read_vector_count_max"`
+	ReadVectorCountAverage  float64   `json:"read_vector_count_average"`
+	ReadBytesAtClose        int64     `json:"read_bytes_at_close"`
+	WriteBytesAtClose       int64     `json:"write_bytes_at_close"`
+	HasFileCloseMsg         int       `json:"HasFileCloseMsg"`
+}
+
+// FileState tracks the state of an open file
+type FileState struct {
+	FileID     uint32
+	UserID     uint32
+	OpenTime   int64
+	FileSize   int64
+	Filename   string
+	ServerID   string
+	StreamID   int64
+	CreatedAt  time.Time
+}
+
+// Correlator correlates file open and close events
+type Correlator struct {
+	stateMap *StateMap
+}
+
+// NewCorrelator creates a new correlator
+func NewCorrelator(ttl time.Duration, maxEntries int) *Correlator {
+	return &Correlator{
+		stateMap: NewStateMap(ttl, maxEntries, ttl/10),
+	}
+}
+
+// ProcessPacket processes a packet and returns a record if correlation is complete
+func (c *Correlator) ProcessPacket(packet *parser.Packet) (*CollectorRecord, error) {
+	if packet.IsXML {
+		// XML packets are not correlated
+		return nil, nil
+	}
+
+	for _, rec := range packet.FileRecords {
+		switch r := rec.(type) {
+		case parser.FileOpenRecord:
+			return c.handleFileOpen(r, packet)
+		case parser.FileCloseRecord:
+			return c.handleFileClose(r, packet)
+		case parser.FileTimeRecord:
+			return c.handleTimeRecord(r, packet)
+		}
+	}
+
+	return nil, nil
+}
+
+// handleFileOpen handles a file open event
+func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Packet) (*CollectorRecord, error) {
+	state := &FileState{
+		FileID:    rec.Header.FileId,
+		UserID:    rec.User,
+		OpenTime:  int64(packet.Header.ServerStart),
+		FileSize:  rec.FileSize,
+		Filename:  string(rec.Lfn),
+		CreatedAt: time.Now(),
+	}
+
+	key := fmt.Sprintf("file-%d-%d", rec.Header.FileId, rec.User)
+	c.stateMap.Set(key, state)
+
+	return nil, nil
+}
+
+// handleFileClose handles a file close event
+func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.Packet) (*CollectorRecord, error) {
+	key := fmt.Sprintf("file-%d-%d", rec.Header.FileId, rec.Header.UserId)
+
+	// Try to get the open state
+	val, exists := c.stateMap.Get(key)
+	if !exists {
+		// No open record found, create a standalone close record
+		return c.createStandaloneCloseRecord(rec, packet), nil
+	}
+
+	state, ok := val.(*FileState)
+	if !ok {
+		return nil, fmt.Errorf("invalid state type")
+	}
+
+	// Create correlated record
+	record := c.createCorrelatedRecord(state, rec, packet)
+
+	// Remove from state map
+	c.stateMap.Delete(key)
+
+	return record, nil
+}
+
+// handleTimeRecord handles a time record
+func (c *Correlator) handleTimeRecord(rec parser.FileTimeRecord, packet *parser.Packet) (*CollectorRecord, error) {
+	// Time records can be used to update state or create timing records
+	// For now, we'll store them for potential correlation
+	key := fmt.Sprintf("time-%d-%d", rec.Header.FileId, rec.SID)
+	state := &FileState{
+		FileID:    rec.Header.FileId,
+		UserID:    rec.Header.UserId,
+		OpenTime:  int64(rec.TBeg),
+		StreamID:  rec.SID,
+		CreatedAt: time.Now(),
+	}
+	c.stateMap.Set(key, state)
+	return nil, nil
+}
+
+// createCorrelatedRecord creates a collector record from correlated state
+func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileCloseRecord, packet *parser.Packet) *CollectorRecord {
+	now := time.Now()
+	
+	// Calculate averages
+	var readAvg, readSingleAvg, readVectorAvg, writeAvg int64
+	if rec.Ops.Read > 0 {
+		readAvg = rec.Xfr.Read / int64(rec.Ops.Read)
+		readSingleAvg = rec.Xfr.Read / int64(rec.Ops.Read)
+	}
+	if rec.Ops.Readv > 0 {
+		readVectorAvg = rec.Xfr.Readv / int64(rec.Ops.Readv)
+	}
+	if rec.Ops.Write > 0 {
+		writeAvg = rec.Xfr.Write / int64(rec.Ops.Write)
+	}
+
+	var readvCountAvg float64
+	if rec.Ops.Readv > 0 {
+		readvCountAvg = float64(rec.Ops.Rsegs) / float64(rec.Ops.Readv)
+	}
+
+	return &CollectorRecord{
+		Timestamp:               now,
+		StartTime:               state.OpenTime,
+		EndTime:                 now.Unix(),
+		OperationTime:           now.Unix() - state.OpenTime,
+		ServerID:                fmt.Sprintf("%d#%s", packet.Header.ServerStart, "unknown"),
+		ServerHostname:          "localhost",
+		Server:                  "127.0.0.1",
+		ServerIP:                "127.0.0.1",
+		Site:                    "UNKNOWN",
+		User:                    fmt.Sprintf("%x", state.UserID),
+		UserDN:                  "",
+		Host:                    "unknown",
+		Filename:                state.Filename,
+		Dirname1:                "unknown directory",
+		Dirname2:                "unknown directory",
+		LogicalDirname:          "unknown directory",
+		Protocol:                "unknown",
+		AppInfo:                 "",
+		IPv6:                    false,
+		Filesize:                state.FileSize,
+		ReadOperations:          rec.Ops.Read,
+		ReadSingleOperations:    rec.Ops.Read,
+		ReadVectorOperations:    rec.Ops.Readv,
+		WriteOperations:         rec.Ops.Write,
+		Read:                    rec.Xfr.Read,
+		ReadSingleBytes:         rec.Xfr.Read,
+		Readv:                   rec.Xfr.Readv,
+		Write:                   rec.Xfr.Write,
+		ReadMin:                 rec.Ops.RdMin,
+		ReadMax:                 rec.Ops.RdMax,
+		ReadAverage:             readAvg,
+		ReadSingleMin:           rec.Ops.RdMin,
+		ReadSingleMax:           rec.Ops.RdMax,
+		ReadSingleAverage:       readSingleAvg,
+		ReadVectorMin:           rec.Ops.RvMin,
+		ReadVectorMax:           rec.Ops.RvMax,
+		ReadVectorAverage:       readVectorAvg,
+		WriteMin:                rec.Ops.WrMin,
+		WriteMax:                rec.Ops.WrMax,
+		WriteAverage:            writeAvg,
+		ReadVectorCountMin:      rec.Ops.RsMin,
+		ReadVectorCountMax:      rec.Ops.RsMax,
+		ReadVectorCountAverage:  readvCountAvg,
+		ReadBytesAtClose:        rec.Xfr.Read,
+		WriteBytesAtClose:       rec.Xfr.Write,
+		HasFileCloseMsg:         1,
+	}
+}
+
+// createStandaloneCloseRecord creates a record from just a close event
+func (c *Correlator) createStandaloneCloseRecord(rec parser.FileCloseRecord, packet *parser.Packet) *CollectorRecord {
+	state := &FileState{
+		FileID:   rec.Header.FileId,
+		UserID:   rec.Header.UserId,
+		OpenTime: int64(packet.Header.ServerStart),
+		Filename: "unknown",
+	}
+	return c.createCorrelatedRecord(state, rec, packet)
+}
+
+// ToJSON converts a collector record to JSON
+func (r *CollectorRecord) ToJSON() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+// Stop stops the correlator
+func (c *Correlator) Stop() {
+	if c.stateMap != nil {
+		c.stateMap.Stop()
+	}
+}
+
+// GetStateSize returns the current number of tracked states
+func (c *Correlator) GetStateSize() int {
+	return c.stateMap.Size()
+}
