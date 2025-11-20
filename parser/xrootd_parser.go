@@ -185,19 +185,19 @@ func ParsePacket(b []byte) (*Packet, error) {
 	// Parse based on packet type
 	switch header.Code {
 	case PacketTypeMap:
-		mapRec, err := parseMapRecord(b)
+		mapRec, err := parseMapRecord(header, b)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse map record: %w", err)
 		}
 		packet.MapRecord = mapRec
 	case PacketTypeUser:
-		userRec, err := parseUserRecord(b)
+		userRec, err := parseUserRecord(header, b)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse user record: %w", err)
 		}
 		packet.UserRecord = userRec
 	case PacketTypeFClose, PacketTypeFOpen, PacketTypeXFR, PacketTypeTime:
-		fileRecs, err := parseFileRecords(b, header.Code)
+		fileRecs, err := parseFileRecords(header, b, header.Code)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse file records: %w", err)
 		}
@@ -213,16 +213,9 @@ func ParsePacket(b []byte) (*Packet, error) {
 }
 
 // parseMapRecord parses a dictionary mapping packet
-func parseMapRecord(b []byte) (*MapRecord, error) {
+func parseMapRecord(header Header, b []byte) (*MapRecord, error) {
 	if len(b) < 12 {
 		return nil, fmt.Errorf("map record too short: %d bytes", len(b))
-	}
-
-	header := Header{
-		Code:        b[0],
-		Pseq:        uint8(b[1]),
-		Plen:        binary.BigEndian.Uint16(b[2:4]),
-		ServerStart: int32(binary.BigEndian.Uint32(b[4:8])),
 	}
 
 	dictId := binary.BigEndian.Uint32(b[8:12])
@@ -237,16 +230,9 @@ func parseMapRecord(b []byte) (*MapRecord, error) {
 
 // parseUserRecord parses a user packet (type 'u')
 // Ref: https://xrootd.web.cern.ch/doc/dev6/xrd_monitoring.htm#_Toc204013498
-func parseUserRecord(b []byte) (*UserRecord, error) {
+func parseUserRecord(header Header, b []byte) (*UserRecord, error) {
 	if len(b) < 12 {
 		return nil, fmt.Errorf("user record too short: %d bytes", len(b))
-	}
-
-	header := Header{
-		Code:        b[0],
-		Pseq:        uint8(b[1]),
-		Plen:        binary.BigEndian.Uint16(b[2:4]),
-		ServerStart: int32(binary.BigEndian.Uint32(b[4:8])),
 	}
 
 	dictId := binary.BigEndian.Uint32(b[8:12])
@@ -429,7 +415,7 @@ func bytesplit(b []byte, sep byte) [][]byte {
 }
 
 // parseFileRecords parses file operation records from a packet
-func parseFileRecords(b []byte, packetType byte) ([]interface{}, error) {
+func parseFileRecords(header Header, b []byte, packetType byte) ([]interface{}, error) {
 	if len(b) < 8 {
 		return nil, fmt.Errorf("file record packet too short: %d bytes", len(b))
 	}

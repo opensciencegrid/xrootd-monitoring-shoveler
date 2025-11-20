@@ -179,7 +179,7 @@ func (c *Correlator) handleTimeRecord(rec parser.FileTimeRecord, packet *parser.
 }
 
 // handleUserRecord handles a user packet (type 'u')
-// Stores user information mapped by dictID for later correlation with file operations
+// Stores user information mapped by dictID and SID for later correlation with file operations
 func (c *Correlator) handleUserRecord(rec *parser.UserRecord) {
 	userState := &UserState{
 		UserID:    rec.DictId,
@@ -188,14 +188,14 @@ func (c *Correlator) handleUserRecord(rec *parser.UserRecord) {
 		CreatedAt: time.Now(),
 	}
 	
-	// Store by dictID (which matches the UserID in file operations)
-	key := fmt.Sprintf("user-%d", rec.DictId)
+	// Store by dictID and SID (which matches the UserID and ServerStart in file operations)
+	key := fmt.Sprintf("user-%d-%d", rec.DictId, rec.Header.ServerStart)
 	c.userMap.Set(key, userState)
 }
 
-// getUserInfo retrieves user information for a given userID
-func (c *Correlator) getUserInfo(userID uint32) *UserState {
-	key := fmt.Sprintf("user-%d", userID)
+// getUserInfo retrieves user information for a given userID and SID
+func (c *Correlator) getUserInfo(userID uint32, sid int32) *UserState {
+	key := fmt.Sprintf("user-%d-%d", userID, sid)
 	val, exists := c.userMap.Get(key)
 	if !exists {
 		return nil
@@ -231,8 +231,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		readvCountAvg = float64(rec.Ops.Rsegs) / float64(rec.Ops.Readv)
 	}
 
-	// Get user information if available
-	userInfo := c.getUserInfo(state.UserID)
+	// Get user information if available (using userID and SID)
+	userInfo := c.getUserInfo(state.UserID, packet.Header.ServerStart)
 	
 	// Set defaults
 	user := fmt.Sprintf("%x", state.UserID)

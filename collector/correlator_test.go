@@ -349,6 +349,9 @@ func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
 
 	// Create a user record with IPv6
 	userRec := &parser.UserRecord{
+		Header: parser.Header{
+			ServerStart: 1000, // Must match the SID used in file operations
+		},
 		DictId: 999,
 		UserInfo: parser.UserInfo{
 			Username: "ipv6user",
