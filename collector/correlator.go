@@ -70,15 +70,26 @@ type FileState struct {
 	CreatedAt  time.Time
 }
 
+// UserState tracks user information from user packets
+type UserState struct {
+	UserID       uint32
+	UserInfo     parser.UserInfo
+	AuthInfo     parser.AuthInfo
+	AppInfo      string
+	CreatedAt    time.Time
+}
+
 // Correlator correlates file open and close events
 type Correlator struct {
 	stateMap *StateMap
+	userMap  *StateMap
 }
 
 // NewCorrelator creates a new correlator
 func NewCorrelator(ttl time.Duration, maxEntries int) *Correlator {
 	return &Correlator{
 		stateMap: NewStateMap(ttl, maxEntries, ttl/10),
+		userMap:  NewStateMap(ttl, maxEntries, ttl/10),
 	}
 }
 
@@ -86,6 +97,12 @@ func NewCorrelator(ttl time.Duration, maxEntries int) *Correlator {
 func (c *Correlator) ProcessPacket(packet *parser.Packet) (*CollectorRecord, error) {
 	if packet.IsXML {
 		// XML packets are not correlated
+		return nil, nil
+	}
+
+	// Handle user packets
+	if packet.UserRecord != nil {
+		c.handleUserRecord(packet.UserRecord)
 		return nil, nil
 	}
 
@@ -161,6 +178,37 @@ func (c *Correlator) handleTimeRecord(rec parser.FileTimeRecord, packet *parser.
 	return nil, nil
 }
 
+// handleUserRecord handles a user packet (type 'u')
+// Stores user information mapped by dictID for later correlation with file operations
+func (c *Correlator) handleUserRecord(rec *parser.UserRecord) {
+	userState := &UserState{
+		UserID:    rec.DictId,
+		UserInfo:  rec.UserInfo,
+		AuthInfo:  rec.AuthInfo,
+		CreatedAt: time.Now(),
+	}
+	
+	// Store by dictID (which matches the UserID in file operations)
+	key := fmt.Sprintf("user-%d", rec.DictId)
+	c.userMap.Set(key, userState)
+}
+
+// getUserInfo retrieves user information for a given userID
+func (c *Correlator) getUserInfo(userID uint32) *UserState {
+	key := fmt.Sprintf("user-%d", userID)
+	val, exists := c.userMap.Get(key)
+	if !exists {
+		return nil
+	}
+	
+	userState, ok := val.(*UserState)
+	if !ok {
+		return nil
+	}
+	
+	return userState
+}
+
 // createCorrelatedRecord creates a collector record from correlated state
 func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileCloseRecord, packet *parser.Packet) *CollectorRecord {
 	now := time.Now()
@@ -183,6 +231,39 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		readvCountAvg = float64(rec.Ops.Rsegs) / float64(rec.Ops.Readv)
 	}
 
+	// Get user information if available
+	userInfo := c.getUserInfo(state.UserID)
+	
+	// Set defaults
+	user := fmt.Sprintf("%x", state.UserID)
+	userDN := ""
+	host := "unknown"
+	protocol := "unknown"
+	appInfo := ""
+	ipv6 := false
+	
+	if userInfo != nil {
+		// Use username from userInfo
+		user = userInfo.UserInfo.Username
+		host = userInfo.UserInfo.Host
+		protocol = userInfo.UserInfo.Protocol
+		
+		// Use DN from authInfo
+		if userInfo.AuthInfo.DN != "" {
+			userDN = userInfo.AuthInfo.DN
+		}
+		
+		// Use appInfo if available
+		if userInfo.AppInfo != "" {
+			appInfo = userInfo.AppInfo
+		}
+		
+		// Check if IPv6
+		if userInfo.AuthInfo.InetVersion == "6" {
+			ipv6 = true
+		}
+	}
+
 	return &CollectorRecord{
 		Timestamp:               now,
 		StartTime:               state.OpenTime,
@@ -193,16 +274,16 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		Server:                  "127.0.0.1",
 		ServerIP:                "127.0.0.1",
 		Site:                    "UNKNOWN",
-		User:                    fmt.Sprintf("%x", state.UserID),
-		UserDN:                  "",
-		Host:                    "unknown",
+		User:                    user,
+		UserDN:                  userDN,
+		Host:                    host,
 		Filename:                state.Filename,
 		Dirname1:                "unknown directory",
 		Dirname2:                "unknown directory",
 		LogicalDirname:          "unknown directory",
-		Protocol:                "unknown",
-		AppInfo:                 "",
-		IPv6:                    false,
+		Protocol:                protocol,
+		AppInfo:                 appInfo,
+		IPv6:                    ipv6,
 		Filesize:                state.FileSize,
 		ReadOperations:          rec.Ops.Read,
 		ReadSingleOperations:    rec.Ops.Read,
@@ -254,9 +335,17 @@ func (c *Correlator) Stop() {
 	if c.stateMap != nil {
 		c.stateMap.Stop()
 	}
+	if c.userMap != nil {
+		c.userMap.Stop()
+	}
 }
 
 // GetStateSize returns the current number of tracked states
 func (c *Correlator) GetStateSize() int {
 	return c.stateMap.Size()
+}
+
+// GetUserMapSize returns the current number of tracked users
+func (c *Correlator) GetUserMapSize() int {
+	return c.userMap.Size()
 }

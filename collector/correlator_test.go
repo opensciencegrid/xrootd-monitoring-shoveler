@@ -243,3 +243,147 @@ func TestCollectorRecord_ToJSON(t *testing.T) {
 	assert.Contains(t, string(data), "1024")
 	assert.Contains(t, string(data), "/test.txt")
 }
+
+func TestCorrelator_UserRecord(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0)
+	defer correlator.Stop()
+
+	// Create a user record
+	userRec := &parser.UserRecord{
+		Header: parser.Header{
+			Code:        parser.PacketTypeUser,
+			ServerStart: 1000,
+		},
+		DictId: 456, // This matches the UserID in file operations
+		UserInfo: parser.UserInfo{
+			Protocol: "xrootd",
+			Username: "testuser",
+			Pid:      12345,
+			Sid:      67890,
+			Host:     "client.example.com",
+		},
+		AuthInfo: parser.AuthInfo{
+			AuthProtocol: "gsi",
+			DN:           "/DC=org/DC=example/CN=testuser",
+			Hostname:     "client.example.com",
+			Org:          "ExampleOrg",
+			Role:         "production",
+			InetVersion:  "4",
+		},
+	}
+
+	userPacket := &parser.Packet{
+		Header:     parser.Header{ServerStart: 1000},
+		UserRecord: userRec,
+	}
+
+	// Process user packet
+	rec, err := correlator.ProcessPacket(userPacket)
+	require.NoError(t, err)
+	assert.Nil(t, rec) // User packets don't produce output
+
+	// Verify user map was populated
+	assert.Equal(t, 1, correlator.GetUserMapSize())
+
+	// Now create file open and close with this user ID
+	openRec := parser.FileOpenRecord{
+		Header: parser.FileHeader{
+			RecType: parser.RecTypeOpen,
+			FileId:  123,
+			UserId:  456, // Matches dictId from user record
+		},
+		FileSize: 1024,
+		User:     456,
+		Lfn:      []byte("/path/to/file.txt"),
+	}
+
+	openPacket := &parser.Packet{
+		Header:      parser.Header{ServerStart: 1000},
+		FileRecords: []interface{}{openRec},
+	}
+
+	rec, err = correlator.ProcessPacket(openPacket)
+	require.NoError(t, err)
+	assert.Nil(t, rec)
+
+	// Create close record
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{
+			RecType: parser.RecTypeClose,
+			FileId:  123,
+			UserId:  456,
+		},
+		Xfr: parser.StatXFR{
+			Read:  2048,
+			Readv: 512,
+			Write: 256,
+		},
+		Ops: parser.StatOPS{
+			Read:  10,
+			Readv: 2,
+			Write: 1,
+		},
+	}
+
+	closePacket := &parser.Packet{
+		Header:      parser.Header{ServerStart: 1000},
+		FileRecords: []interface{}{closeRec},
+	}
+
+	// Process close - should return a correlated record with user info
+	rec, err = correlator.ProcessPacket(closePacket)
+	require.NoError(t, err)
+	require.NotNil(t, rec)
+
+	// Verify record has user information
+	assert.Equal(t, "testuser", rec.User)
+	assert.Equal(t, "/DC=org/DC=example/CN=testuser", rec.UserDN)
+	assert.Equal(t, "client.example.com", rec.Host)
+	assert.Equal(t, "xrootd", rec.Protocol)
+	assert.False(t, rec.IPv6)
+}
+
+func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0)
+	defer correlator.Stop()
+
+	// Create a user record with IPv6
+	userRec := &parser.UserRecord{
+		DictId: 999,
+		UserInfo: parser.UserInfo{
+			Username: "ipv6user",
+			Host:     "2001:db8::1",
+		},
+		AuthInfo: parser.AuthInfo{
+			InetVersion: "6",
+		},
+	}
+
+	correlator.handleUserRecord(userRec)
+
+	// Create and process a close with this user
+	state := &FileState{
+		FileID:   1,
+		UserID:   999,
+		OpenTime: 1000,
+		Filename: "/test.txt",
+	}
+
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{
+			FileId: 1,
+			UserId: 999,
+		},
+	}
+
+	packet := &parser.Packet{
+		Header: parser.Header{ServerStart: 1000},
+	}
+
+	record := correlator.createCorrelatedRecord(state, closeRec, packet)
+
+	// Verify IPv6 flag is set
+	assert.True(t, record.IPv6)
+	assert.Equal(t, "ipv6user", record.User)
+	assert.Equal(t, "2001:db8::1", record.Host)
+}

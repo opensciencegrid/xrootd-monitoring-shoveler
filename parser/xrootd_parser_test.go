@@ -188,3 +188,93 @@ func TestParsePacket_EmptyPacket(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "too short")
 }
+
+func TestParsePacket_UserRecord(t *testing.T) {
+	// Create a user record packet
+	// Format: header (8) + dictid (4) + userInfo + \n + authInfo
+	userInfo := "xrootd/user123.12345:67890@host.example.com"
+	authInfo := "p=gsi&n=/DC=org/DC=example/CN=user&h=host.example.com&o=Example&r=production&g=group1&m=info&x=xrootd&y=mon&I=4"
+	
+	info := userInfo + "\n" + authInfo
+	plen := uint16(8 + 4 + len(info))
+	
+	data := createHeader(PacketTypeUser, plen)
+	
+	// Add dict id (4 bytes)
+	dictId := make([]byte, 4)
+	binary.BigEndian.PutUint32(dictId, 99999)
+	data = append(data, dictId...)
+	
+	// Add info
+	data = append(data, []byte(info)...)
+	
+	packet, err := ParsePacket(data)
+	
+	require.NoError(t, err)
+	assert.Equal(t, PacketTypeUser, packet.PacketType)
+	require.NotNil(t, packet.UserRecord)
+	assert.Equal(t, uint32(99999), packet.UserRecord.DictId)
+	
+	// Verify userInfo parsing
+	assert.Equal(t, "xrootd", packet.UserRecord.UserInfo.Protocol)
+	assert.Equal(t, "user123", packet.UserRecord.UserInfo.Username)
+	assert.Equal(t, 12345, packet.UserRecord.UserInfo.Pid)
+	assert.Equal(t, 67890, packet.UserRecord.UserInfo.Sid)
+	assert.Equal(t, "host.example.com", packet.UserRecord.UserInfo.Host)
+	
+	// Verify authInfo parsing
+	assert.Equal(t, "gsi", packet.UserRecord.AuthInfo.AuthProtocol)
+	assert.Equal(t, "/DC=org/DC=example/CN=user", packet.UserRecord.AuthInfo.DN)
+	assert.Equal(t, "host.example.com", packet.UserRecord.AuthInfo.Hostname)
+	assert.Equal(t, "Example", packet.UserRecord.AuthInfo.Org)
+	assert.Equal(t, "production", packet.UserRecord.AuthInfo.Role)
+	assert.Equal(t, "group1", packet.UserRecord.AuthInfo.Groups)
+	assert.Equal(t, "4", packet.UserRecord.AuthInfo.InetVersion)
+}
+
+func TestParseUserInfo(t *testing.T) {
+	// Test with protocol
+	userInfo, err := parseUserInfo([]byte("xrootd/testuser.1234:5678@host.com"))
+	require.NoError(t, err)
+	assert.Equal(t, "xrootd", userInfo.Protocol)
+	assert.Equal(t, "testuser", userInfo.Username)
+	assert.Equal(t, 1234, userInfo.Pid)
+	assert.Equal(t, 5678, userInfo.Sid)
+	assert.Equal(t, "host.com", userInfo.Host)
+	
+	// Test without protocol
+	userInfo, err = parseUserInfo([]byte("user.999:111@example.org"))
+	require.NoError(t, err)
+	assert.Equal(t, "", userInfo.Protocol)
+	assert.Equal(t, "user", userInfo.Username)
+	assert.Equal(t, 999, userInfo.Pid)
+	assert.Equal(t, 111, userInfo.Sid)
+	assert.Equal(t, "example.org", userInfo.Host)
+	
+	// Test error cases
+	_, err = parseUserInfo([]byte(""))
+	assert.Error(t, err)
+	
+	_, err = parseUserInfo([]byte("invalid"))
+	assert.Error(t, err)
+}
+
+func TestParseAuthInfo(t *testing.T) {
+	authInfo := parseAuthInfo([]byte("p=gsi&n=/DC=org/CN=test&h=host&o=Org&r=role&g=groups&m=info&x=exec&y=mon&I=6"))
+	
+	assert.Equal(t, "gsi", authInfo.AuthProtocol)
+	assert.Equal(t, "/DC=org/CN=test", authInfo.DN)
+	assert.Equal(t, "host", authInfo.Hostname)
+	assert.Equal(t, "Org", authInfo.Org)
+	assert.Equal(t, "role", authInfo.Role)
+	assert.Equal(t, "groups", authInfo.Groups)
+	assert.Equal(t, "info", authInfo.Info)
+	assert.Equal(t, "exec", authInfo.ExecName)
+	assert.Equal(t, "mon", authInfo.MonInfo)
+	assert.Equal(t, "6", authInfo.InetVersion)
+	
+	// Test empty auth info
+	emptyAuth := parseAuthInfo([]byte(""))
+	assert.Equal(t, "", emptyAuth.AuthProtocol)
+	assert.Equal(t, "", emptyAuth.DN)
+}
