@@ -1,0 +1,84 @@
+# Example configuration for collector mode
+# The shoveler can operate in two modes: "shoveling" (default) or "collector"
+
+# Operating mode: shoveling (minimal processing) or collector (full parsing and correlation)
+mode: collector
+
+# Input configuration
+input:
+  # Type of input: "udp" or "message_bus"
+  type: udp
+  # Optional: Override host/port (defaults to listen.ip/listen.port)
+  # host: 0.0.0.0
+  # port: 9993
+  buffer_size: 65536
+  
+  # For message_bus input:
+  # broker_url: amqp://guest:guest@localhost:5672/
+  # topic: xrootd-packets
+  # subscription: xrootd-shoveler
+  # base64_encoded: true
+
+# State management (collector mode only)
+state:
+  # Time-to-live for state entries in seconds (5 minutes default)
+  entry_ttl: 300
+  # Maximum number of state entries (0 for unlimited)
+  max_entries: 10000
+
+# Select which protocol to use in order to connect to the MQ
+# mq: amqp/stomp
+
+# If using amqp protocol
+amqp:
+  url: amqps://username:password@example.com/vhost
+  exchange: shoveled-xrd
+  topic:
+  token_location: /etc/xrootd-monitoring-shoveler/token
+
+# If using stomp protocol please configure the following commented lines as needed
+#stomp:
+#  user: username
+#  password: password
+#  url: messagebroker.org:port
+#  topic: mytopic
+#  cert: path/to/cert/file
+#  certkey: path/to/certkey/file
+
+listen:
+  port: 9993
+  ip: 0.0.0.0
+
+# Where to foward udp messages, if necessary
+# Multiple destinations supported
+#outputs:
+#  destinations:
+#    - 127.0.0.1:1234
+
+# Whether to verify the header of the packet matches XRootD's monitoring
+# packet format (only applies to shoveling mode, collector mode always parses)
+verify: true
+
+# Export prometheus metrics
+metrics:
+  enable: true
+  port: 8000
+
+# Directory to store overflow of queue onto disk.
+# The queue keeps 100 messages in memory.  If the shoveler is disconnected from the message bus,
+# it will store messages over the 100 in memory onto disk into this directory.  Once the connection has been re-established
+# the queue will be emptied.  The queue on disk is persistent between restarts, so a persistent directory should be used.
+queue_directory: /var/spool/xrootd-monitoring-shoveler/queue
+
+# Mapping configuration
+# If map.all is set, all messages will be mapped to the configured origin.
+# For example, with the configuration
+# map:
+#   all: 172.0.0.4
+# If a packet comes in with the private ip address of 192.168.0.4, the packet origin will be changed to 172.0.0.4
+# The port is always preserved.
+# If you want multiple mappings, you can specify multiple map entries.
+# For example, with the configuration
+# map:
+#   192.168.0.5: 172.0.0.5
+#   192.168.0.6: 129.93.10.7

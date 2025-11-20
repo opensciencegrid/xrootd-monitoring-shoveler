@@ -4,7 +4,7 @@
   <h1>XRootD Monitoring Shoveler</h1>
   
   <p>
-    This shoveler gathers UDP monitoring messages from XRootD servers and sends them to a reliable message bus.
+    This shoveler gathers UDP monitoring messages from XRootD servers and sends them to a reliable message bus. It supports two operating modes: shoveling mode (minimal processing) and collector mode (full packet parsing and correlation).
   </p>
 
 <!-- Badges -->
@@ -56,11 +56,13 @@ graph LR
     - [Requirements](#requirements)
     - [:gear: Installation](#gear-installation)
   - [Configuration](#configuration)
+    - [Operating Modes](#operating-modes)
     - [Message Bus Credentials](#message-bus-credentials)
     - [Packet Verification](#packet-verification)
     - [IP Mapping](#ip-mapping)
   - [Running the Shoveler](#running-the-shoveler)
   - [:compass: Design](#compass-design)
+    - [Operating Modes](#operating-modes-1)
     - [Queue Design](#queue-design)
   - [:warning: License](#warning-license)
   - [:gem: Acknowledgements](#gem-acknowledgements)
@@ -99,8 +101,44 @@ docker or kubernetes.  By default, the config is stored in `/etc/xrootd-monitori
 When running as a daemon, environment variables can still be used for configuration. The service will be looking for
 them under `/etc/sysconfig/xrootd-monitoring-shoveler`.
 
+### Operating Modes
+
+The shoveler supports two operating modes:
+
+#### Shoveling Mode (Default)
+
+The traditional mode that performs minimal processing:
+- Validates packet boundaries and type
+- Forwards packets to message bus with minimal overhead
+- Preserves current behavior for maximum throughput
+- Suitable for high-volume environments
+
+Configure with `mode: shoveling` or leave unset (default).
+
+#### Collector Mode
+
+Advanced mode with full packet parsing and correlation:
+- Parses XRootD monitoring packets according to the [XRootD monitoring specification](https://xrootd.web.cern.ch/doc/dev6/xrd_monitoring.htm#_Toc204013498)
+- Correlates file open and close events to compute latency and throughput
+- Maintains stateful tracking of file operations with TTL-based cleanup
+- Emits structured collector records with detailed metrics
+- Tracks parsing performance and state management via Prometheus metrics
+
+Configure with `mode: collector` and set state management parameters:
+
+```yaml
+mode: collector
+
+state:
+  entry_ttl: 300      # Time-to-live for state entries in seconds
+  max_entries: 10000  # Maximum state entries (0 for unlimited)
+```
+
+See [config-collector.yaml](config/config-collector.yaml) for a complete example.
+
 Environment variables:
 
+* SHOVELER_MODE (shoveling or collector)
 * SHOVELER_MQ
 * SHOVELER_AMQP_TOKEN_LOCATION
 * SHOVELER_AMQP_URL
@@ -118,6 +156,10 @@ Environment variables:
 * SHOVELER_METRICS_PORT
 * SHOVELER_METRICS_ENABLE
 * SHOVELER_MAP_ALL
+* SHOVELER_STATE_ENTRY_TTL (collector mode)
+* SHOVELER_STATE_MAX_ENTRIES (collector mode)
+* SHOVELER_INPUT_TYPE (udp or message_bus)
+* SHOVELER_INPUT_BUFFER_SIZE
 
 ### Message Bus Credentials
 
@@ -171,6 +213,28 @@ From Docker, you can start the container from the OSG hub with the following com
 
 ## :compass: Design 
 
+### Operating Modes
+
+The shoveler implements two distinct processing pipelines:
+
+#### Shoveling Mode Pipeline
+1. Receive UDP packet
+2. Optional: Validate packet header
+3. Package packet with metadata (IP, timestamp)
+4. Enqueue to message bus
+5. Optional: Forward to additional UDP destinations
+
+#### Collector Mode Pipeline
+1. Receive UDP packet
+2. Parse packet according to XRootD monitoring specification
+3. Extract structured fields (file operations, user info, etc.)
+4. Correlate with existing state (open/close matching)
+5. Calculate metrics (latency, throughput)
+6. Emit structured collector record
+7. Enqueue to message bus
+
+The collector mode uses a TTL-based state map with automatic cleanup to track file operations across multiple packets. This enables correlation of file open events with their corresponding close events to compute accurate latency and transfer metrics.
+
 ### Queue Design
 
 The shoveler receives UDP packets and stores them onto a queue before being sent to the message bus.  100 messages 
@@ -181,6 +245,27 @@ are stored in memory.  When the in memory messages reaches over 100, the message
 The on-disk queue is persistent across shoveler restarts.
 
 The queue length can be monitored through the prometheus monitoring metric name: `shoveler_queue_size`.
+
+### Metrics
+
+The shoveler exports Prometheus metrics for monitoring. Common metrics include:
+
+**Shoveling Mode:**
+- `shoveler_packets_received` - Total packets received
+- `shoveler_validations_failed` - Packets that failed validation
+- `shoveler_queue_size` - Current queue size
+- `shoveler_rabbitmq_reconnects` - MQ reconnection count
+
+**Collector Mode (additional):**
+- `shoveler_packets_parsed_ok` - Successfully parsed packets
+- `shoveler_parse_errors` - Parse errors by reason
+- `shoveler_state_size` - Current state map entries
+- `shoveler_ttl_evictions` - State entries evicted due to TTL
+- `shoveler_records_emitted` - Collector records emitted
+- `shoveler_parse_time_ms` - Packet parsing time histogram
+- `shoveler_request_latency_ms` - Request latency histogram
+
+Metrics are available at `http://localhost:8000/metrics` by default (configurable via `metrics.port`).
 
 ## :warning: License
 

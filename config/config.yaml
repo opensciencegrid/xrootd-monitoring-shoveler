@@ -1,3 +1,16 @@
+# Operating mode: "shoveling" (default, minimal processing) or "collector" (full parsing and correlation)
+# mode: shoveling
+
+# Input configuration (optional, defaults to UDP on listen.port)
+# input:
+#   type: udp
+#   buffer_size: 65536
+
+# State management (collector mode only)
+# state:
+#   entry_ttl: 300  # TTL in seconds
+#   max_entries: 10000  # Max state entries (0 for unlimited)
+
 # Select which protocol to use in order to connect to the MQ
 # mq: amqp/stomp
 
