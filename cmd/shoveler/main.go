@@ -7,6 +7,7 @@ import (
 
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/collector"
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/input"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
 	"github.com/sirupsen/logrus"
 )
@@ -37,6 +38,13 @@ func main() {
 	// Load the configuration
 	config := shoveler.Config{}
 	config.ReadConfig()
+
+	// Shoveler defaults to shoveling mode (unless explicitly set to collector in config)
+	if config.Mode == "collector" {
+		config.Mode = "collector"
+	} else {
+		config.Mode = "shoveling"
+	}
 
 	if DEBUG || config.Debug {
 		logger.SetLevel(logrus.DebugLevel)
@@ -75,6 +83,44 @@ func main() {
 
 // runShovelingMode runs the traditional shoveling mode (minimal processing)
 func runShovelingMode(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
+	// Support both UDP and file inputs
+	if config.Input.Type == "file" {
+		runShovelingModeFile(config, cq, logger)
+	} else {
+		// Default to UDP
+		runShovelingModeUDP(config, cq, logger)
+	}
+}
+
+// runShovelingModeFile processes packets from a file in shoveling mode
+func runShovelingModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
+	fr := input.NewFileReaderWithFollow(config.Input.Path, config.Input.Base64Encoded, config.Input.Follow)
+	if err := fr.Start(); err != nil {
+		logger.Fatalln("Failed to start file reader:", err)
+	}
+	defer fr.Stop()
+
+	logger.Infoln("Shoveling mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
+
+	for pkt := range fr.Packets() {
+		shoveler.PacketsReceived.Inc()
+
+		if config.Verify && !shoveler.VerifyPacket(pkt) {
+			shoveler.ValidationsFailed.Inc()
+			continue
+		}
+
+		// Create a fake remote address for file input (use "file" as remote)
+		remoteAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0}
+		msg := shoveler.PackageUdp(pkt, remoteAddr, config)
+
+		logger.Debugln("Sending msg:", string(msg))
+		cq.Enqueue(msg)
+	}
+}
+
+// runShovelingModeUDP processes packets from UDP in shoveling mode
+func runShovelingModeUDP(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
 	// Process incoming UDP packets
 	addr := net.UDPAddr{
 		Port: config.ListenPort,
@@ -152,6 +198,87 @@ func runShovelingMode(config *shoveler.Config, cq *shoveler.ConfirmationQueue, l
 
 // runCollectorMode runs the collector mode with full packet parsing and correlation
 func runCollectorMode(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
+	// Support both UDP and file inputs
+	if config.Input.Type == "file" {
+		runCollectorModeFile(config, cq, logger)
+	} else {
+		// Default to UDP
+		runCollectorModeUDP(config, cq, logger)
+	}
+}
+
+// runCollectorModeFile processes packets from a file in collector mode
+func runCollectorModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
+	// Create correlator
+	ttl := time.Duration(config.State.EntryTTL) * time.Second
+	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries)
+	defer correlator.Stop()
+
+	// Update state size metric periodically
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			shoveler.StateSize.Set(float64(correlator.GetStateSize()))
+		}
+	}()
+
+	fr := input.NewFileReaderWithFollow(config.Input.Path, config.Input.Base64Encoded, config.Input.Follow)
+	if err := fr.Start(); err != nil {
+		logger.Fatalln("Failed to start file reader:", err)
+	}
+	defer fr.Stop()
+
+	logger.Infoln("Collector mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
+
+	for pkt := range fr.Packets() {
+		shoveler.PacketsReceived.Inc()
+
+		// Parse packet
+		startParse := time.Now()
+		packet, err := parser.ParsePacket(pkt)
+		parseTime := time.Since(startParse).Milliseconds()
+		shoveler.ParseTimeMs.Observe(float64(parseTime))
+
+		if err != nil {
+			shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
+			logger.Debugln("Failed to parse packet:", err)
+			continue
+		}
+		shoveler.PacketsParsedOK.Inc()
+
+		// Process packet through correlator
+		record, err := correlator.ProcessPacket(packet)
+		if err != nil {
+			logger.Errorln("Failed to process packet:", err)
+			continue
+		}
+
+		// If we got a complete record, emit it
+		if record != nil {
+			shoveler.RecordsEmitted.Inc()
+
+			// Calculate latency if we have timing info
+			if record.StartTime > 0 && record.EndTime > 0 {
+				latency := record.EndTime - record.StartTime
+				shoveler.RequestLatencyMs.Observe(float64(latency))
+			}
+
+			// Convert to JSON and enqueue
+			recordJSON, err := record.ToJSON()
+			if err != nil {
+				logger.Errorln("Failed to marshal record:", err)
+				continue
+			}
+
+			logger.Debugln("Emitting collector record:", string(recordJSON))
+			cq.Enqueue(recordJSON)
+		}
+	}
+}
+
+// runCollectorModeUDP processes packets from UDP in collector mode
+func runCollectorModeUDP(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
 	// Create correlator
 	ttl := time.Duration(config.State.EntryTTL) * time.Second
 	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries)
@@ -223,7 +350,7 @@ func runCollectorMode(config *shoveler.Config, cq *shoveler.ConfirmationQueue, l
 		// If we got a complete record, emit it
 		if record != nil {
 			shoveler.RecordsEmitted.Inc()
-			
+
 			// Calculate latency if we have timing info
 			if record.StartTime > 0 && record.EndTime > 0 {
 				latency := record.EndTime - record.StartTime

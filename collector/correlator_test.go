@@ -27,7 +27,7 @@ func TestCorrelator_FileOpenClose(t *testing.T) {
 
 	openPacket := &parser.Packet{
 		Header: parser.Header{
-			Code:        parser.PacketTypeFOpen,
+			Code:        parser.PacketTypeFStat,
 			ServerStart: 1000,
 		},
 		FileRecords: []interface{}{openRec},
@@ -64,7 +64,7 @@ func TestCorrelator_FileOpenClose(t *testing.T) {
 
 	closePacket := &parser.Packet{
 		Header: parser.Header{
-			Code:        parser.PacketTypeFClose,
+			Code:        parser.PacketTypeFStat,
 			ServerStart: 1000,
 		},
 		FileRecords: []interface{}{closeRec},
@@ -110,7 +110,7 @@ func TestCorrelator_CloseWithoutOpen(t *testing.T) {
 
 	closePacket := &parser.Packet{
 		Header: parser.Header{
-			Code:        parser.PacketTypeFClose,
+			Code:        parser.PacketTypeFStat,
 			ServerStart: 1000,
 		},
 		FileRecords: []interface{}{closeRec},
@@ -144,7 +144,7 @@ func TestCorrelator_TimeRecord(t *testing.T) {
 
 	timePacket := &parser.Packet{
 		Header: parser.Header{
-			Code:        parser.PacketTypeTime,
+			Code:        parser.PacketTypeFStat,
 			ServerStart: 1000,
 		},
 		FileRecords: []interface{}{timeRec},
@@ -229,12 +229,12 @@ func TestCorrelator_RecordAverages(t *testing.T) {
 
 func TestCollectorRecord_ToJSON(t *testing.T) {
 	record := &CollectorRecord{
-		StartTime:        1000,
-		EndTime:          2000,
-		Read:             1024,
-		Write:            512,
-		Filename:         "/test.txt",
-		HasFileCloseMsg:  1,
+		StartTime:       1000,
+		EndTime:         2000,
+		Read:            1024,
+		Write:           512,
+		Filename:        "/test.txt",
+		HasFileCloseMsg: 1,
 	}
 
 	data, err := record.ToJSON()
@@ -362,7 +362,8 @@ func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
 		},
 	}
 
-	correlator.handleUserRecord(userRec)
+	serverID := "1000#127.0.0.1:9930"
+	correlator.handleUserRecord(userRec, serverID)
 
 	// Create and process a close with this user
 	state := &FileState{
@@ -370,6 +371,7 @@ func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
 		UserID:   999,
 		OpenTime: 1000,
 		Filename: "/test.txt",
+		ServerID: serverID, // Include serverID in the state
 	}
 
 	closeRec := parser.FileCloseRecord{
@@ -380,7 +382,8 @@ func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
 	}
 
 	packet := &parser.Packet{
-		Header: parser.Header{ServerStart: 1000},
+		Header:     parser.Header{ServerStart: 1000},
+		RemoteAddr: "127.0.0.1:9930", // Set RemoteAddr to match serverID
 	}
 
 	record := correlator.createCorrelatedRecord(state, closeRec, packet)

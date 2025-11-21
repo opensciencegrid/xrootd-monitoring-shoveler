@@ -24,11 +24,11 @@ func TestQueueInsert(t *testing.T) {
 	queue.Enqueue([]byte("test2"))
 	msg, err := queue.Dequeue()
 	assert.NoError(t, err)
-	assert.Equal(t, []byte("test1"), msg)
+	assert.Equal(t, []byte("test1"), msg.Message)
 
 	msg, err = queue.Dequeue()
 	assert.NoError(t, err)
-	assert.Equal(t, []byte("test2"), msg)
+	assert.Equal(t, []byte("test2"), msg.Message)
 
 }
 
@@ -46,7 +46,7 @@ func TestQueueEmptyDequeue(t *testing.T) {
 	}(queue)
 	msg, err := queue.Dequeue()
 	assert.NoError(t, err)
-	assert.Equal(t, []byte("test1"), msg)
+	assert.Equal(t, []byte("test1"), msg.Message)
 	doneChan := make(chan bool)
 	go func() {
 		_, err := queue.Dequeue()
@@ -90,7 +90,7 @@ func TestQueueLotsEntries(t *testing.T) {
 		msgString := "test." + strconv.Itoa(i)
 		msg, err := queue.Dequeue()
 		assert.NoError(t, err)
-		assert.Equal(t, msgString, string(msg))
+		assert.Equal(t, msgString, string(msg.Message))
 	}
 	assert.Equal(t, 0, queue.Size())
 	for i := 1; i <= 100000; i++ {
@@ -103,7 +103,7 @@ func TestQueueLotsEntries(t *testing.T) {
 		msgString := "test." + strconv.Itoa(i)
 		msg, err := queue.Dequeue()
 		assert.NoError(t, err)
-		assert.Equal(t, msgString, string(msg))
+		assert.Equal(t, msgString, string(msg.Message))
 	}
 
 }

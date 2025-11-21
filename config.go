@@ -9,14 +9,17 @@ import (
 )
 
 type InputConfig struct {
-	Type        string // "udp" or "message_bus"
-	Host        string
-	Port        int
-	BufferSize  int
-	BrokerURL   string
-	Topic       string
-	Subscription string
+	Type          string // "udp", "file", or "rabbitmq"
+	Host          string
+	Port          int
+	BufferSize    int
+	BrokerURL     string
+	Topic         string // Topic name for STOMP, or queue name for RabbitMQ
+	Queue         string // Alias for Topic when using RabbitMQ (for clarity)
+	Subscription  string
 	Base64Encoded bool
+	Path          string // File path for "file" input type
+	Follow        bool   // Follow mode (tail-like) for "file" input type
 }
 
 type StateConfig struct {
@@ -24,30 +27,39 @@ type StateConfig struct {
 	MaxEntries int // Max entries in state map (0 for unlimited)
 }
 
+type OutputConfig struct {
+	Type string // "mq" (default), "file", or "both"
+	Path string // File path for "file" or "both" output types
+}
+
 type Config struct {
-	Mode          string   // "shoveling" or "collector"
-	Input         InputConfig
-	State         StateConfig
-	MQ            string   // Which technology to use for the MQ connection
-	AmqpURL       *url.URL // AMQP URL (password comes from the token)
-	AmqpExchange  string   // Exchange to shovel messages
-	AmqpToken     string   // File location of the token
-	ListenPort    int
-	ListenIp      string
-	DestUdp       []string
-	Debug         bool
-	Verify        bool
-	StompUser     string
-	StompPassword string
-	StompURL      *url.URL
-	StompTopic    string
-	Metrics       bool
-	MetricsPort   int
-	StompCert     string
-	StompCertKey  string
-	QueueDir      string
-	IpMapAll      string
-	IpMap         map[string]string
+	Mode              string // "shoveling" or "collector"
+	Input             InputConfig
+	State             StateConfig
+	Output            OutputConfig
+	MQ                string   // Which technology to use for the MQ connection
+	AmqpURL           *url.URL // AMQP URL (password comes from the token)
+	AmqpExchange      string   // Exchange to shovel file-close messages
+	AmqpExchangeCache string   // Exchange for cache gstream events
+	AmqpExchangeTCP   string   // Exchange for TCP gstream events
+	AmqpExchangeTPC   string   // Exchange for TPC gstream events
+	AmqpToken         string   // File location of the token
+	ListenPort        int
+	ListenIp          string
+	DestUdp           []string
+	Debug             bool
+	Verify            bool
+	StompUser         string
+	StompPassword     string
+	StompURL          *url.URL
+	StompTopic        string
+	Metrics           bool
+	MetricsPort       int
+	StompCert         string
+	StompCertKey      string
+	QueueDir          string
+	IpMapAll          string
+	IpMap             map[string]string
 }
 
 func (c *Config) ReadConfig() {
@@ -81,9 +93,16 @@ func (c *Config) ReadConfig() {
 	c.Input.BufferSize = viper.GetInt("input.buffer_size")
 	c.Input.BrokerURL = viper.GetString("input.broker_url")
 	c.Input.Topic = viper.GetString("input.topic")
+	c.Input.Queue = viper.GetString("input.queue")
+	// If queue is specified but topic is not, use queue as topic (for RabbitMQ)
+	if c.Input.Queue != "" && c.Input.Topic == "" {
+		c.Input.Topic = c.Input.Queue
+	}
 	c.Input.Subscription = viper.GetString("input.subscription")
 	viper.SetDefault("input.base64_encoded", true)
 	c.Input.Base64Encoded = viper.GetBool("input.base64_encoded")
+	c.Input.Path = viper.GetString("input.path")
+	c.Input.Follow = viper.GetBool("input.follow")
 
 	// State configuration (for collector mode)
 	viper.SetDefault("state.entry_ttl", 300) // 5 minutes default
@@ -91,11 +110,19 @@ func (c *Config) ReadConfig() {
 	viper.SetDefault("state.max_entries", 0) // unlimited by default
 	c.State.MaxEntries = viper.GetInt("state.max_entries")
 
+	// Output configuration (for collector mode)
+	viper.SetDefault("output.type", "mq") // message queue by default
+	c.Output.Type = viper.GetString("output.type")
+	c.Output.Path = viper.GetString("output.path")
+
 	viper.SetDefault("mq", "amqp")
 	c.MQ = viper.GetString("mq")
 
 	if c.MQ == "amqp" {
 		viper.SetDefault("amqp.exchange", "shoveled-xrd")
+		viper.SetDefault("amqp.exchange_cache", "xrd-cache-events")
+		viper.SetDefault("amqp.exchange_tcp", "xrd-tcp-events")
+		viper.SetDefault("amqp.exchange_tpc", "xrd-tpc-events")
 		viper.SetDefault("amqp.token_location", "/etc/xrootd-monitoring-shoveler/token")
 
 		// Get the AMQP URL
@@ -105,9 +132,18 @@ func (c *Config) ReadConfig() {
 		}
 		log.Debugln("AMQP URL:", c.AmqpURL.String())
 
-		// Get the AMQP Exchange
+		// Get the AMQP Exchanges
 		c.AmqpExchange = viper.GetString("amqp.exchange")
 		log.Debugln("AMQP Exchange:", c.AmqpExchange)
+
+		c.AmqpExchangeCache = viper.GetString("amqp.exchange_cache")
+		log.Debugln("AMQP Cache Exchange:", c.AmqpExchangeCache)
+
+		c.AmqpExchangeTCP = viper.GetString("amqp.exchange_tcp")
+		log.Debugln("AMQP TCP Exchange:", c.AmqpExchangeTCP)
+
+		c.AmqpExchangeTPC = viper.GetString("amqp.exchange_tpc")
+		log.Debugln("AMQP TPC Exchange:", c.AmqpExchangeTPC)
 
 		// Get the Token location
 		c.AmqpToken = viper.GetString("amqp.token_location")

@@ -30,7 +30,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	amqpQueue := New(*amqpURL)
 
 	// Constantly check for new messages
-	messagesQueue := make(chan []byte)
+	messagesQueue := make(chan *MessageStruct)
 	triggerReconnect := make(chan bool)
 	go readMsg(messagesQueue, queue)
 
@@ -45,11 +45,16 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 			if err != nil {
 				log.Errorln("Failed to reconnect to AMQP:", err)
 			}
-		case msg := <-messagesQueue:
+		case msgStruct := <-messagesQueue:
 			// Handle a new message to put on the message queue
+			// Use specific exchange if provided, otherwise use default
+			exchange := config.AmqpExchange
+			if msgStruct.Exchange != "" {
+				exchange = msgStruct.Exchange
+			}
 		TryPush:
 			for {
-				err = amqpQueue.Push(config.AmqpExchange, msg)
+				err = amqpQueue.Push(exchange, msgStruct.Message)
 				if err != nil {
 					// How to handle a failure to push?
 					// The UnsafePush function already should have tried to reconnect
@@ -122,14 +127,14 @@ func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- 
 }
 
 // Read a message from the queue
-func readMsg(messagesQueue chan<- []byte, queue *ConfirmationQueue) {
+func readMsg(messagesQueue chan<- *MessageStruct, queue *ConfirmationQueue) {
 	for {
-		msg, err := queue.Dequeue()
+		msgStruct, err := queue.Dequeue()
 		if err != nil {
 			log.Errorln("Failed to read from queue:", err)
 			continue
 		}
-		messagesQueue <- msg
+		messagesQueue <- msgStruct
 	}
 }
 
