@@ -96,7 +96,7 @@ The shoveler reads configuration from multiple sources with the following preced
 
 ### Command Line Arguments
 
-Both `shoveler` and `collector` binaries support the following flags:
+Both `shoveler` and `xrootd-monitoring-collector` binaries support the following flags:
 
 ```bash
 # Specify custom configuration file path

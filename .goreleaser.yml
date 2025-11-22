@@ -25,8 +25,8 @@ builds:
       - linux
       - windows
       - darwin
-    id: "collector"
-    binary: collector
+    id: "xrootd-monitoring-collector"
+    binary: xrootd-monitoring-collector
     main: ./cmd/collector
     ignore:
       - goos: windows
@@ -68,7 +68,7 @@ archives:
         format: zip
     builds:
       - xrootd-monitoring-shoveler
-      - collector
+      - xrootd-monitoring-collector
       - createtoken
       - shoveler-status
     wrap_in_directory: true
@@ -93,7 +93,7 @@ nfpms:
   - package_name: xrootd-monitoring-shoveler
     builds:
       - xrootd-monitoring-shoveler
-      - collector
+      - xrootd-monitoring-collector
       - createtoken
       - shoveler-status
     file_name_template: '{{ .ProjectName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
