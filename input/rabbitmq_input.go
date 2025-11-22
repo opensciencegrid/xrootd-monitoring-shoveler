@@ -84,10 +84,14 @@ func (r *RabbitMQReader) Start() error {
 func (r *RabbitMQReader) Stop() {
 	close(r.stop)
 	if r.channel != nil {
-		r.channel.Close()
+		if err := r.channel.Close(); err != nil {
+			r.logger.Debugln("Error closing RabbitMQ channel:", err)
+		}
 	}
 	if r.conn != nil {
-		r.conn.Close()
+		if err := r.conn.Close(); err != nil {
+			r.logger.Debugln("Error closing RabbitMQ connection:", err)
+		}
 	}
 	close(r.packets)
 	close(r.remoteAddrs)
@@ -136,7 +140,9 @@ func (r *RabbitMQReader) connect() error {
 	// Create channel
 	ch, err := conn.Channel()
 	if err != nil {
-		conn.Close()
+		if closeErr := conn.Close(); closeErr != nil {
+			r.logger.Debugln("Error closing connection:", closeErr)
+		}
 		return fmt.Errorf("failed to open channel: %w", err)
 	}
 	r.channel = ch
@@ -148,8 +154,12 @@ func (r *RabbitMQReader) connect() error {
 		false, // global
 	)
 	if err != nil {
-		ch.Close()
-		conn.Close()
+		if closeErr := ch.Close(); closeErr != nil {
+			r.logger.Debugln("Error closing channel:", closeErr)
+		}
+		if closeErr := conn.Close(); closeErr != nil {
+			r.logger.Debugln("Error closing connection:", closeErr)
+		}
 		return fmt.Errorf("failed to set QoS: %w", err)
 	}
 
@@ -180,8 +190,12 @@ func (r *RabbitMQReader) connect() error {
 				nil,
 			)
 			if err != nil {
-				ch.Close()
-				conn.Close()
+				if closeErr := ch.Close(); closeErr != nil {
+					r.logger.Debugln("Error closing channel:", closeErr)
+				}
+				if closeErr := conn.Close(); closeErr != nil {
+					r.logger.Debugln("Error closing connection:", closeErr)
+				}
 				return fmt.Errorf("failed to bind queue: %w", err)
 			}
 		}
@@ -217,10 +231,14 @@ func (r *RabbitMQReader) connectionLoop() {
 
 		// Clean up connection
 		if r.channel != nil {
-			r.channel.Close()
+			if closeErr := r.channel.Close(); closeErr != nil {
+				r.logger.Debugln("Error closing channel during cleanup:", closeErr)
+			}
 		}
 		if r.conn != nil {
-			r.conn.Close()
+			if closeErr := r.conn.Close(); closeErr != nil {
+				r.logger.Debugln("Error closing connection during cleanup:", closeErr)
+			}
 		}
 
 		// Wait before reconnecting with jitter
@@ -264,10 +282,14 @@ func (r *RabbitMQReader) consume() error {
 			if err != nil {
 				r.logger.Debugln("Failed to process message:", err)
 				// Reject the message
-				msg.Nack(false, false)
+				if nackErr := msg.Nack(false, false); nackErr != nil {
+					r.logger.Debugln("Failed to Nack message:", nackErr)
+				}
 			} else {
 				// Acknowledge the message
-				msg.Ack(false)
+				if ackErr := msg.Ack(false); ackErr != nil {
+					r.logger.Debugln("Failed to Ack message:", ackErr)
+				}
 			}
 		}
 	}

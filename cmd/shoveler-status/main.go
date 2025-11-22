@@ -230,7 +230,12 @@ func CheckPrometheusEndpoint(metricsPort int) (ShovelerStats, error) {
 		spinnerInitialConnect.Fail()
 		return ShovelerStats{}, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the operation
+			_ = err
+		}
+	}()
 
 	// Read all the body and return it
 	body, err := io.ReadAll(resp.Body)

@@ -191,7 +191,9 @@ func TestCorrelator_RecordAverages(t *testing.T) {
 		Header:      parser.Header{ServerStart: 1000},
 		FileRecords: []interface{}{openRec},
 	}
-	correlator.ProcessPacket(openPacket)
+	if _, err := correlator.ProcessPacket(openPacket); err != nil {
+		t.Fatalf("Failed to process open packet: %v", err)
+	}
 
 	// Create close with specific values for average calculation
 	closeRec := parser.FileCloseRecord{

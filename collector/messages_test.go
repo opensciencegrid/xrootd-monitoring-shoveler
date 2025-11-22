@@ -29,7 +29,11 @@ func TestMessagesFile(t *testing.T) {
 	if err := fr.Start(); err != nil {
 		t.Fatalf("Failed to start file reader: %v", err)
 	}
-	defer fr.Stop()
+	defer func() {
+		if err := fr.Stop(); err != nil {
+			t.Errorf("Failed to stop file reader: %v", err)
+		}
+	}()
 
 	// Create a correlator with 5 minute TTL
 	correlator := NewCorrelator(5*time.Minute, 10000)
@@ -264,7 +268,11 @@ func TestMessagesFileFirstPacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("Failed to close file: %v", err)
+		}
+	}()
 
 	// Read first line
 	var line struct {

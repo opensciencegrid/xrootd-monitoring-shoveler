@@ -2,7 +2,6 @@ package input
 
 import (
 	"encoding/base64"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -10,11 +9,15 @@ import (
 
 func TestFileReader(t *testing.T) {
 	// Prepare temporary file with two JSON lines
-	tmpfile, err := ioutil.TempFile("", "filereader_test_*.ndjson")
+	tmpfile, err := os.CreateTemp("", "filereader_test_*.ndjson")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() {
+		if err := os.Remove(tmpfile.Name()); err != nil {
+			t.Logf("Failed to remove temp file: %v", err)
+		}
+	}()
 
 	data1 := []byte("hello world")
 	data2 := []byte("goodbye")
@@ -28,7 +31,9 @@ func TestFileReader(t *testing.T) {
 	if _, err := tmpfile.WriteString(line2); err != nil {
 		t.Fatal(err)
 	}
-	tmpfile.Close()
+	if err := tmpfile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	fr := NewFileReader(tmpfile.Name(), true)
 	if err := fr.Start(); err != nil {
@@ -63,5 +68,7 @@ Loop:
 	}
 
 	// Stop reader
-	fr.Stop()
+	if err := fr.Stop(); err != nil {
+		t.Errorf("Failed to stop file reader: %v", err)
+	}
 }

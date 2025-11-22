@@ -235,10 +235,16 @@ func (r *RabbitMQConsumer) Stop() error {
 	close(r.stopChan)
 
 	if r.channel != nil {
-		r.channel.Close()
+		if err := r.channel.Close(); err != nil {
+			// Log error but continue cleanup
+			_ = err
+		}
 	}
 	if r.conn != nil {
-		r.conn.Close()
+		if err := r.conn.Close(); err != nil {
+			// Log error but continue cleanup
+			_ = err
+		}
 	}
 
 	return nil

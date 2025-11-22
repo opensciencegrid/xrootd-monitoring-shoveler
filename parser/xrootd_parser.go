@@ -367,20 +367,11 @@ func parseUserRecord(header Header, b []byte) (*UserRecord, error) {
 
 	// Split userInfo and authInfo by newline
 	var userInfoBytes, authInfoBytes []byte
-	newlineIdx := -1
-	for i, b := range info {
-		if b == '\n' {
-			newlineIdx = i
-			break
-		}
-	}
-
-	if newlineIdx >= 0 {
-		userInfoBytes = info[:newlineIdx]
-		authInfoBytes = info[newlineIdx+1:]
+	parts := bytes.SplitN(info, []byte{'\n'}, 2)
+	userInfoBytes = parts[0]
+	if len(parts) > 1 {
+		authInfoBytes = parts[1]
 	} else {
-		// No newline found, entire info is userInfo
-		userInfoBytes = info
 		authInfoBytes = []byte{}
 	}
 
@@ -582,8 +573,9 @@ func parseTokenInfo(b []byte) TokenInfo {
 		case "Uc":
 			// Parse user dictionary ID as uint32
 			var udid uint32
-			fmt.Sscanf(value, "%d", &udid)
-			info.UserDictID = udid
+			if _, err := fmt.Sscanf(value, "%d", &udid); err == nil {
+				info.UserDictID = udid
+			}
 		case "s":
 			info.Subject = value
 		case "n":
@@ -700,18 +692,25 @@ func parseFileRecords(header Header, b []byte, packetType byte) ([]interface{}, 
 		if err := binary.Read(reader, binary.BigEndian, &firstHeader); err == nil {
 			if firstHeader.RecType == RecTypeTime {
 				// Skip to the end of this record
-				reader.Seek(pos+int64(firstHeader.RecSize), io.SeekStart)
+				if _, err := reader.Seek(pos+int64(firstHeader.RecSize), io.SeekStart); err != nil {
+					return nil, fmt.Errorf("failed to seek past time record: %w", err)
+				}
 			} else {
 				// Reset to the start of this record
-				reader.Seek(pos, io.SeekStart)
+				if _, err := reader.Seek(pos, io.SeekStart); err != nil {
+					return nil, fmt.Errorf("failed to seek back to record start: %w", err)
+				}
 			}
 		} else {
-			reader.Seek(pos, io.SeekStart)
+			if _, err := reader.Seek(pos, io.SeekStart); err != nil {
+				return nil, fmt.Errorf("failed to seek back after read error: %w", err)
+			}
 		}
 	}
 
 	var records []interface{}
 
+parseLoop:
 	for reader.Len() > 0 {
 		// Save position before reading header
 		pos, _ := reader.Seek(0, io.SeekCurrent)
@@ -719,21 +718,23 @@ func parseFileRecords(header Header, b []byte, packetType byte) ([]interface{}, 
 		// Read common file record header
 		var commonHeader binaryFileHeaderCommon
 		if err := binary.Read(reader, binary.BigEndian, &commonHeader); err != nil {
-			break // Not enough bytes for file record header
+			break parseLoop // Not enough bytes for file record header
 		}
 
 		// Validate record size
 		if commonHeader.RecSize < 8 || commonHeader.RecSize > 16384 {
-			break // Invalid record size
+			break parseLoop // Invalid record size
 		}
 
 		// Check if we have enough data for the complete record
 		if reader.Len()+8 < int(commonHeader.RecSize) {
-			break // Not enough data for complete record
+			break parseLoop // Not enough data for complete record
 		}
 
 		// Reset reader to start of record for type-specific parsing
-		reader.Seek(pos, io.SeekStart)
+		if _, err := reader.Seek(pos, io.SeekStart); err != nil {
+			break parseLoop // Failed to seek back
+		}
 
 		// Parse based on record type
 		switch commonHeader.RecType {
@@ -798,7 +799,9 @@ func parseFileRecords(header Header, b []byte, packetType byte) ([]interface{}, 
 			}
 
 			// Ensure we're at the end of the record
-			reader.Seek(pos+int64(closeHeader.RecSize), io.SeekStart)
+			if _, err := reader.Seek(pos+int64(closeHeader.RecSize), io.SeekStart); err != nil {
+				break parseLoop
+			}
 			records = append(records, closeRec)
 
 		case RecTypeOpen:
@@ -828,7 +831,10 @@ func parseFileRecords(header Header, b []byte, packetType byte) ([]interface{}, 
 			}
 
 			// Read remaining bytes as filename
-			currentPos, _ := reader.Seek(0, io.SeekCurrent)
+			currentPos, seekErr := reader.Seek(0, io.SeekCurrent)
+			if seekErr != nil {
+				break
+			}
 			recordEnd := pos + int64(openHeader.RecSize)
 			lfnLen := recordEnd - currentPos
 			if lfnLen > 0 {
@@ -843,12 +849,16 @@ func parseFileRecords(header Header, b []byte, packetType byte) ([]interface{}, 
 			}
 
 			// Ensure we're at the end of the record
-			reader.Seek(recordEnd, io.SeekStart)
+			if _, err := reader.Seek(recordEnd, io.SeekStart); err != nil {
+				break parseLoop
+			}
 			records = append(records, openRec)
 
 		default:
 			// Skip unknown record types
-			reader.Seek(pos+int64(commonHeader.RecSize), io.SeekStart)
+			if _, err := reader.Seek(pos+int64(commonHeader.RecSize), io.SeekStart); err != nil {
+				break parseLoop
+			}
 		}
 	}
 

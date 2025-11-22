@@ -12,7 +12,14 @@ if ! getent group "$SERVER_GROUP" >/dev/null; then
    addgroup --quiet --system $SERVER_GROUP 2>/dev/null ||true
    echo "..done"
 fi
-# 1. create user if not existing
+
+# Verify group was created successfully
+if ! getent group "$SERVER_GROUP" >/dev/null; then
+   echo "ERROR: Failed to create group $SERVER_GROUP"
+   exit 1
+fi
+
+# 2. create user if not existing
 if ! getent passwd $SERVER_USER >/dev/null; then
   echo -n "Adding system user $SERVER_USER.."
   adduser --quiet \
@@ -23,6 +30,13 @@ if ! getent passwd $SERVER_USER >/dev/null; then
           $SERVER_USER 2>/dev/null || true
   echo "..done"
 fi
+
+# Verify user was created successfully
+if ! getent passwd $SERVER_USER >/dev/null; then
+   echo "ERROR: Failed to create user $SERVER_USER"
+   exit 1
+fi
+
 # 3. adjust passwd entry
 usermod -c "$SERVER_NAME" \
         -d $SERVER_HOME   \

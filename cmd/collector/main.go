@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net"
 	"time"
@@ -22,6 +23,10 @@ var (
 var DEBUG bool = false
 
 func main() {
+	// Parse command-line flags
+	configPath := flag.String("c", "", "path to configuration file")
+	flag.StringVar(configPath, "config", "", "path to configuration file (alias for -c)")
+	flag.Parse()
 
 	shoveler.ShovelerVersion = version
 	shoveler.ShovelerCommit = commit
@@ -38,7 +43,7 @@ func main() {
 
 	// Load the configuration
 	config := shoveler.Config{}
-	config.ReadConfig()
+	config.ReadConfigWithPath(*configPath)
 
 	if DEBUG || config.Debug {
 		logger.SetLevel(logrus.DebugLevel)
@@ -75,7 +80,11 @@ func main() {
 		if err != nil {
 			logger.Fatalln("Failed to create file writer:", err)
 		}
-		defer fileWriter.Close()
+		defer func() {
+			if err := fileWriter.Close(); err != nil {
+				logger.Errorln("Failed to close file writer:", err)
+			}
+		}()
 	}
 
 	// Start the metrics
@@ -283,7 +292,11 @@ func runCollectorModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueu
 	if err := fr.Start(); err != nil {
 		logger.Fatalln("Failed to start file reader:", err)
 	}
-	defer fr.Stop()
+	defer func() {
+		if err := fr.Stop(); err != nil {
+			logger.Errorln("Failed to stop file reader:", err)
+		}
+	}()
 
 	logger.Infoln("Collector mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
 
@@ -317,7 +330,11 @@ func runCollectorModeUDP(config *shoveler.Config, cq *shoveler.ConfirmationQueue
 	if err := udpListener.Start(); err != nil {
 		logger.Fatalln("Failed to start UDP listener:", err)
 	}
-	defer udpListener.Stop()
+	defer func() {
+		if err := udpListener.Stop(); err != nil {
+			logger.Errorln("Failed to stop UDP listener:", err)
+		}
+	}()
 
 	logger.Infoln("Collector mode: Listening for UDP messages at:", net.JoinHostPort(config.ListenIp, fmt.Sprintf("%d", config.ListenPort)))
 

@@ -63,12 +63,22 @@ type Config struct {
 }
 
 func (c *Config) ReadConfig() {
-	viper.SetConfigName("config")                            // name of config file (without extension)
-	viper.SetConfigType("yaml")                              // REQUIRED if the config file does not have the extension in the name
-	viper.AddConfigPath("/etc/xrootd-monitoring-shoveler/")  // path to look for the config file in
-	viper.AddConfigPath("$HOME/.xrootd-monitoring-shoveler") // call multiple times to add many search paths
-	viper.AddConfigPath(".")                                 // optionally look for config in the working directory
-	viper.AddConfigPath("config/")
+	c.ReadConfigWithPath("")
+}
+
+func (c *Config) ReadConfigWithPath(configPath string) {
+	if configPath != "" {
+		// Use the specified config file
+		viper.SetConfigFile(configPath)
+	} else {
+		// Use default search paths
+		viper.SetConfigName("config")                            // name of config file (without extension)
+		viper.SetConfigType("yaml")                              // REQUIRED if the config file does not have the extension in the name
+		viper.AddConfigPath("/etc/xrootd-monitoring-shoveler/")  // path to look for the config file in
+		viper.AddConfigPath("$HOME/.xrootd-monitoring-shoveler") // call multiple times to add many search paths
+		viper.AddConfigPath(".")                                 // optionally look for config in the working directory
+		viper.AddConfigPath("config/")
+	}
 	err := viper.ReadInConfig() // Find and read the config file
 	if err != nil {             // Handle errors reading the config file
 		log.Warningln("Unable to read in config file, will check environment for configuration:", err)
@@ -128,7 +138,7 @@ func (c *Config) ReadConfig() {
 		// Get the AMQP URL
 		c.AmqpURL, err = url.Parse(viper.GetString("amqp.url"))
 		if err != nil {
-			panic(fmt.Errorf("Fatal error parsing AMQP URL: %s \n", err))
+			panic(fmt.Errorf("fatal error parsing AMQP URL: %w", err))
 		}
 		log.Debugln("AMQP URL:", c.AmqpURL.String())
 
@@ -158,7 +168,7 @@ func (c *Config) ReadConfig() {
 		// Get the STOMP URL
 		c.StompURL, err = url.Parse(viper.GetString("stomp.url"))
 		if err != nil {
-			panic(fmt.Errorf("Fatal error parsing STOMP URL: %s \n", err))
+			panic(fmt.Errorf("fatal error parsing STOMP URL: %w", err))
 		}
 		log.Debugln("STOMP URL:", c.StompURL.String())
 

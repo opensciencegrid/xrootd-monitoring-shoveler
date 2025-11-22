@@ -87,7 +87,9 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 // resources from the previous connection are cleaned up.
 func reconnectAmqp(amqpURL *url.URL, curSession *Session) (*Session, error) {
 	// close the current session
-	curSession.Close()
+	if err := curSession.Close(); err != nil {
+		log.Debugln("Error closing previous AMQP session:", err)
+	}
 
 	// Create a new session and return it
 	newSession := New(*amqpURL)

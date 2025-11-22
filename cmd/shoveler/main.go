@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"time"
@@ -21,6 +22,10 @@ var (
 var DEBUG bool = false
 
 func main() {
+	// Parse command-line flags
+	configPath := flag.String("c", "", "path to configuration file")
+	flag.StringVar(configPath, "config", "", "path to configuration file (alias for -c)")
+	flag.Parse()
 
 	shoveler.ShovelerVersion = version
 	shoveler.ShovelerCommit = commit
@@ -37,7 +42,7 @@ func main() {
 
 	// Load the configuration
 	config := shoveler.Config{}
-	config.ReadConfig()
+	config.ReadConfigWithPath(*configPath)
 
 	// Shoveler defaults to shoveling mode (unless explicitly set to collector in config)
 	if config.Mode == "collector" {
@@ -98,7 +103,11 @@ func runShovelingModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueu
 	if err := fr.Start(); err != nil {
 		logger.Fatalln("Failed to start file reader:", err)
 	}
-	defer fr.Stop()
+	defer func() {
+		if err := fr.Stop(); err != nil {
+			logger.Errorln("Failed to stop file reader:", err)
+		}
+	}()
 
 	logger.Infoln("Shoveling mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
 
@@ -227,7 +236,11 @@ func runCollectorModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueu
 	if err := fr.Start(); err != nil {
 		logger.Fatalln("Failed to start file reader:", err)
 	}
-	defer fr.Stop()
+	defer func() {
+		if err := fr.Stop(); err != nil {
+			logger.Errorln("Failed to stop file reader:", err)
+		}
+	}()
 
 	logger.Infoln("Collector mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
 
