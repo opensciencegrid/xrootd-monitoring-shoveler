@@ -407,45 +407,38 @@ func runCollectorModeRabbitMQ(config *shoveler.Config, cq *shoveler.Confirmation
 
 	// Process packets from RabbitMQ
 	// We need to read both packets and remote addresses in lockstep
-	for {
+	for pkt := range reader.Packets() {
+		shoveler.PacketsReceived.Inc()
+
+		// Get corresponding remote address
+		var remoteAddr string
 		select {
-		case pkt, ok := <-reader.Packets():
-			if !ok {
-				logger.Infoln("RabbitMQ reader stopped")
-				return
-			}
-
-			shoveler.PacketsReceived.Inc()
-
-			// Get corresponding remote address
-			var remoteAddr string
-			select {
-			case remoteAddr = <-reader.RemoteAddresses():
-			case <-time.After(1 * time.Second):
-				logger.Warningln("Timeout waiting for remote address")
-				remoteAddr = "unknown:0"
-			}
-
-			// Parse packet
-			startParse := time.Now()
-			packet, err := parser.ParsePacket(pkt)
-			parseTime := time.Since(startParse).Milliseconds()
-			shoveler.ParseTimeMs.Observe(float64(parseTime))
-
-			if err != nil {
-				shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
-				logger.Debugln("Failed to parse packet:", err)
-				continue
-			}
-			shoveler.PacketsParsedOK.Inc()
-
-			// Set remote address for server ID calculation
-			if packet != nil {
-				packet.RemoteAddr = remoteAddr
-			}
-
-			// Handle the parsed packet
-			handleParsedPacket(packet, correlator, config, cq, fw, logger)
+		case remoteAddr = <-reader.RemoteAddresses():
+		case <-time.After(1 * time.Second):
+			logger.Warningln("Timeout waiting for remote address")
+			remoteAddr = "unknown:0"
 		}
+
+		// Parse packet
+		startParse := time.Now()
+		packet, err := parser.ParsePacket(pkt)
+		parseTime := time.Since(startParse).Milliseconds()
+		shoveler.ParseTimeMs.Observe(float64(parseTime))
+
+		if err != nil {
+			shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
+			logger.Debugln("Failed to parse packet:", err)
+			continue
+		}
+		shoveler.PacketsParsedOK.Inc()
+
+		// Set remote address for server ID calculation
+		if packet != nil {
+			packet.RemoteAddr = remoteAddr
+		}
+
+		// Handle the parsed packet
+		handleParsedPacket(packet, correlator, config, cq, fw, logger)
 	}
+	logger.Infoln("RabbitMQ reader stopped")
 }

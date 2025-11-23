@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package shoveler
@@ -23,7 +24,7 @@ func TestEndToEndFileOperation(t *testing.T) {
 	openPacket := createFileOpenPacket(123, 456, 1024, "/test/file.txt")
 	packet, err := parser.ParsePacket(openPacket)
 	require.NoError(t, err)
-	
+
 	record, err := correlator.ProcessPacket(packet)
 	require.NoError(t, err)
 	assert.Nil(t, record) // Open should not produce a record yet
@@ -32,7 +33,7 @@ func TestEndToEndFileOperation(t *testing.T) {
 	closePacket := createFileClosePacket(123, 456, 2048, 512, 256)
 	packet, err = parser.ParsePacket(closePacket)
 	require.NoError(t, err)
-	
+
 	record, err = correlator.ProcessPacket(packet)
 	require.NoError(t, err)
 	require.NotNil(t, record) // Close should produce a correlated record
@@ -50,16 +51,16 @@ func TestEndToEndFileOperation(t *testing.T) {
 func createFileOpenPacket(fileId, userId uint32, fileSize int64, filename string) []byte {
 	lfnBytes := []byte(filename)
 	recSize := 16 + 8 + 4 + len(lfnBytes) // file header + filesize + user + lfn
-	plen := 8 + recSize // packet header + record
-	
+	plen := 8 + recSize                   // packet header + record
+
 	packet := make([]byte, plen)
-	
+
 	// Packet header
 	packet[0] = parser.PacketTypeFOpen
 	packet[1] = 1 // sequence
 	binary.BigEndian.PutUint16(packet[2:4], uint16(plen))
 	binary.BigEndian.PutUint32(packet[4:8], 1000) // server start
-	
+
 	// File header
 	offset := 8
 	packet[offset] = parser.RecTypeOpen
@@ -67,19 +68,19 @@ func createFileOpenPacket(fileId, userId uint32, fileSize int64, filename string
 	binary.BigEndian.PutUint16(packet[offset+2:offset+4], uint16(recSize))
 	binary.BigEndian.PutUint32(packet[offset+4:offset+8], fileId)
 	binary.BigEndian.PutUint32(packet[offset+8:offset+12], userId)
-	
+
 	// File size
 	offset += 16
 	binary.BigEndian.PutUint64(packet[offset:offset+8], uint64(fileSize))
-	
+
 	// User
 	offset += 8
 	binary.BigEndian.PutUint32(packet[offset:offset+4], userId)
-	
+
 	// Filename
 	offset += 4
 	copy(packet[offset:], lfnBytes)
-	
+
 	return packet
 }
 
@@ -87,15 +88,15 @@ func createFileOpenPacket(fileId, userId uint32, fileSize int64, filename string
 func createFileClosePacket(fileId, userId uint32, readBytes, readvBytes, writeBytes int64) []byte {
 	recSize := 40 // 16 (header) + 24 (xfr stats)
 	plen := 8 + recSize
-	
+
 	packet := make([]byte, plen)
-	
+
 	// Packet header
 	packet[0] = parser.PacketTypeFClose
 	packet[1] = 2 // sequence
 	binary.BigEndian.PutUint16(packet[2:4], uint16(plen))
 	binary.BigEndian.PutUint32(packet[4:8], 1000) // server start
-	
+
 	// File header
 	offset := 8
 	packet[offset] = parser.RecTypeClose
@@ -103,13 +104,13 @@ func createFileClosePacket(fileId, userId uint32, readBytes, readvBytes, writeBy
 	binary.BigEndian.PutUint16(packet[offset+2:offset+4], uint16(recSize))
 	binary.BigEndian.PutUint32(packet[offset+4:offset+8], fileId)
 	binary.BigEndian.PutUint32(packet[offset+8:offset+12], userId)
-	
+
 	// XFR stats
 	offset += 16
 	binary.BigEndian.PutUint64(packet[offset:offset+8], uint64(readBytes))
 	binary.BigEndian.PutUint64(packet[offset+8:offset+16], uint64(readvBytes))
 	binary.BigEndian.PutUint64(packet[offset+16:offset+24], uint64(writeBytes))
-	
+
 	return packet
 }
 
@@ -121,16 +122,16 @@ func TestPacketVerificationFlow(t *testing.T) {
 	validPacket[1] = 1
 	binary.BigEndian.PutUint16(validPacket[2:4], 12)
 	binary.BigEndian.PutUint32(validPacket[4:8], 1000)
-	
+
 	// Verify it passes
 	assert.True(t, VerifyPacket(validPacket))
-	
+
 	// Create an invalid packet (length mismatch)
 	invalidPacket := make([]byte, 10)
 	invalidPacket[0] = parser.PacketTypeMap
 	invalidPacket[1] = 1
 	binary.BigEndian.PutUint16(invalidPacket[2:4], 20) // Claims 20 but only 10 bytes
-	
+
 	// Verify it fails
 	assert.False(t, VerifyPacket(invalidPacket))
 }

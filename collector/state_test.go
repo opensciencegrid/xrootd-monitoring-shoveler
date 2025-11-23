@@ -144,13 +144,13 @@ func TestStateMap_ConcurrentAccess(t *testing.T) {
 
 func TestStateMap_Stop(t *testing.T) {
 	sm := NewStateMap(1*time.Second, 0, 50*time.Millisecond)
-	
+
 	sm.Set("key1", "value1")
 	require.Equal(t, 1, sm.Size())
-	
+
 	// Stop should complete without hanging
 	sm.Stop()
-	
+
 	// Map should still be accessible after stop (janitor is stopped)
 	val, exists := sm.Get("key1")
 	assert.True(t, exists)
