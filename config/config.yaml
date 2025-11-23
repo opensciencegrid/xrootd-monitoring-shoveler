@@ -1,6 +1,3 @@
-# Operating mode: "shoveling" (default, minimal processing) or "collector" (full parsing and correlation)
-# mode: shoveling
-
 # Input configuration (optional, defaults to UDP on listen.port)
 # input:
 #   type: udp

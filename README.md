@@ -4,7 +4,7 @@
   <h1>XRootD Monitoring Shoveler</h1>
   
   <p>
-    This shoveler gathers UDP monitoring messages from XRootD servers and sends them to a reliable message bus. It supports two operating modes: shoveling mode (minimal processing) and collector mode (full packet parsing and correlation).
+    This project provides tools for gathering UDP monitoring messages from XRootD servers and sending them to a reliable message bus. It includes two binaries: <code>shoveler</code> for minimal processing and high throughput, and <code>xrootd-monitoring-collector</code> for full packet parsing and correlation.
   </p>
 
 <!-- Badges -->
@@ -131,32 +131,32 @@ When running as a daemon, environment variables can be set in `/etc/sysconfig/xr
 
 ### Operating Modes
 
-The shoveler supports two operating modes:
+The system provides two separate binaries for different use cases:
 
-#### Shoveling Mode (Default)
+#### Shoveler Binary (`shoveler`)
 
-The traditional mode that performs minimal processing:
+The traditional shoveler performs minimal processing:
 - Validates packet boundaries and type
-- Forwards packets to message bus with minimal overhead
+- Forwards packets to message bus with minimal overhead  
 - Preserves current behavior for maximum throughput
 - Suitable for high-volume environments
 
-Configure with `mode: shoveling` or leave unset (default).
+Run with: `shoveler` (or `shoveler -c /path/to/config.yaml`)
 
-#### Collector Mode
+#### Collector Binary (`xrootd-monitoring-collector`)
 
-Advanced mode with full packet parsing and correlation:
+The collector performs full packet parsing and correlation:
 - Parses XRootD monitoring packets according to the [XRootD monitoring specification](https://xrootd.web.cern.ch/doc/dev6/xrd_monitoring.htm#_Toc204013498)
 - Correlates file open and close events to compute latency and throughput
 - Maintains stateful tracking of file operations with TTL-based cleanup
 - Emits structured collector records with detailed metrics
 - Tracks parsing performance and state management via Prometheus metrics
 
-Configure with `mode: collector` and set state management parameters:
+Run with: `xrootd-monitoring-collector` (or `xrootd-monitoring-collector -c /path/to/config.yaml`)
+
+Configure state management parameters:
 
 ```yaml
-mode: collector
-
 state:
   entry_ttl: 300      # Time-to-live for state entries in seconds
   max_entries: 10000  # Maximum state entries (0 for unlimited)
@@ -167,7 +167,6 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 #### Available Environment Variables
 
 **General Configuration:**
-* `SHOVELER_MODE` - Operating mode: `shoveling` or `collector` (default: `shoveling`)
 * `SHOVELER_DEBUG` - Enable debug logging: `true` or `false`
 * `SHOVELER_VERIFY` - Verify packet format: `true` or `false` (default: `true`)
 
@@ -282,25 +281,25 @@ From Docker, you can start the container from the OSG hub with the following com
 
 ### Processing Pipelines
 
-The shoveler implements two distinct processing pipelines:
+The project provides two binaries with distinct processing pipelines:
 
-#### Shoveling Mode Pipeline
+#### Shoveler Pipeline (`shoveler` binary)
 1. Receive UDP packet
 2. Optional: Validate packet header
 3. Package packet with metadata (IP, timestamp)
 4. Enqueue to message bus
 5. Optional: Forward to additional UDP destinations
 
-#### Collector Mode Pipeline
-1. Receive UDP packet
+#### Collector Pipeline (`xrootd-monitoring-collector` binary)
+1. Receive UDP packet (or from message bus/file)
 2. Parse packet according to XRootD monitoring specification
 3. Extract structured fields (file operations, user info, etc.)
 4. Correlate with existing state (open/close matching)
 5. Calculate metrics (latency, throughput)
 6. Emit structured collector record
-7. Enqueue to message bus
+7. Enqueue to message bus (or write to file)
 
-The collector mode uses a TTL-based state map with automatic cleanup to track file operations across multiple packets. This enables correlation of file open events with their corresponding close events to compute accurate latency and transfer metrics.
+The collector uses a TTL-based state map with automatic cleanup to track file operations across multiple packets. This enables correlation of file open events with their corresponding close events to compute accurate latency and transfer metrics.
 
 ### Message Bus Integration
 
@@ -339,7 +338,7 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_queue_size` - Current queue size
 - `shoveler_rabbitmq_reconnects` - MQ reconnection count
 
-**Collector Mode (additional):**
+**Collector Binary (additional):**
 - `shoveler_packets_parsed_ok` - Successfully parsed packets
 - `shoveler_parse_errors` - Parse errors by reason
 - `shoveler_state_size` - Current state map entries
@@ -545,35 +544,41 @@ go test -cover ./...
 
 ### Existing Deployments
 
-No changes required! The default mode is "shoveling" which preserves existing behavior.
+No changes required! The `shoveler` binary preserves existing behavior.
 
-### Enabling Collector Mode
+### Using the Collector
 
-1. Add to config:
+1. Install the `xrootd-monitoring-collector` binary alongside or instead of `shoveler`.
+
+2. Configure state management (optional, defaults shown):
    ```yaml
-   mode: collector
    state:
-     entry_ttl: 300
-     max_entries: 10000
+     entry_ttl: 300      # seconds
+     max_entries: 10000  # 0 for unlimited
    ```
 
-2. Restart shoveler:
+3. Run the collector:
    ```bash
-   systemctl restart xrootd-monitoring-shoveler.service
+   xrootd-monitoring-collector -c /path/to/config.yaml
+   ```
+   
+   Or as a service:
+   ```bash
+   systemctl start xrootd-monitoring-collector.service
    ```
 
-3. Monitor metrics:
+4. Monitor metrics:
    ```bash
    curl http://localhost:8000/metrics | grep shoveler_
    ```
 
-4. Verify records:
+5. Verify records:
    - Records are now structured CollectorRecord format
    - Check message bus for new format
 
 ### Architecture Decisions
 
-#### Why Two Modes?
+#### Why Two Binaries?
 - **Backward Compatibility:** Existing deployments continue working
 - **Performance:** Shoveling mode optimized for throughput
 - **Flexibility:** Choose processing level based on needs

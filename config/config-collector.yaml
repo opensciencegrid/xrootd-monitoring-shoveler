@@ -1,8 +1,5 @@
-# Example configuration for collector mode
-# The shoveler can operate in two modes: "shoveling" (default) or "collector"
-
-# Operating mode: shoveling (minimal processing) or collector (full parsing and correlation)
-mode: collector
+# Example configuration for xrootd-monitoring-collector
+# The collector binary performs full packet parsing and correlation
 
 # Input configuration
 input:
