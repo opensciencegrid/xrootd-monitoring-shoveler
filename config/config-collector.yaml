@@ -22,6 +22,9 @@ state:
   entry_ttl: 300
   # Maximum number of state entries (0 for unlimited)
   max_entries: 10000
+  # Disable reverse DNS lookups for performance (default: true)
+  # When enabled (false), will attempt to resolve IP addresses to hostnames for user_domain field
+  disable_reverse_dns: true
 
 # Select which protocol to use in order to connect to the MQ
 # mq: amqp/stomp

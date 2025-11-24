@@ -107,24 +107,26 @@ type PathInfo struct {
 
 // Correlator correlates file open and close events
 type Correlator struct {
-	stateMap  *StateMap
-	userMap   *StateMap
-	dictMap   *StateMap // Maps dictid to path/user info
-	serverMap *StateMap // Maps serverID to server identification info
-	logger    *logrus.Logger
+	stateMap          *StateMap
+	userMap           *StateMap
+	dictMap           *StateMap // Maps dictid to path/user info
+	serverMap         *StateMap // Maps serverID to server identification info
+	logger            *logrus.Logger
+	disableReverseDNS bool // Skip reverse DNS lookups for performance
 }
 
 // NewCorrelator creates a new correlator
-func NewCorrelator(ttl time.Duration, maxEntries int, logger *logrus.Logger) *Correlator {
+func NewCorrelator(ttl time.Duration, maxEntries int, disableReverseDNS bool, logger *logrus.Logger) *Correlator {
 	if logger == nil {
 		logger = logrus.New()
 	}
 	return &Correlator{
-		stateMap:  NewStateMap(ttl, maxEntries, ttl/10),
-		userMap:   NewStateMap(ttl, maxEntries, ttl/10),
-		dictMap:   NewStateMap(ttl, maxEntries, ttl/10),
-		serverMap: NewStateMap(ttl, maxEntries, ttl/10),
-		logger:    logger,
+		stateMap:          NewStateMap(ttl, maxEntries, ttl/10),
+		userMap:           NewStateMap(ttl, maxEntries, ttl/10),
+		dictMap:           NewStateMap(ttl, maxEntries, ttl/10),
+		serverMap:         NewStateMap(ttl, maxEntries, ttl/10),
+		logger:            logger,
+		disableReverseDNS: disableReverseDNS,
 	}
 }
 
@@ -791,14 +793,16 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		// Extract user_domain from hostname
 		if host != "" {
 			if isIPPattern(host) {
-				// Host is an IP address - try reverse DNS lookup
-				ipStr := extractIPFromHost(host)
-				hostname := reverseDNSLookup(ipStr)
-				if hostname != "" {
-					// Successfully resolved - extract domain from hostname
-					parts := strings.Split(hostname, ".")
-					if len(parts) >= 2 {
-						userDomain = strings.Join(parts[len(parts)-2:], ".")
+				// Host is an IP address - try reverse DNS lookup if not disabled
+				if !c.disableReverseDNS {
+					ipStr := extractIPFromHost(host)
+					hostname := reverseDNSLookup(ipStr)
+					if hostname != "" {
+						// Successfully resolved - extract domain from hostname
+						parts := strings.Split(hostname, ".")
+						if len(parts) >= 2 {
+							userDomain = strings.Join(parts[len(parts)-2:], ".")
+						}
 					}
 				}
 			} else {

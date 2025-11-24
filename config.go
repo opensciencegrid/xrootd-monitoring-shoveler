@@ -23,8 +23,9 @@ type InputConfig struct {
 }
 
 type StateConfig struct {
-	EntryTTL   int // TTL in seconds for state entries
-	MaxEntries int // Max entries in state map (0 for unlimited)
+	EntryTTL          int  // TTL in seconds for state entries
+	MaxEntries        int  // Max entries in state map (0 for unlimited)
+	DisableReverseDNS bool // Disable reverse DNS lookups for performance (default: true)
 }
 
 type OutputConfig struct {
@@ -117,6 +118,8 @@ func (c *Config) ReadConfigWithPath(configPath string) {
 	c.State.EntryTTL = viper.GetInt("state.entry_ttl")
 	viper.SetDefault("state.max_entries", 0) // unlimited by default
 	c.State.MaxEntries = viper.GetInt("state.max_entries")
+	viper.SetDefault("state.disable_reverse_dns", true) // disabled by default for performance
+	c.State.DisableReverseDNS = viper.GetBool("state.disable_reverse_dns")
 
 	// Output configuration (for collector mode)
 	viper.SetDefault("output.type", "mq") // message queue by default

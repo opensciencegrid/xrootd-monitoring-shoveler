@@ -298,7 +298,7 @@ func processPackets(source input.PacketSource, correlator *collector.Correlator,
 func runCollectorModeFile(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Create correlator
 	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, logger)
+	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, config.State.DisableReverseDNS, logger)
 	defer correlator.Stop()
 
 	// Update state size metric periodically
@@ -331,7 +331,7 @@ func runCollectorModeFile(config *shoveler.Config, output connectors.OutputConne
 func runCollectorModeUDP(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Create correlator
 	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, logger)
+	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, config.State.DisableReverseDNS, logger)
 	defer correlator.Stop()
 
 	// Update state size metric periodically
@@ -361,10 +361,10 @@ func runCollectorModeUDP(config *shoveler.Config, output connectors.OutputConnec
 }
 
 // runCollectorModeRabbitMQ processes packets from RabbitMQ in collector mode
-func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
+func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) error {
 	// Create correlator
 	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, logger)
+	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, config.State.DisableReverseDNS, logger)
 	defer correlator.Stop()
 
 	// Update state size metric periodically
@@ -407,4 +407,5 @@ func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputC
 	// Process packets using common logic
 	processPackets(reader, correlator, config, output, logger)
 	logger.Infoln("RabbitMQ reader stopped")
+	return nil
 }

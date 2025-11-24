@@ -36,7 +36,7 @@ func TestMessagesFile(t *testing.T) {
 	}()
 
 	// Create a correlator with 5 minute TTL
-	correlator := NewCorrelator(5*time.Minute, 10000, nil)
+	correlator := NewCorrelator(5*time.Minute, 10000, false, nil)
 	defer correlator.Stop()
 
 	// Statistics
