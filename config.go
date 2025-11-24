@@ -55,6 +55,8 @@ type Config struct {
 	StompTopic        string
 	Metrics           bool
 	MetricsPort       int
+	Profile           bool
+	ProfilePort       int
 	StompCert         string
 	StompCertKey      string
 	QueueDir          string
@@ -202,6 +204,12 @@ func (c *Config) ReadConfigWithPath(configPath string) {
 	c.Metrics = viper.GetBool("metrics.enable")
 	viper.SetDefault("metrics.port", 8000)
 	c.MetricsPort = viper.GetInt("metrics.port")
+
+	// Profile defaults
+	viper.SetDefault("profile.enable", false)
+	c.Profile = viper.GetBool("profile.enable")
+	viper.SetDefault("profile.port", 3030)
+	c.ProfilePort = viper.GetInt("profile.port")
 
 	viper.SetDefault("queue_directory", "/var/spool/xrootd-monitoring-shoveler/queue")
 	c.QueueDir = viper.GetString("queue_directory")

@@ -67,6 +67,12 @@ metrics:
   enable: true
   port: 8000
 
+# Enable pprof profiling (for troubleshooting/debugging)
+# Access at http://host:port/debug/pprof/
+profile:
+  enable: false
+  port: 3030
+
 # Directory to store overflow of queue onto disk.
 # The queue keeps 100 messages in memory.  If the shoveler is disconnected from the message bus,
 # it will store messages over the 100 in memory onto disk into this directory.  Once the connection has been re-established

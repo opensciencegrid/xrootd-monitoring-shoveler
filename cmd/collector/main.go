@@ -100,6 +100,11 @@ func main() {
 		shoveler.StartMetrics(config.MetricsPort)
 	}
 
+	// Start pprof profiling if enabled
+	if config.Profile {
+		shoveler.StartProfile(config.ProfilePort)
+	}
+
 	// Always run in collector mode
 	runCollectorMode(&config, output, logger)
 }

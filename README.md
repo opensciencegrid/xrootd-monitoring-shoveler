@@ -354,6 +354,41 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 
 Metrics are available at `http://localhost:8000/metrics` by default (configurable via `metrics.port`).
 
+### Profiling
+
+Both `shoveler` and `xrootd-monitoring-collector` support pprof profiling for performance analysis and troubleshooting. Enable profiling in your configuration:
+
+```yaml
+profile:
+  enable: true
+  port: 3030  # Default port
+```
+
+When enabled, pprof endpoints are available at `http://localhost:3030/debug/pprof/`:
+
+- `/debug/pprof/` - Index of available profiles
+- `/debug/pprof/profile` - 30-second CPU profile
+- `/debug/pprof/heap` - Heap memory profile
+- `/debug/pprof/goroutine` - Goroutine stack traces
+- `/debug/pprof/block` - Blocking profile
+- `/debug/pprof/mutex` - Mutex contention profile
+- `/debug/pprof/trace` - Execution trace
+
+**Example Usage:**
+
+```bash
+# CPU profiling (30 seconds)
+go tool pprof http://localhost:3030/debug/pprof/profile
+
+# Heap profiling
+go tool pprof http://localhost:3030/debug/pprof/heap
+
+# View goroutines
+curl http://localhost:3030/debug/pprof/goroutine?debug=1
+```
+
+**Note:** Profiling is disabled by default and should only be enabled when troubleshooting performance issues.
+
 ## Implementation Details
 
 ### XRootD Packet Parser

@@ -65,6 +65,11 @@ func main() {
 		shoveler.StartMetrics(config.MetricsPort)
 	}
 
+	// Start pprof profiling if enabled
+	if config.Profile {
+		shoveler.StartProfile(config.ProfilePort)
+	}
+
 	// Shoveler always runs in shoveling mode (minimal processing)
 	runShovelingMode(&config, cq, logger)
 }
