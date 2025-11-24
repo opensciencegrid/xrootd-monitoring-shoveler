@@ -38,9 +38,8 @@ func main() {
 	textFormatter := logrus.TextFormatter{}
 	textFormatter.DisableLevelTruncation = true
 	textFormatter.FullTimestamp = true
+	logger.SetFormatter(&textFormatter)
 	logrus.SetFormatter(&textFormatter)
-
-	shoveler.SetLogger(logger)
 
 	// Load the configuration
 	config := shoveler.Config{}
@@ -48,9 +47,14 @@ func main() {
 
 	if DEBUG || config.Debug {
 		logger.SetLevel(logrus.DebugLevel)
+		logrus.SetLevel(logrus.DebugLevel)
 	} else {
 		logger.SetLevel(logrus.WarnLevel)
+		logrus.SetLevel(logrus.WarnLevel)
 	}
+
+	// Set the logger after the level is configured
+	shoveler.SetLogger(logger)
 
 	// Log the version information
 	logrus.Infoln("Starting xrootd-monitoring-collector", version, "commit:", commit, "built on:", date, "built by:", builtBy)
