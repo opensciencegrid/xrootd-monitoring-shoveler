@@ -9,6 +9,7 @@ import (
 
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/collector"
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/connectors"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/input"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
 	"github.com/sirupsen/logrus"
@@ -56,10 +57,13 @@ func main() {
 	logrus.Infoln("Mode: collector (forced)")
 	logrus.Debugln("Queue directory:", config.QueueDir)
 
-	// Start the message queue if output type requires it
-	cq := shoveler.NewConfirmationQueue(&config)
+	// Initialize output connectors
+	var outputConnectors []connectors.OutputConnector
 
+	// Initialize message queue if needed
+	var cq *shoveler.ConfirmationQueue
 	if config.Output.Type == "" || config.Output.Type == "mq" || config.Output.Type == "both" {
+		cq = shoveler.NewConfirmationQueue(&config)
 		if config.MQ == "amqp" {
 			// Start the AMQP go func
 			go shoveler.StartAMQP(&config, cq)
@@ -67,25 +71,29 @@ func main() {
 			// Start the STOMP go func
 			go shoveler.StartStomp(&config, cq)
 		}
+		queueConnector := connectors.NewQueueConnector(cq)
+		outputConnectors = append(outputConnectors, queueConnector)
 	}
 
 	// Initialize file writer if needed
-	var fileWriter *shoveler.FileWriter
 	if config.Output.Type == "file" || config.Output.Type == "both" {
 		if config.Output.Path == "" {
 			logger.Fatalln("Output type is 'file' or 'both' but no output.path configured")
 		}
-		var err error
-		fileWriter, err = shoveler.NewFileWriter(config.Output.Path, logger)
+		fileConnector, err := connectors.NewFileConnector(config.Output.Path, logger)
 		if err != nil {
-			logger.Fatalln("Failed to create file writer:", err)
+			logger.Fatalln("Failed to create file connector:", err)
 		}
-		defer func() {
-			if err := fileWriter.Close(); err != nil {
-				logger.Errorln("Failed to close file writer:", err)
-			}
-		}()
+		outputConnectors = append(outputConnectors, fileConnector)
 	}
+
+	// Create multi-output connector
+	output := connectors.NewMultiOutputConnector(outputConnectors, logger)
+	defer func() {
+		if err := output.Close(); err != nil {
+			logger.Errorln("Failed to close output connectors:", err)
+		}
+	}()
 
 	// Start the metrics
 	if config.Metrics {
@@ -93,48 +101,21 @@ func main() {
 	}
 
 	// Always run in collector mode
-	runCollectorMode(&config, cq, fileWriter, logger)
+	runCollectorMode(&config, output, logger)
 }
 
 // emitRecord handles outputting a record to the configured destinations
-func emitRecord(recordJSON []byte, config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
-	// Write to file if configured
-	if fw != nil {
-		if err := fw.Write(recordJSON); err != nil {
-			logger.Errorln("Failed to write record to file:", err)
-		}
-	}
-
-	// Enqueue to message queue if configured
-	if config.Output.Type == "" || config.Output.Type == "mq" || config.Output.Type == "both" {
-		cq.Enqueue(recordJSON)
-	}
+func emitRecord(recordJSON []byte, output connectors.OutputConnector) {
+	output.Write(recordJSON)
 }
 
 // emitWLCGRecord handles outputting a WLCG-formatted record to the WLCG exchange
-func emitWLCGRecord(recordJSON []byte, config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
-	// Write to file if configured
-	if fw != nil {
-		if err := fw.Write(recordJSON); err != nil {
-			logger.Errorln("Failed to write WLCG record to file:", err)
-		}
-	}
-
-	// Enqueue to message queue with WLCG exchange if configured
-	if config.Output.Type == "" || config.Output.Type == "mq" || config.Output.Type == "both" {
-		cq.EnqueueToExchange(recordJSON, config.AmqpExchangeWLCG)
-	}
+func emitWLCGRecord(recordJSON []byte, config *shoveler.Config, output connectors.OutputConnector) {
+	output.WriteToExchange(recordJSON, config.AmqpExchangeWLCG)
 }
 
 // emitGStreamEvent handles outputting a gstream event to the appropriate exchange
-func emitGStreamEvent(eventJSON []byte, streamType byte, config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
-	// Write to file if configured
-	if fw != nil {
-		if err := fw.Write(eventJSON); err != nil {
-			logger.Errorln("Failed to write gstream event to file:", err)
-		}
-	}
-
+func emitGStreamEvent(eventJSON []byte, streamType byte, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Determine exchange based on stream type
 	var exchange string
 	switch streamType {
@@ -149,28 +130,25 @@ func emitGStreamEvent(eventJSON []byte, streamType byte, config *shoveler.Config
 		exchange = config.AmqpExchange
 	}
 
-	// Enqueue to message queue if configured with specific exchange
-	if config.Output.Type == "" || config.Output.Type == "mq" || config.Output.Type == "both" {
-		cq.EnqueueToExchange(eventJSON, exchange)
-	}
+	output.WriteToExchange(eventJSON, exchange)
 }
 
 // runCollectorMode runs the collector mode with full packet parsing and correlation
-func runCollectorMode(config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
+func runCollectorMode(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Support UDP, file, and RabbitMQ inputs
 	switch config.Input.Type {
 	case "file":
-		runCollectorModeFile(config, cq, fw, logger)
+		runCollectorModeFile(config, output, logger)
 	case "rabbitmq", "amqp":
-		runCollectorModeRabbitMQ(config, cq, fw, logger)
+		runCollectorModeRabbitMQ(config, output, logger)
 	default:
 		// Default to UDP
-		runCollectorModeUDP(config, cq, fw, logger)
+		runCollectorModeUDP(config, output, logger)
 	}
 }
 
 // handleParsedPacket processes a parsed packet (gstream or regular correlation)
-func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator, config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
+func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Debug: Print packet details
 	if logger.Level == logrus.DebugLevel && packet != nil {
 		serverID := fmt.Sprintf("%d#%s", packet.Header.ServerStart, packet.RemoteAddr)
@@ -224,20 +202,20 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 			}
 
 			logger.Debugln("Emitting gstream event:", string(eventJSON))
-			emitGStreamEvent(eventJSON, streamType, config, cq, fw, logger)
+			emitGStreamEvent(eventJSON, streamType, config, output, logger)
 		}
 		return
 	}
 
 	// Process packet through correlator
-	record, err := correlator.ProcessPacket(packet)
+	records, err := correlator.ProcessPacket(packet)
 	if err != nil {
 		logger.Errorln("Failed to process packet:", err)
 		return
 	}
 
-	// If we got a complete record, emit it
-	if record != nil {
+	// If we got complete records, emit them
+	for _, record := range records {
 		shoveler.RecordsEmitted.Inc()
 
 		// Calculate latency if we have timing info
@@ -252,39 +230,39 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 			wlcgRecord, err := collector.ConvertToWLCG(record)
 			if err != nil {
 				logger.Errorln("Failed to convert to WLCG format:", err)
-				return
+				continue
 			}
 
 			wlcgJSON, err := wlcgRecord.ToJSON()
 			if err != nil {
 				logger.Errorln("Failed to marshal WLCG record:", err)
-				return
+				continue
 			}
 
 			logger.Debugln("Emitting WLCG record:", string(wlcgJSON))
-			emitWLCGRecord(wlcgJSON, config, cq, fw, logger)
+			emitWLCGRecord(wlcgJSON, config, output)
 		} else {
 			// Convert to JSON and enqueue (normal path)
 			recordJSON, err := record.ToJSON()
 			if err != nil {
 				logger.Errorln("Failed to marshal record:", err)
-				return
+				continue
 			}
 
 			logger.Debugln("Emitting collector record:", string(recordJSON))
-			emitRecord(recordJSON, config, cq, fw, logger)
+			emitRecord(recordJSON, output)
 		}
 	}
 }
 
 // processPackets is the common packet processing loop for all input types
-func processPackets(source input.PacketSource, getRemoteAddr func() string, correlator *collector.Correlator, config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
-	for pkt := range source.Packets() {
+func processPackets(source input.PacketSource, correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
+	for pktWithAddr := range source.PacketsWithAddr() {
 		shoveler.PacketsReceived.Inc()
 
 		// Parse packet
 		startParse := time.Now()
-		packet, err := parser.ParsePacket(pkt)
+		packet, err := parser.ParsePacket(pktWithAddr.Data)
 		parseTime := time.Since(startParse).Milliseconds()
 		shoveler.ParseTimeMs.Observe(float64(parseTime))
 
@@ -297,19 +275,19 @@ func processPackets(source input.PacketSource, getRemoteAddr func() string, corr
 
 		// Set remote address for server ID calculation
 		if packet != nil {
-			packet.RemoteAddr = getRemoteAddr()
+			packet.RemoteAddr = pktWithAddr.RemoteAddr
 		}
 
 		// Handle the parsed packet
-		handleParsedPacket(packet, correlator, config, cq, fw, logger)
+		handleParsedPacket(packet, correlator, config, output, logger)
 	}
 }
 
 // runCollectorModeFile processes packets from a file in collector mode
-func runCollectorModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
+func runCollectorModeFile(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Create correlator
 	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries)
+	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, logger)
 	defer correlator.Stop()
 
 	// Update state size metric periodically
@@ -334,20 +312,15 @@ func runCollectorModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueu
 
 	logger.Infoln("Collector mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
 
-	// For file input, use a default remote address
-	getRemoteAddr := func() string {
-		return "file:0"
-	}
-
 	// Process packets using common logic
-	processPackets(fr, getRemoteAddr, correlator, config, cq, fw, logger)
+	processPackets(fr, correlator, config, output, logger)
 }
 
 // runCollectorModeUDP processes packets from UDP in collector mode
-func runCollectorModeUDP(config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
+func runCollectorModeUDP(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Create correlator
 	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries)
+	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, logger)
 	defer correlator.Stop()
 
 	// Update state size metric periodically
@@ -372,38 +345,15 @@ func runCollectorModeUDP(config *shoveler.Config, cq *shoveler.ConfirmationQueue
 
 	logger.Infoln("Collector mode: Listening for UDP messages at:", net.JoinHostPort(config.ListenIp, fmt.Sprintf("%d", config.ListenPort)))
 
-	// Process packets with remote addresses
-	for pktWithAddr := range udpListener.PacketsWithAddr() {
-		shoveler.PacketsReceived.Inc()
-
-		// Parse packet
-		startParse := time.Now()
-		packet, err := parser.ParsePacket(pktWithAddr.Data)
-		parseTime := time.Since(startParse).Milliseconds()
-		shoveler.ParseTimeMs.Observe(float64(parseTime))
-
-		if err != nil {
-			shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
-			logger.Debugln("Failed to parse packet:", err)
-			continue
-		}
-		shoveler.PacketsParsedOK.Inc()
-
-		// Set remote address for server ID calculation
-		if packet != nil {
-			packet.RemoteAddr = pktWithAddr.RemoteAddr
-		}
-
-		// Handle the parsed packet
-		handleParsedPacket(packet, correlator, config, cq, fw, logger)
-	}
+	// Process packets using common logic
+	processPackets(udpListener, correlator, config, output, logger)
 }
 
 // runCollectorModeRabbitMQ processes packets from RabbitMQ in collector mode
-func runCollectorModeRabbitMQ(config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
+func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Create correlator
 	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries)
+	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, logger)
 	defer correlator.Stop()
 
 	// Update state size metric periodically
@@ -435,44 +385,15 @@ func runCollectorModeRabbitMQ(config *shoveler.Config, cq *shoveler.Confirmation
 	if err := reader.Start(); err != nil {
 		logger.Fatalln("Failed to start RabbitMQ reader:", err)
 	}
-	defer reader.Stop()
+	defer func() {
+		if err := reader.Stop(); err != nil {
+			logger.Errorln("Failed to stop RabbitMQ reader:", err)
+		}
+	}()
 
 	logger.Infoln("Collector mode: Reading JSON messages from RabbitMQ queue:", queueName)
 
-	// Process packets from RabbitMQ
-	// We need to read both packets and remote addresses in lockstep
-	for pkt := range reader.Packets() {
-		shoveler.PacketsReceived.Inc()
-
-		// Get corresponding remote address
-		var remoteAddr string
-		select {
-		case remoteAddr = <-reader.RemoteAddresses():
-		case <-time.After(1 * time.Second):
-			logger.Warningln("Timeout waiting for remote address")
-			remoteAddr = "unknown:0"
-		}
-
-		// Parse packet
-		startParse := time.Now()
-		packet, err := parser.ParsePacket(pkt)
-		parseTime := time.Since(startParse).Milliseconds()
-		shoveler.ParseTimeMs.Observe(float64(parseTime))
-
-		if err != nil {
-			shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
-			logger.Debugln("Failed to parse packet:", err)
-			continue
-		}
-		shoveler.PacketsParsedOK.Inc()
-
-		// Set remote address for server ID calculation
-		if packet != nil {
-			packet.RemoteAddr = remoteAddr
-		}
-
-		// Handle the parsed packet
-		handleParsedPacket(packet, correlator, config, cq, fw, logger)
-	}
+	// Process packets using common logic
+	processPackets(reader, correlator, config, output, logger)
 	logger.Infoln("RabbitMQ reader stopped")
 }

@@ -94,17 +94,23 @@ func runShovelingModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueu
 
 	logger.Infoln("Shoveling mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
 
-	for pkt := range fr.Packets() {
+	for pkt := range fr.PacketsWithAddr() {
 		shoveler.PacketsReceived.Inc()
 
-		if config.Verify && !shoveler.VerifyPacket(pkt) {
+		if config.Verify && !shoveler.VerifyPacket(pkt.Data) {
 			shoveler.ValidationsFailed.Inc()
 			continue
 		}
 
-		// Create a fake remote address for file input (use "file" as remote)
-		remoteAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0}
-		msg := shoveler.PackageUdp(pkt, remoteAddr, config)
+		var remoteAddr *net.UDPAddr
+		if pkt.RemoteAddr != "" {
+			var err error
+			remoteAddr, err = net.ResolveUDPAddr("udp", pkt.RemoteAddr)
+			if err != nil {
+				logger.Warningln("Failed to parse remote addr:", pkt.RemoteAddr, err)
+			}
+		}
+		msg := shoveler.PackageUdp(pkt.Data, remoteAddr, config)
 
 		logger.Debugln("Sending msg:", string(msg))
 		cq.Enqueue(msg)

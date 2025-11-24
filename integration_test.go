@@ -17,7 +17,7 @@ import (
 // TestEndToEndFileOperation tests the complete flow from packet to collector record
 func TestEndToEndFileOperation(t *testing.T) {
 	// Create correlator
-	correlator := collector.NewCorrelator(5*time.Second, 0)
+	correlator := collector.NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Simulate file open packet

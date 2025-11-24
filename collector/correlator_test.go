@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 )
 
 func TestCorrelator_FileOpenClose(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create an open record
@@ -34,9 +35,9 @@ func TestCorrelator_FileOpenClose(t *testing.T) {
 	}
 
 	// Process open - should not return a record
-	rec, err := correlator.ProcessPacket(openPacket)
+	recs, err := correlator.ProcessPacket(openPacket)
 	require.NoError(t, err)
-	assert.Nil(t, rec)
+	assert.Nil(t, recs)
 
 	// Verify state was stored
 	assert.Equal(t, 1, correlator.GetStateSize())
@@ -71,9 +72,11 @@ func TestCorrelator_FileOpenClose(t *testing.T) {
 	}
 
 	// Process close - should return a correlated record
-	rec, err = correlator.ProcessPacket(closePacket)
+	recs, err = correlator.ProcessPacket(closePacket)
 	require.NoError(t, err)
-	require.NotNil(t, rec)
+	require.NotNil(t, recs)
+	require.Len(t, recs, 1)
+	rec := recs[0]
 
 	// Verify record fields
 	assert.Equal(t, int64(2048), rec.Read)
@@ -91,7 +94,7 @@ func TestCorrelator_FileOpenClose(t *testing.T) {
 }
 
 func TestCorrelator_CloseWithoutOpen(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a close record without a prior open
@@ -117,9 +120,11 @@ func TestCorrelator_CloseWithoutOpen(t *testing.T) {
 	}
 
 	// Process close - should return a standalone record
-	rec, err := correlator.ProcessPacket(closePacket)
+	recs, err := correlator.ProcessPacket(closePacket)
 	require.NoError(t, err)
-	require.NotNil(t, rec)
+	require.NotNil(t, recs)
+	require.Len(t, recs, 1)
+	rec := recs[0]
 
 	// Verify record was created
 	assert.Equal(t, int64(1000), rec.Read)
@@ -128,7 +133,7 @@ func TestCorrelator_CloseWithoutOpen(t *testing.T) {
 }
 
 func TestCorrelator_TimeRecord(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	timeRec := parser.FileTimeRecord{
@@ -151,16 +156,16 @@ func TestCorrelator_TimeRecord(t *testing.T) {
 	}
 
 	// Process time record
-	rec, err := correlator.ProcessPacket(timePacket)
+	recs, err := correlator.ProcessPacket(timePacket)
 	require.NoError(t, err)
-	assert.Nil(t, rec) // Time records don't produce output immediately
+	assert.Nil(t, recs) // Time records don't produce output immediately
 
 	// State should be stored
 	assert.Equal(t, 1, correlator.GetStateSize())
 }
 
 func TestCorrelator_XMLPacket(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	xmlPacket := &parser.Packet{
@@ -168,13 +173,13 @@ func TestCorrelator_XMLPacket(t *testing.T) {
 		RawData: []byte("<stats>test</stats>"),
 	}
 
-	rec, err := correlator.ProcessPacket(xmlPacket)
+	recs, err := correlator.ProcessPacket(xmlPacket)
 	require.NoError(t, err)
-	assert.Nil(t, rec) // XML packets are not correlated
+	assert.Nil(t, recs) // XML packets are not correlated
 }
 
 func TestCorrelator_RecordAverages(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create open
@@ -218,9 +223,11 @@ func TestCorrelator_RecordAverages(t *testing.T) {
 		FileRecords: []interface{}{closeRec},
 	}
 
-	rec, err := correlator.ProcessPacket(closePacket)
+	recs, err := correlator.ProcessPacket(closePacket)
 	require.NoError(t, err)
-	require.NotNil(t, rec)
+	require.NotNil(t, recs)
+	require.Len(t, recs, 1)
+	rec := recs[0]
 
 	// Check calculated averages
 	assert.Equal(t, int64(100), rec.ReadAverage)
@@ -247,7 +254,7 @@ func TestCollectorRecord_ToJSON(t *testing.T) {
 }
 
 func TestCorrelator_UserRecord(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a user record
@@ -280,9 +287,9 @@ func TestCorrelator_UserRecord(t *testing.T) {
 	}
 
 	// Process user packet
-	rec, err := correlator.ProcessPacket(userPacket)
+	recs, err := correlator.ProcessPacket(userPacket)
 	require.NoError(t, err)
-	assert.Nil(t, rec) // User packets don't produce output
+	assert.Nil(t, recs) // User packets don't produce output
 
 	// Verify user map was populated
 	assert.Equal(t, 1, correlator.GetUserMapSize())
@@ -304,9 +311,9 @@ func TestCorrelator_UserRecord(t *testing.T) {
 		FileRecords: []interface{}{openRec},
 	}
 
-	rec, err = correlator.ProcessPacket(openPacket)
+	recs, err = correlator.ProcessPacket(openPacket)
 	require.NoError(t, err)
-	assert.Nil(t, rec)
+	assert.Nil(t, recs)
 
 	// Create close record
 	closeRec := parser.FileCloseRecord{
@@ -333,9 +340,11 @@ func TestCorrelator_UserRecord(t *testing.T) {
 	}
 
 	// Process close - should return a correlated record with user info
-	rec, err = correlator.ProcessPacket(closePacket)
+	recs, err = correlator.ProcessPacket(closePacket)
 	require.NoError(t, err)
-	require.NotNil(t, rec)
+	require.NotNil(t, recs)
+	require.Len(t, recs, 1)
+	rec := recs[0]
 
 	// Verify record has user information
 	assert.Equal(t, "testuser", rec.User)
@@ -346,7 +355,7 @@ func TestCorrelator_UserRecord(t *testing.T) {
 }
 
 func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a user record with IPv6
@@ -512,4 +521,96 @@ func TestExtractDirnames(t *testing.T) {
 			assert.Equal(t, tt.expectedLogical, logical, "logical_dirname mismatch")
 		})
 	}
+}
+
+func TestCorrelator_TokenAugmentsUser(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	// First, create a regular user record
+	userRec := &parser.UserRecord{
+		Header: parser.Header{
+			Code:        parser.PacketTypeUser,
+			ServerStart: 1000,
+		},
+		DictId: 456,
+		UserInfo: parser.UserInfo{
+			Protocol: "xrootd",
+			Username: "testuser",
+			Pid:      12345,
+			Sid:      67890,
+			Host:     "client.example.com",
+		},
+		AuthInfo: parser.AuthInfo{
+			AuthProtocol: "gsi",
+			DN:           "/DC=org/DC=example/CN=testuser",
+			Org:          "ExampleOrg",
+		},
+	}
+
+	userPacket := &parser.Packet{
+		Header:     parser.Header{ServerStart: 1000},
+		UserRecord: userRec,
+		RemoteAddr: "server.example.com:1094",
+	}
+
+	// Process the user packet
+	recs, err := correlator.ProcessPacket(userPacket)
+	require.NoError(t, err)
+	assert.Nil(t, recs)
+
+	// Verify user was stored
+	serverID := correlator.getServerID(userPacket)
+	userInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(userRec.UserInfo))
+	val, exists := correlator.userMap.Get(userInfoKey)
+	require.True(t, exists, "User should be in userMap")
+	userState, ok := val.(*UserState)
+	require.True(t, ok, "Value should be UserState")
+	assert.Equal(t, "", userState.TokenInfo.Subject, "TokenInfo should be empty initially")
+
+	// Now send a token record that references this user
+	tokenRec := &parser.UserRecord{
+		Header: parser.Header{
+			Code:        parser.PacketTypeToken,
+			ServerStart: 1000,
+		},
+		DictId: 999, // Different dictID - token has its own
+		TokenInfo: parser.TokenInfo{
+			UserDictID: 456, // References the original user's DictId
+			Subject:    "CN=testuser,OU=People,DC=example,DC=org",
+			Username:   "mappeduser",
+			Org:        "TokenOrg",
+			Role:       "tokenrole",
+			Groups:     "group1 group2",
+		},
+	}
+
+	tokenPacket := &parser.Packet{
+		Header:     parser.Header{ServerStart: 1000},
+		UserRecord: tokenRec,
+		RemoteAddr: "server.example.com:1094",
+	}
+
+	// Process the token packet
+	recs, err = correlator.ProcessPacket(tokenPacket)
+	require.NoError(t, err)
+	assert.Nil(t, recs) // Token packets don't produce output either
+
+	// Verify the original user was augmented with token info
+	val, exists = correlator.userMap.Get(userInfoKey)
+	require.True(t, exists, "User should still be in userMap")
+	userState, ok = val.(*UserState)
+	require.True(t, ok, "Value should still be UserState")
+
+	// Check that token info was added
+	assert.Equal(t, uint32(456), userState.TokenInfo.UserDictID)
+	assert.Equal(t, "CN=testuser,OU=People,DC=example,DC=org", userState.TokenInfo.Subject)
+	assert.Equal(t, "mappeduser", userState.TokenInfo.Username)
+	assert.Equal(t, "TokenOrg", userState.TokenInfo.Org)
+	assert.Equal(t, "tokenrole", userState.TokenInfo.Role)
+	assert.Equal(t, "group1 group2", userState.TokenInfo.Groups)
+
+	// Verify original user info wasn't changed
+	assert.Equal(t, "testuser", userState.UserInfo.Username)
+	assert.Equal(t, "ExampleOrg", userState.AuthInfo.Org)
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
+	"github.com/sirupsen/logrus"
 )
 
 // CollectorRecord represents a correlated file access record
@@ -109,21 +110,25 @@ type Correlator struct {
 	stateMap *StateMap
 	userMap  *StateMap
 	dictMap  *StateMap // Maps dictid to path/user info
+	logger   *logrus.Logger
 }
 
 // NewCorrelator creates a new correlator
-func NewCorrelator(ttl time.Duration, maxEntries int) *Correlator {
+func NewCorrelator(ttl time.Duration, maxEntries int, logger *logrus.Logger) *Correlator {
+	if logger == nil {
+		logger = logrus.New()
+	}
 	return &Correlator{
 		stateMap: NewStateMap(ttl, maxEntries, ttl/10),
 		userMap:  NewStateMap(ttl, maxEntries, ttl/10),
 		dictMap:  NewStateMap(ttl, maxEntries, ttl/10),
+		logger:   logger,
 	}
 }
 
-// ProcessPacket processes a packet and returns a record if correlation is complete
-// Note: In practice, each packet typically contains only one file record, but we handle
-// multiple records correctly by returning only the first emitted record.
-func (c *Correlator) ProcessPacket(packet *parser.Packet) (*CollectorRecord, error) {
+// ProcessPacket processes a packet and returns records for all correlated file operations
+// Returns a slice of records since a packet can contain multiple file close events that each emit a record
+func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, error) {
 	if packet.IsXML {
 		// XML packets are not correlated
 		return nil, nil
@@ -144,24 +149,33 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) (*CollectorRecord, err
 		return nil, nil
 	}
 
-	// Process all file records and return the first complete record
-	// In practice, packets usually have one file record, but we handle multiple correctly
+	// Process all file records and collect any complete records
+	var records []*CollectorRecord
 	for _, rec := range packet.FileRecords {
 		switch r := rec.(type) {
 		case parser.FileOpenRecord:
 			result, err := c.handleFileOpen(r, packet, serverID)
-			if err != nil || result != nil {
-				return result, err
+			if err != nil {
+				return records, err
+			}
+			if result != nil {
+				records = append(records, result)
 			}
 		case parser.FileCloseRecord:
 			result, err := c.handleFileClose(r, packet, serverID)
-			if err != nil || result != nil {
-				return result, err
+			if err != nil {
+				return records, err
+			}
+			if result != nil {
+				records = append(records, result)
 			}
 		case parser.FileTimeRecord:
 			result, err := c.handleTimeRecord(r, packet, serverID)
-			if err != nil || result != nil {
-				return result, err
+			if err != nil {
+				return records, err
+			}
+			if result != nil {
+				records = append(records, result)
 			}
 		case parser.FileDisconnectRecord:
 			c.handleDisconnect(r, serverID)
@@ -169,6 +183,9 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) (*CollectorRecord, err
 		}
 	}
 
+	if len(records) > 0 {
+		return records, nil
+	}
 	return nil, nil
 }
 
@@ -394,9 +411,12 @@ func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.
 	// Key is only serverID + fileID (matches the key used in handleFileOpen)
 	key := fmt.Sprintf("%s-file-%d", serverID, rec.Header.FileId)
 
+	c.logger.Debugf("Correlating file close: serverID=%s, fileID=%d, userID=%d", serverID, rec.Header.FileId, rec.Header.UserId)
+
 	// Try to get the open state
 	val, exists := c.stateMap.Get(key)
 	if !exists {
+		c.logger.Debugf("No open record found for file close: serverID=%s, fileID=%d - creating standalone record", serverID, rec.Header.FileId)
 		// No open record found, create a standalone close record
 		return c.createStandaloneCloseRecord(rec, packet), nil
 	}
@@ -432,10 +452,53 @@ func (c *Correlator) handleTimeRecord(rec parser.FileTimeRecord, packet *parser.
 	return nil, nil
 }
 
-// handleUserRecord handles a user packet (type 'u')
-// Stores user information mapped by dictID and serverID for later correlation with file operations
+// handleUserRecord handles a user packet (type 'u' or 'T')
+// For 'u' packets: Stores user information mapped by dictID and serverID for later correlation with file operations
+// For 'T' packets (token info): Augments an existing user record with token information
 // Following Python logic: dictID -> userInfo mapping, and userInfo -> full user state
 func (c *Correlator) handleUserRecord(rec *parser.UserRecord, serverID string) {
+	// Check if this is a token record (has TokenInfo.UserDictID set)
+	if rec.TokenInfo.UserDictID != 0 {
+		c.logger.Debugf("Received token record for UserDictID=%d on server=%s", rec.TokenInfo.UserDictID, serverID)
+
+		// Look up the existing user by the UserDictID from the token
+		existingDictKey := fmt.Sprintf("%s-dictid-%d", serverID, rec.TokenInfo.UserDictID)
+		val, exists := c.dictMap.Get(existingDictKey)
+		if !exists {
+			c.logger.Debugf("Token record references non-existent user dictID=%d", rec.TokenInfo.UserDictID)
+			return
+		}
+
+		existingUserInfo, ok := val.(parser.UserInfo)
+		if !ok {
+			c.logger.Debugf("Token record found dictID but not a UserInfo type")
+			return
+		}
+
+		// Find and augment the existing user state
+		existingUserInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(existingUserInfo))
+		userStateVal, userExists := c.userMap.Get(existingUserInfoKey)
+		if !userExists {
+			c.logger.Debugf("Token record found UserInfo but no UserState for user=%s", existingUserInfo.Username)
+			return
+		}
+
+		existingUserState, ok := userStateVal.(*UserState)
+		if !ok {
+			c.logger.Debugf("Token record found user state but wrong type")
+			return
+		}
+
+		// Augment the existing user state with token information
+		existingUserState.TokenInfo = rec.TokenInfo
+		c.userMap.Set(existingUserInfoKey, existingUserState)
+
+		c.logger.Debugf("Augmented user %s (dictID=%d) with token info: subject=%s, org=%s",
+			existingUserInfo.Username, rec.TokenInfo.UserDictID, rec.TokenInfo.Subject, rec.TokenInfo.Org)
+		return
+	}
+
+	// Regular user record (not a token record)
 	userState := &UserState{
 		UserID:    rec.DictId,
 		UserInfo:  rec.UserInfo,
@@ -487,6 +550,8 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 	var userInfo parser.UserInfo
 	var found bool
 
+	c.logger.Debugf("Looking up user info: userID=%d, fileID=%d, serverID=%s", userID, fileID, serverID)
+
 	// Try to get userInfo from dictID mapping (for userID if non-zero)
 	if userID != 0 {
 		dictKey := fmt.Sprintf("%s-dictid-%d", serverID, userID)
@@ -494,7 +559,10 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 			if ui, ok := val.(parser.UserInfo); ok {
 				userInfo = ui
 				found = true
+				c.logger.Debugf("Found user info from dictID %d: username=%s, host=%s", userID, ui.Username, ui.Host)
 			}
+		} else {
+			c.logger.Debugf("User ID %d not found in dictID mapping (key: %s)", userID, dictKey)
 		}
 	}
 
@@ -505,11 +573,17 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 			if pathInfo, ok := val.(*PathInfo); ok {
 				userInfo = pathInfo.UserInfo
 				found = true
+				c.logger.Debugf("Found user info from path mapping for fileID %d: username=%s, path=%s", fileID, pathInfo.UserInfo.Username, pathInfo.Path)
+			} else {
+				c.logger.Debugf("FileID %d found in dict but not a PathInfo type", fileID)
 			}
+		} else {
+			c.logger.Debugf("Path information not found for fileID %d (dictKey: %s)", fileID, dictKey)
 		}
 	}
 
 	if !found {
+		c.logger.Debugf("No user information found for userID=%d, fileID=%d", userID, fileID)
 		return nil
 	}
 
@@ -517,6 +591,7 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 	userInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(userInfo))
 	val, exists := c.userMap.Get(userInfoKey)
 	if !exists {
+		c.logger.Debugf("Full user state not found (no 'u' packet), using basic userInfo from 'd' packet: username=%s", userInfo.Username)
 		// UserState not found (no 'u' packet received yet), but we have userInfo from 'd' packet
 		// Create a minimal UserState with just the userInfo
 		return &UserState{
@@ -527,9 +602,11 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 
 	userState, ok := val.(*UserState)
 	if !ok {
+		c.logger.Debugf("User state value exists but wrong type for key: %s", userInfoKey)
 		return nil
 	}
 
+	c.logger.Debugf("Found full user state: username=%s, DN=%s, VO=%s", userState.UserInfo.Username, userState.AuthInfo.DN, userState.AuthInfo.Org)
 	return userState
 }
 

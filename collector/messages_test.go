@@ -36,7 +36,7 @@ func TestMessagesFile(t *testing.T) {
 	}()
 
 	// Create a correlator with 5 minute TTL
-	correlator := NewCorrelator(5*time.Minute, 10000)
+	correlator := NewCorrelator(5*time.Minute, 10000, nil)
 	defer correlator.Stop()
 
 	// Statistics
@@ -62,7 +62,7 @@ func TestMessagesFile(t *testing.T) {
 	// Process all packets
 	t.Log("Processing packets from", messagesPath)
 	packetNum := 0
-	for pkt := range fr.Packets() {
+	for pktWithAddr := range fr.PacketsWithAddr() {
 		stats.TotalPackets++
 		packetNum++
 
@@ -78,7 +78,7 @@ func TestMessagesFile(t *testing.T) {
 					}
 				}
 			}()
-			packet, err = parser.ParsePacket(pkt)
+			packet, err = parser.ParsePacket(pktWithAddr.Data)
 		}()
 
 		if err != nil {
@@ -125,15 +125,20 @@ func TestMessagesFile(t *testing.T) {
 			stats.OtherPackets++
 		}
 
+		// Set remote address for server ID calculation
+		if packet != nil {
+			packet.RemoteAddr = pktWithAddr.RemoteAddr
+		}
+
 		// Process through correlator
-		record, err := correlator.ProcessPacket(packet)
+		records, err := correlator.ProcessPacket(packet)
 		if err != nil {
 			t.Logf("Warning: Correlator error: %v", err)
 			continue
 		}
 
-		// If we got a complete record, collect it
-		if record != nil {
+		// If we got complete records, collect them
+		for _, record := range records {
 			stats.EmittedRecords++
 			emittedRecords = append(emittedRecords, record)
 			if stats.EmittedRecords <= 5 {

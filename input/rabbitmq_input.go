@@ -22,19 +22,18 @@ type RabbitMQMessage struct {
 
 // RabbitMQReader reads JSON-encoded XRootD monitoring packets from RabbitMQ
 type RabbitMQReader struct {
-	brokerURL      string
-	queueName      string
-	exchange       string
-	routingKey     string
-	token          string
-	tokenPath      string
-	conn           *amqp.Connection
-	channel        *amqp.Channel
-	packets        chan []byte
-	remoteAddrs    chan string // Channel to send remote addresses
-	stop           chan struct{}
-	reconnectDelay time.Duration
-	logger         *logrus.Logger
+	brokerURL       string
+	queueName       string
+	exchange        string
+	routingKey      string
+	token           string
+	tokenPath       string
+	conn            *amqp.Connection
+	channel         *amqp.Channel
+	packetsWithAddr chan PacketWithAddr
+	stop            chan struct{}
+	reconnectDelay  time.Duration
+	logger          *logrus.Logger
 }
 
 // NewRabbitMQReader creates a new RabbitMQ reader
@@ -44,16 +43,15 @@ func NewRabbitMQReader(brokerURL, queueName, exchange, routingKey, tokenPath str
 	}
 
 	return &RabbitMQReader{
-		brokerURL:      brokerURL,
-		queueName:      queueName,
-		exchange:       exchange,
-		routingKey:     routingKey,
-		tokenPath:      tokenPath,
-		packets:        make(chan []byte, 100),
-		remoteAddrs:    make(chan string, 100),
-		stop:           make(chan struct{}),
-		reconnectDelay: 5 * time.Second,
-		logger:         logger,
+		brokerURL:       brokerURL,
+		queueName:       queueName,
+		exchange:        exchange,
+		routingKey:      routingKey,
+		tokenPath:       tokenPath,
+		packetsWithAddr: make(chan PacketWithAddr, 100),
+		stop:            make(chan struct{}),
+		reconnectDelay:  5 * time.Second,
+		logger:          logger,
 	}
 }
 
@@ -81,7 +79,7 @@ func (r *RabbitMQReader) Start() error {
 }
 
 // Stop stops the RabbitMQ reader
-func (r *RabbitMQReader) Stop() {
+func (r *RabbitMQReader) Stop() error {
 	close(r.stop)
 	if r.channel != nil {
 		if err := r.channel.Close(); err != nil {
@@ -93,18 +91,13 @@ func (r *RabbitMQReader) Stop() {
 			r.logger.Debugln("Error closing RabbitMQ connection:", err)
 		}
 	}
-	close(r.packets)
-	close(r.remoteAddrs)
+	close(r.packetsWithAddr)
+	return nil
 }
 
-// Packets returns the channel for receiving parsed packets
-func (r *RabbitMQReader) Packets() <-chan []byte {
-	return r.packets
-}
-
-// RemoteAddresses returns the channel for receiving remote addresses
-func (r *RabbitMQReader) RemoteAddresses() <-chan string {
-	return r.remoteAddrs
+// PacketsWithAddr returns the channel for receiving parsed packets with remote addresses
+func (r *RabbitMQReader) PacketsWithAddr() <-chan PacketWithAddr {
+	return r.packetsWithAddr
 }
 
 // readToken reads the authentication token from file
@@ -310,15 +303,9 @@ func (r *RabbitMQReader) processMessage(msg amqp.Delivery) error {
 		return fmt.Errorf("failed to decode base64 data: %w", err)
 	}
 
-	// Send packet data and remote address through channels
+	// Send packet data with remote address through channel
 	select {
-	case r.packets <- packetData:
-		// Also send the remote address
-		select {
-		case r.remoteAddrs <- rmqMsg.Remote:
-		case <-r.stop:
-			return nil
-		}
+	case r.packetsWithAddr <- PacketWithAddr{Data: packetData, RemoteAddr: rmqMsg.Remote}:
 	case <-r.stop:
 		return nil
 	}

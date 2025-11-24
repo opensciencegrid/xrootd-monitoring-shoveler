@@ -17,7 +17,7 @@ import (
 type PacketSource interface {
 	Start() error
 	Stop() error
-	Packets() <-chan []byte
+	PacketsWithAddr() <-chan PacketWithAddr
 }
 
 // PacketWithAddr holds a packet and its source address
@@ -32,7 +32,6 @@ type UDPListener struct {
 	port            int
 	bufferSize      int
 	conn            *net.UDPConn
-	packets         chan []byte
 	packetsWithAddr chan PacketWithAddr
 	stopChan        chan struct{}
 }
@@ -43,7 +42,6 @@ func NewUDPListener(host string, port int, bufferSize int) *UDPListener {
 		host:            host,
 		port:            port,
 		bufferSize:      bufferSize,
-		packets:         make(chan []byte, 100),
 		packetsWithAddr: make(chan PacketWithAddr, 100),
 		stopChan:        make(chan struct{}),
 	}
@@ -90,14 +88,8 @@ func (u *UDPListener) Stop() error {
 	return nil
 }
 
-// Packets returns the channel of received packets
-func (u *UDPListener) Packets() <-chan []byte {
-	return u.packets
-}
-
 // readLoop reads UDP packets and sends them to the channel
 func (u *UDPListener) readLoop() {
-	defer close(u.packets)
 	defer close(u.packetsWithAddr)
 
 	buf := make([]byte, 65536)
@@ -130,15 +122,7 @@ func (u *UDPListener) readLoop() {
 				addrStr = "unknown:0"
 			}
 
-			// Send to both channels (non-blocking)
-			select {
-			case u.packets <- data:
-			case <-u.stopChan:
-				return
-			default:
-				// Channel full, drop packet
-			}
-
+			// Send to channel (non-blocking)
 			select {
 			case u.packetsWithAddr <- PacketWithAddr{Data: data, RemoteAddr: addrStr}:
 			case <-u.stopChan:
@@ -298,12 +282,12 @@ func (r *RabbitMQConsumer) processMessages(msgs <-chan amqp.Delivery) {
 // JSON object with at least the fields: remote, version, data. The data field is
 // base64 encoded binary packet data by default (can be disabled per constructor).
 type FileReader struct {
-	path          string
-	base64Encoded bool
-	follow        bool // If true, wait for new lines to appear (tail -f behavior)
-	file          *os.File
-	packets       chan []byte
-	stopChan      chan struct{}
+	path            string
+	base64Encoded   bool
+	follow          bool // If true, wait for new lines to appear (tail -f behavior)
+	file            *os.File
+	packetsWithAddr chan PacketWithAddr
+	stopChan        chan struct{}
 }
 
 // jsonLine represents the expected JSON structure per-line in the input file.
@@ -314,15 +298,15 @@ type jsonLine struct {
 }
 
 // NewFileReader creates a new FileReader. If base64Encoded is true, the
-// "data" field will be base64 decoded before being emitted on the Packets()
+// "data" field will be base64 decoded before being emitted on the PacketsWithAddr()
 // channel. Follow is set to false (stops at EOF).
 func NewFileReader(path string, base64Encoded bool) *FileReader {
 	return &FileReader{
-		path:          path,
-		base64Encoded: base64Encoded,
-		follow:        false,
-		packets:       make(chan []byte, 100),
-		stopChan:      make(chan struct{}),
+		path:            path,
+		base64Encoded:   base64Encoded,
+		follow:          false,
+		packetsWithAddr: make(chan PacketWithAddr, 100),
+		stopChan:        make(chan struct{}),
 	}
 }
 
@@ -330,11 +314,11 @@ func NewFileReader(path string, base64Encoded bool) *FileReader {
 // If follow is true, the reader will wait for new lines to appear (tail -f behavior).
 func NewFileReaderWithFollow(path string, base64Encoded bool, follow bool) *FileReader {
 	return &FileReader{
-		path:          path,
-		base64Encoded: base64Encoded,
-		follow:        follow,
-		packets:       make(chan []byte, 100),
-		stopChan:      make(chan struct{}),
+		path:            path,
+		base64Encoded:   base64Encoded,
+		follow:          follow,
+		packetsWithAddr: make(chan PacketWithAddr, 100),
+		stopChan:        make(chan struct{}),
 	}
 }
 
@@ -361,17 +345,17 @@ func (f *FileReader) Stop() error {
 	return nil
 }
 
-// Packets returns the channel that emits decoded packet bytes.
-func (f *FileReader) Packets() <-chan []byte {
-	return f.packets
+// PacketsWithAddr returns the channel that emits decoded packets with source addresses.
+func (f *FileReader) PacketsWithAddr() <-chan PacketWithAddr {
+	return f.packetsWithAddr
 }
 
 // readLoop reads the file line by line, parses JSON, decodes the data field,
-// and emits the binary packet bytes onto the packets channel. If follow mode is
-// enabled, it will wait for new lines to appear at the end of the file instead
-// of stopping at EOF.
+// and emits the binary packet bytes with remote address onto the packetsWithAddr channel.
+// If follow mode is enabled, it will wait for new lines to appear at the end of the file
+// instead of stopping at EOF.
 func (f *FileReader) readLoop() {
-	defer close(f.packets)
+	defer close(f.packetsWithAddr)
 
 	// Use a buffered scanner to iterate lines
 	reader := bufio.NewReader(f.file)
@@ -427,9 +411,9 @@ func (f *FileReader) readLoop() {
 			data = []byte(jl.Data)
 		}
 
-		// Emit to channel (non-blocking)
+		// Emit to channel with remote address (non-blocking)
 		select {
-		case f.packets <- data:
+		case f.packetsWithAddr <- PacketWithAddr{Data: data, RemoteAddr: jl.Remote}:
 		case <-f.stopChan:
 			return
 		default:

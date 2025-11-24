@@ -46,11 +46,11 @@ func TestFileReader(t *testing.T) {
 Loop:
 	for {
 		select {
-		case pkt, ok := <-fr.Packets():
+		case pktWithAddr, ok := <-fr.PacketsWithAddr():
 			if !ok {
 				break Loop
 			}
-			got = append(got, pkt)
+			got = append(got, pktWithAddr.Data)
 		case <-timeout:
 			t.Fatal("timeout waiting for packets")
 		}

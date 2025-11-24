@@ -9,7 +9,7 @@ import (
 
 func TestHandleDisconnect(t *testing.T) {
 	// Create correlator with reasonable TTL
-	correlator := NewCorrelator(300*time.Second, 10000)
+	correlator := NewCorrelator(300*time.Second, 10000, nil)
 	serverID := "12345#host:1094"
 
 	// Create and store a user record first
@@ -72,7 +72,7 @@ func TestHandleDisconnect(t *testing.T) {
 
 func TestHandleDisconnect_UserNotFound(t *testing.T) {
 	// Create correlator
-	correlator := NewCorrelator(300*time.Second, 10000)
+	correlator := NewCorrelator(300*time.Second, 10000, nil)
 	serverID := "12345#host:1094"
 
 	// Create a disconnect record for a non-existent user
@@ -91,7 +91,7 @@ func TestHandleDisconnect_UserNotFound(t *testing.T) {
 
 func TestProcessPacket_Disconnect(t *testing.T) {
 	// Create correlator
-	correlator := NewCorrelator(300*time.Second, 10000)
+	correlator := NewCorrelator(300*time.Second, 10000, nil)
 
 	// Create a user record and process it
 	userPacket := &parser.Packet{
@@ -143,13 +143,13 @@ func TestProcessPacket_Disconnect(t *testing.T) {
 	}
 
 	// Process the disconnect packet
-	record, err := correlator.ProcessPacket(discPacket)
+	records, err := correlator.ProcessPacket(discPacket)
 	if err != nil {
 		t.Fatalf("ProcessPacket failed for disconnect: %v", err)
 	}
 
 	// Disconnect should not return a record
-	if record != nil {
+	if len(records) > 0 {
 		t.Error("Disconnect should not return a collector record")
 	}
 
