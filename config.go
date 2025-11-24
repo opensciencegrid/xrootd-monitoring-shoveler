@@ -33,7 +33,6 @@ type OutputConfig struct {
 }
 
 type Config struct {
-	Mode              string // "shoveling" or "collector"
 	Input             InputConfig
 	State             StateConfig
 	Output            OutputConfig
@@ -90,10 +89,6 @@ func (c *Config) ReadConfigWithPath(configPath string) {
 	viper.AutomaticEnv()
 	// Look for environment variables with underscores
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-
-	// Mode configuration - default to "shoveling" for backward compatibility
-	viper.SetDefault("mode", "shoveling")
-	c.Mode = viper.GetString("mode")
 
 	// Input configuration
 	viper.SetDefault("input.type", "udp")

@@ -2,14 +2,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"net"
-	"time"
 
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
-	"github.com/opensciencegrid/xrootd-monitoring-shoveler/collector"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/input"
-	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
 	"github.com/sirupsen/logrus"
 )
 
@@ -44,13 +40,6 @@ func main() {
 	config := shoveler.Config{}
 	config.ReadConfigWithPath(*configPath)
 
-	// Shoveler defaults to shoveling mode (unless explicitly set to collector in config)
-	if config.Mode == "collector" {
-		config.Mode = "collector"
-	} else {
-		config.Mode = "shoveling"
-	}
-
 	if DEBUG || config.Debug {
 		logger.SetLevel(logrus.DebugLevel)
 	} else {
@@ -59,7 +48,6 @@ func main() {
 
 	// Log the version information
 	logrus.Infoln("Starting xrootd-monitoring-shoveler", version, "commit:", commit, "built on:", date, "built by:", builtBy)
-	logrus.Infoln("Mode:", config.Mode)
 
 	// Start the message queue
 	cq := shoveler.NewConfirmationQueue(&config)
@@ -77,13 +65,8 @@ func main() {
 		shoveler.StartMetrics(config.MetricsPort)
 	}
 
-	// Run based on mode
-	if config.Mode == "collector" {
-		runCollectorMode(&config, cq, logger)
-	} else {
-		// Default to shoveling mode for backward compatibility
-		runShovelingMode(&config, cq, logger)
-	}
+	// Shoveler always runs in shoveling mode (minimal processing)
+	runShovelingMode(&config, cq, logger)
 }
 
 // runShovelingMode runs the traditional shoveling mode (minimal processing)
@@ -201,184 +184,6 @@ func runShovelingModeUDP(config *shoveler.Config, cq *shoveler.ConfirmationQueue
 					logger.Errorln("Failed to send message to UDP destination "+udpConn.RemoteAddr().String()+":", err)
 				}
 			}
-		}
-	}
-}
-
-// runCollectorMode runs the collector mode with full packet parsing and correlation
-func runCollectorMode(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
-	// Support both UDP and file inputs
-	if config.Input.Type == "file" {
-		runCollectorModeFile(config, cq, logger)
-	} else {
-		// Default to UDP
-		runCollectorModeUDP(config, cq, logger)
-	}
-}
-
-// runCollectorModeFile processes packets from a file in collector mode
-func runCollectorModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
-	// Create correlator
-	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries)
-	defer correlator.Stop()
-
-	// Update state size metric periodically
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			shoveler.StateSize.Set(float64(correlator.GetStateSize()))
-		}
-	}()
-
-	fr := input.NewFileReaderWithFollow(config.Input.Path, config.Input.Base64Encoded, config.Input.Follow)
-	if err := fr.Start(); err != nil {
-		logger.Fatalln("Failed to start file reader:", err)
-	}
-	defer func() {
-		if err := fr.Stop(); err != nil {
-			logger.Errorln("Failed to stop file reader:", err)
-		}
-	}()
-
-	logger.Infoln("Collector mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
-
-	for pkt := range fr.Packets() {
-		shoveler.PacketsReceived.Inc()
-
-		// Parse packet
-		startParse := time.Now()
-		packet, err := parser.ParsePacket(pkt)
-		parseTime := time.Since(startParse).Milliseconds()
-		shoveler.ParseTimeMs.Observe(float64(parseTime))
-
-		if err != nil {
-			shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
-			logger.Debugln("Failed to parse packet:", err)
-			continue
-		}
-		shoveler.PacketsParsedOK.Inc()
-
-		// Process packet through correlator
-		record, err := correlator.ProcessPacket(packet)
-		if err != nil {
-			logger.Errorln("Failed to process packet:", err)
-			continue
-		}
-
-		// If we got a complete record, emit it
-		if record != nil {
-			shoveler.RecordsEmitted.Inc()
-
-			// Calculate latency if we have timing info
-			if record.StartTime > 0 && record.EndTime > 0 {
-				latency := record.EndTime - record.StartTime
-				shoveler.RequestLatencyMs.Observe(float64(latency))
-			}
-
-			// Convert to JSON and enqueue
-			recordJSON, err := record.ToJSON()
-			if err != nil {
-				logger.Errorln("Failed to marshal record:", err)
-				continue
-			}
-
-			logger.Debugln("Emitting collector record:", string(recordJSON))
-			cq.Enqueue(recordJSON)
-		}
-	}
-}
-
-// runCollectorModeUDP processes packets from UDP in collector mode
-func runCollectorModeUDP(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
-	// Create correlator
-	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries)
-	defer correlator.Stop()
-
-	// Update state size metric periodically
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			shoveler.StateSize.Set(float64(correlator.GetStateSize()))
-		}
-	}()
-
-	// Process incoming UDP packets
-	addr := net.UDPAddr{
-		Port: config.ListenPort,
-		IP:   net.ParseIP(config.ListenIp),
-	}
-	conn, err := net.ListenUDP("udp", &addr)
-	logger.Infoln("Collector mode: Listening for UDP messages at:", addr.String())
-
-	if err != nil {
-		panic(err)
-	}
-
-	// Set the read buffer size to 1 MB
-	err = conn.SetReadBuffer(1024 * 1024)
-	if err != nil {
-		logger.Warningln("Failed to set read buffer size to 1 MB:", err)
-	}
-
-	defer func(conn *net.UDPConn) {
-		err := conn.Close()
-		if err != nil {
-			logger.Errorln("Error closing UDP connection:", err)
-		}
-	}(conn)
-
-	var buf [65536]byte
-	for {
-		rlen, _, err := conn.ReadFromUDP(buf[:])
-		if err != nil {
-			logger.Errorln("Failed to read from UDP connection:", err)
-			continue
-		}
-		shoveler.PacketsReceived.Inc()
-
-		// Parse packet
-		startParse := time.Now()
-		packet, err := parser.ParsePacket(buf[:rlen])
-		parseTime := time.Since(startParse).Milliseconds()
-		shoveler.ParseTimeMs.Observe(float64(parseTime))
-
-		if err != nil {
-			shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
-			logger.Debugln("Failed to parse packet:", err)
-			continue
-		}
-		shoveler.PacketsParsedOK.Inc()
-
-		// Process packet through correlator
-		record, err := correlator.ProcessPacket(packet)
-		if err != nil {
-			logger.Errorln("Failed to process packet:", err)
-			continue
-		}
-
-		// If we got a complete record, emit it
-		if record != nil {
-			shoveler.RecordsEmitted.Inc()
-
-			// Calculate latency if we have timing info
-			if record.StartTime > 0 && record.EndTime > 0 {
-				latency := record.EndTime - record.StartTime
-				shoveler.RequestLatencyMs.Observe(float64(latency))
-			}
-
-			// Convert to JSON and enqueue
-			recordJSON, err := record.ToJSON()
-			if err != nil {
-				logger.Errorln("Failed to marshal record:", err)
-				continue
-			}
-
-			logger.Debugln("Emitting collector record:", string(recordJSON))
-			cq.Enqueue(recordJSON)
 		}
 	}
 }
