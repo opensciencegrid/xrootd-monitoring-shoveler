@@ -156,10 +156,12 @@ dockers:
       - "opensciencegrid/xrootd-monitoring-shoveler:latest"
     goos: linux
     goarch: amd64
+    use: buildx
     ids:
       - xrootd-monitoring-shoveler-nfpms
     build_flag_templates:
       - "--pull"
+      - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.created={{.Date}}"
       - "--label=org.opencontainers.image.title={{.ProjectName}}"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"

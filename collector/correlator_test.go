@@ -405,6 +405,98 @@ func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
 	assert.Equal(t, "2001:db8::1", record.Host)
 }
 
+func TestCorrelator_UserDomainFromIP(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	// Test with a well-known IP that should resolve (Google DNS)
+	// This test might be flaky depending on network, so we'll test both success and failure cases
+	userRec := &parser.UserRecord{
+		Header: parser.Header{
+			ServerStart: 1000,
+		},
+		DictId: 999,
+		UserInfo: parser.UserInfo{
+			Username: "testuser",
+			Host:     "[::8.8.8.8]", // Google DNS in bracket format
+		},
+	}
+
+	serverID := "1000#127.0.0.1:9930"
+	correlator.handleUserRecord(userRec, serverID)
+
+	// Create and process a close with this user
+	state := &FileState{
+		FileID:   1,
+		UserID:   999,
+		OpenTime: 1000,
+		Filename: "/test.txt",
+		ServerID: serverID,
+	}
+
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{
+			FileId: 1,
+			UserId: 999,
+		},
+	}
+
+	packet := &parser.Packet{
+		Header:     parser.Header{ServerStart: 1000},
+		RemoteAddr: "127.0.0.1:9930",
+	}
+
+	record := correlator.createCorrelatedRecord(state, closeRec, packet)
+
+	// Verify the record was created
+	assert.Equal(t, "testuser", record.User)
+	assert.Equal(t, "[::8.8.8.8]", record.Host)
+	// UserDomain might be set if reverse DNS succeeds, or empty if it fails
+	// We just verify the code doesn't crash
+	t.Logf("UserDomain: %s", record.UserDomain)
+}
+
+func TestExtractIPFromHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		host     string
+		expected string
+	}{
+		{
+			name:     "IPv6 with brackets",
+			host:     "[::1234:5678]",
+			expected: "1234:5678",
+		},
+		{
+			name:     "IPv6 with brackets and colons",
+			host:     "[::192.168.1.1]",
+			expected: "192.168.1.1",
+		},
+		{
+			name:     "IPv4",
+			host:     "192.168.1.1",
+			expected: "192.168.1.1",
+		},
+		{
+			name:     "hostname",
+			host:     "example.com",
+			expected: "example.com",
+		},
+		{
+			name:     "empty",
+			host:     "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractIPFromHost(tt.host)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestExtractDirnames(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -521,6 +613,164 @@ func TestExtractDirnames(t *testing.T) {
 			assert.Equal(t, tt.expectedLogical, logical, "logical_dirname mismatch")
 		})
 	}
+}
+
+func TestCorrelator_ServerInfo(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	// Create a server info packet ('=' type)
+	serverInfoBytes := []byte("&site=TEST_SITE&port=1094&inst=test-instance&pgm=xrootd&ver=5.0.0")
+	userInfoBytes := []byte("xrootd/testuser.1234:5678@testhost.example.com")
+
+	// Combine userInfo and serverInfo with newline separator
+	mapInfo := append(userInfoBytes, '\n')
+	mapInfo = append(mapInfo, serverInfoBytes...)
+
+	serverInfoPacket := &parser.Packet{
+		Header: parser.Header{
+			Code:        '=',
+			ServerStart: 1000,
+		},
+		PacketType: '=',
+		MapRecord: &parser.MapRecord{
+			DictId: 999,
+			Info:   mapInfo,
+		},
+		ServerInfo: &parser.ServerInfo{
+			Site:     "TEST_SITE",
+			Port:     "1094",
+			Instance: "test-instance",
+			Program:  "xrootd",
+			Version:  "5.0.0",
+		},
+		RemoteAddr: "127.0.0.1:9930",
+	}
+
+	// Process the server info packet
+	recs, err := correlator.ProcessPacket(serverInfoPacket)
+	require.NoError(t, err)
+	assert.Nil(t, recs) // Server info packets don't produce records
+
+	// Verify server info was stored
+	serverID := "1000#127.0.0.1:9930"
+	val, exists := correlator.serverMap.Get(serverID)
+	require.True(t, exists, "Server info should be stored")
+	serverInfo, ok := val.(*parser.ServerInfo)
+	require.True(t, ok, "Server info should be correct type")
+	assert.Equal(t, "TEST_SITE", serverInfo.Site)
+	assert.Equal(t, "1094", serverInfo.Port)
+	assert.Equal(t, "test-instance", serverInfo.Instance)
+	assert.Equal(t, "xrootd", serverInfo.Program)
+	assert.Equal(t, "5.0.0", serverInfo.Version)
+
+	// Now create a file open/close sequence and verify site is included
+	openRec := parser.FileOpenRecord{
+		Header: parser.FileHeader{
+			RecType: parser.RecTypeOpen,
+			FileId:  123,
+			UserId:  456,
+		},
+		FileSize: 1024,
+		Lfn:      []byte("/test/file.txt"),
+	}
+
+	openPacket := &parser.Packet{
+		Header: parser.Header{
+			Code:        parser.PacketTypeFStat,
+			ServerStart: 1000,
+		},
+		FileRecords: []interface{}{openRec},
+		RemoteAddr:  "127.0.0.1:9930",
+	}
+
+	recs, err = correlator.ProcessPacket(openPacket)
+	require.NoError(t, err)
+	assert.Nil(t, recs)
+
+	// Create close record
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{
+			RecType: parser.RecTypeClose,
+			FileId:  123,
+			UserId:  456,
+		},
+		Xfr: parser.StatXFR{
+			Read:  1000,
+			Readv: 500,
+			Write: 0,
+		},
+		Ops: parser.StatOPS{
+			Read:  10,
+			Readv: 5,
+			Write: 0,
+		},
+	}
+
+	closePacket := &parser.Packet{
+		Header: parser.Header{
+			Code:        parser.PacketTypeFStat,
+			ServerStart: 1000,
+		},
+		FileRecords: []interface{}{closeRec},
+		RemoteAddr:  "127.0.0.1:9930",
+	}
+
+	recs, err = correlator.ProcessPacket(closePacket)
+	require.NoError(t, err)
+	require.Len(t, recs, 1)
+
+	// Verify the site was included in the correlated record
+	assert.Equal(t, "TEST_SITE", recs[0].Site)
+}
+
+func TestCorrelator_ServerInfoTTL(t *testing.T) {
+	// Use a very short TTL for testing
+	ttl := 200 * time.Millisecond
+	correlator := NewCorrelator(ttl, 0, nil)
+	defer correlator.Stop()
+
+	serverID := "2000#192.168.1.1:1094"
+	serverInfo := &parser.ServerInfo{
+		Site:     "TEST_SITE_TTL",
+		Port:     "1094",
+		Instance: "ttl-test",
+		Program:  "xrootd",
+		Version:  "5.0.0",
+	}
+
+	// Store initial server info
+	correlator.handleServerInfo(serverInfo, serverID)
+
+	// Verify it's stored
+	val, exists := correlator.serverMap.Get(serverID)
+	require.True(t, exists, "Server info should be stored initially")
+
+	// Wait a bit but not long enough for expiry
+	time.Sleep(100 * time.Millisecond)
+
+	// Send another server info packet (simulating periodic updates)
+	// This should reset the TTL
+	correlator.handleServerInfo(serverInfo, serverID)
+
+	// Wait another 150ms (total 250ms from first insert, but only 150ms from refresh)
+	time.Sleep(150 * time.Millisecond)
+
+	// Server info should still exist because TTL was reset
+	val, exists = correlator.serverMap.Get(serverID)
+	assert.True(t, exists, "Server info should still exist after TTL reset")
+	if exists {
+		info, ok := val.(*parser.ServerInfo)
+		require.True(t, ok)
+		assert.Equal(t, "TEST_SITE_TTL", info.Site)
+	}
+
+	// Wait for TTL to expire (another 100ms, making it 250ms since last refresh)
+	time.Sleep(100 * time.Millisecond)
+
+	// Now it should be expired
+	_, exists = correlator.serverMap.Get(serverID)
+	assert.False(t, exists, "Server info should be expired after TTL without refresh")
 }
 
 func TestCorrelator_TokenAugmentsUser(t *testing.T) {

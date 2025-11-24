@@ -107,10 +107,11 @@ type PathInfo struct {
 
 // Correlator correlates file open and close events
 type Correlator struct {
-	stateMap *StateMap
-	userMap  *StateMap
-	dictMap  *StateMap // Maps dictid to path/user info
-	logger   *logrus.Logger
+	stateMap  *StateMap
+	userMap   *StateMap
+	dictMap   *StateMap // Maps dictid to path/user info
+	serverMap *StateMap // Maps serverID to server identification info
+	logger    *logrus.Logger
 }
 
 // NewCorrelator creates a new correlator
@@ -119,10 +120,11 @@ func NewCorrelator(ttl time.Duration, maxEntries int, logger *logrus.Logger) *Co
 		logger = logrus.New()
 	}
 	return &Correlator{
-		stateMap: NewStateMap(ttl, maxEntries, ttl/10),
-		userMap:  NewStateMap(ttl, maxEntries, ttl/10),
-		dictMap:  NewStateMap(ttl, maxEntries, ttl/10),
-		logger:   logger,
+		stateMap:  NewStateMap(ttl, maxEntries, ttl/10),
+		userMap:   NewStateMap(ttl, maxEntries, ttl/10),
+		dictMap:   NewStateMap(ttl, maxEntries, ttl/10),
+		serverMap: NewStateMap(ttl, maxEntries, ttl/10),
+		logger:    logger,
 	}
 }
 
@@ -136,6 +138,12 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 
 	// Calculate server ID: serverStart#addr#port
 	serverID := c.getServerID(packet)
+
+	// Handle server info packets ('=' type)
+	if packet.ServerInfo != nil {
+		c.handleServerInfo(packet.ServerInfo, serverID)
+		return nil, nil
+	}
 
 	// Handle dict ID packets ('d' type for path mappings, 'i' for appinfo)
 	if packet.MapRecord != nil {
@@ -369,6 +377,38 @@ func isIPPattern(s string) bool {
 		(firstChar >= '0' && firstChar <= '9') || firstChar == '.'
 }
 
+// extractIPFromHost extracts the IP address from a host string
+// Host format can be: "[::ipv6:addr]" or "ipv4.addr" or "hostname"
+func extractIPFromHost(host string) string {
+	if host == "" {
+		return ""
+	}
+	// Remove brackets for IPv6
+	host = strings.Trim(host, "[]")
+	// Remove leading :: if present
+	host = strings.TrimPrefix(host, "::")
+	return host
+}
+
+// reverseDNSLookup attempts to perform a reverse DNS lookup on an IP address
+// Returns the hostname if successful, empty string otherwise
+func reverseDNSLookup(ipStr string) string {
+	// Parse the IP address
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return ""
+	}
+
+	// Perform reverse DNS lookup
+	names, err := net.LookupAddr(ipStr)
+	if err != nil || len(names) == 0 {
+		return ""
+	}
+
+	// Return the first hostname, trimming trailing dot if present
+	return strings.TrimSuffix(names[0], ".")
+}
+
 // handleFileOpen handles a file open event
 func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Packet, serverID string) (*CollectorRecord, error) {
 	// Filename may come from Lfn field OR from dictid lookup
@@ -456,6 +496,16 @@ func (c *Correlator) handleTimeRecord(rec parser.FileTimeRecord, packet *parser.
 // For 'u' packets: Stores user information mapped by dictID and serverID for later correlation with file operations
 // For 'T' packets (token info): Augments an existing user record with token information
 // Following Python logic: dictID -> userInfo mapping, and userInfo -> full user state
+// handleServerInfo stores server identification information
+// Server info packets ('=' type) contain: &site=sname&port=pnum&inst=iname&pgm=prog&ver=vname
+// The StateMap automatically resets TTL on each Set, so server entries persist as long as packets arrive
+func (c *Correlator) handleServerInfo(info *parser.ServerInfo, serverID string) {
+	// Store or update the server info - StateMap.Set resets the TTL
+	c.serverMap.Set(serverID, info)
+	c.logger.Debugf("Stored server info for %s: site=%s, program=%s, version=%s, instance=%s, port=%s",
+		serverID, info.Site, info.Program, info.Version, info.Instance, info.Port)
+}
+
 func (c *Correlator) handleUserRecord(rec *parser.UserRecord, serverID string) {
 	// Check if this is a token record (has TokenInfo.UserDictID set)
 	if rec.TokenInfo.UserDictID != 0 {
@@ -738,12 +788,25 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		host = userInfo.UserInfo.Host
 		protocol = userInfo.UserInfo.Protocol
 
-		// Extract user_domain from hostname if it's not an IP address
-		// Python regex: r"^[\[\:f\d\.]+" checks if hostname starts with [, :, f, or digits/dots (IP patterns)
-		if host != "" && !isIPPattern(host) {
-			parts := strings.Split(host, ".")
-			if len(parts) >= 2 {
-				userDomain = strings.Join(parts[len(parts)-2:], ".")
+		// Extract user_domain from hostname
+		if host != "" {
+			if isIPPattern(host) {
+				// Host is an IP address - try reverse DNS lookup
+				ipStr := extractIPFromHost(host)
+				hostname := reverseDNSLookup(ipStr)
+				if hostname != "" {
+					// Successfully resolved - extract domain from hostname
+					parts := strings.Split(hostname, ".")
+					if len(parts) >= 2 {
+						userDomain = strings.Join(parts[len(parts)-2:], ".")
+					}
+				}
+			} else {
+				// Host is already a hostname - extract domain directly
+				parts := strings.Split(host, ".")
+				if len(parts) >= 2 {
+					userDomain = strings.Join(parts[len(parts)-2:], ".")
+				}
 			}
 		}
 
@@ -805,6 +868,16 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		}
 	}
 
+	// Get site information from server info map
+	site := "UNKNOWN"
+	if val, exists := c.serverMap.Get(state.ServerID); exists {
+		if serverInfo, ok := val.(*parser.ServerInfo); ok && serverInfo != nil {
+			if serverInfo.Site != "" {
+				site = serverInfo.Site
+			}
+		}
+	}
+
 	return &CollectorRecord{
 		Timestamp:              now,
 		StartTime:              state.OpenTime,
@@ -814,7 +887,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		ServerHostname:         serverHostname,
 		Server:                 serverIP,
 		ServerIP:               serverIP,
-		Site:                   "UNKNOWN",
+		Site:                   site,
 		User:                   user,
 		UserDN:                 userDN,
 		UserDomain:             userDomain,
@@ -889,6 +962,9 @@ func (c *Correlator) Stop() {
 	}
 	if c.userMap != nil {
 		c.userMap.Stop()
+	}
+	if c.serverMap != nil {
+		c.serverMap.Stop()
 	}
 }
 

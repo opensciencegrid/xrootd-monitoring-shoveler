@@ -209,6 +209,16 @@ type TokenInfo struct {
 	Groups     string // g= client's group names (space-separated list)
 }
 
+// ServerInfo represents server identification information from '=' packets
+// Format: &site=sname&port=pnum&inst=iname&pgm=prog&ver=vname
+type ServerInfo struct {
+	Site     string // site= site name
+	Port     string // port= port number
+	Instance string // inst= instance name
+	Program  string // pgm= program name
+	Version  string // ver= version name
+}
+
 // UserRecord represents a user packet (type 'u')
 type UserRecord struct {
 	Header    Header
@@ -235,6 +245,7 @@ type Packet struct {
 	IsXML         bool
 	MapRecord     *MapRecord
 	UserRecord    *UserRecord
+	ServerInfo    *ServerInfo
 	GStreamRecord *GStreamRecord
 	FileRecords   []interface{} // Can contain FileTimeRecord, FileCloseRecord, FileOpenRecord
 	RawData       []byte        // Original packet data
@@ -293,6 +304,17 @@ func ParsePacket(b []byte) (*Packet, error) {
 			return nil, fmt.Errorf("failed to parse map record: %w", err)
 		}
 		packet.MapRecord = mapRec
+
+		// '=' packets contain server identification info after userInfo\n
+		// Format: userInfo\n&site=sname&port=pnum&inst=iname&pgm=prog&ver=vname
+		if len(mapRec.Info) > 0 {
+			parts := bytes.SplitN(mapRec.Info, []byte{'\n'}, 2)
+			if len(parts) > 1 {
+				// Parse server info from the second part
+				serverInfo := parseServerInfo(parts[1])
+				packet.ServerInfo = &serverInfo
+			}
+		}
 	case PacketTypeUser:
 		userRec, err := parseUserRecord(header, b)
 		if err != nil {
@@ -592,6 +614,47 @@ func parseTokenInfo(b []byte) TokenInfo {
 			info.Role = value
 		case "g":
 			info.Groups = value
+		}
+	}
+
+	return info
+}
+
+// parseServerInfo parses server identification information from '=' packets
+// Format: &site=sname&port=pnum&inst=iname&pgm=prog&ver=vname
+func parseServerInfo(b []byte) ServerInfo {
+	info := ServerInfo{}
+	if len(b) == 0 {
+		return info
+	}
+
+	// Split by & and parse key=value pairs
+	parts := bytesplit(b, '&')
+	for _, part := range parts {
+		if len(part) == 0 {
+			continue
+		}
+
+		// Find first = to split key and value
+		eqIdx := bytesIndexByte(part, '=')
+		if eqIdx < 0 || eqIdx >= len(part)-1 {
+			continue
+		}
+
+		key := string(part[:eqIdx])
+		value := string(part[eqIdx+1:])
+
+		switch key {
+		case "site":
+			info.Site = value
+		case "port":
+			info.Port = value
+		case "inst":
+			info.Instance = value
+		case "pgm":
+			info.Program = value
+		case "ver":
+			info.Version = value
 		}
 	}
 

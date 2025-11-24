@@ -327,3 +327,56 @@ func TestParsePacket_TokenRecord(t *testing.T) {
 	assert.Equal(t, "tokenuser", parsed.UserRecord.TokenInfo.Username)
 	assert.Equal(t, "tokenorg", parsed.UserRecord.TokenInfo.Org)
 }
+
+func TestParseServerInfo(t *testing.T) {
+	// Test full server info
+	serverData := []byte("&site=TEST_SITE&port=1094&inst=test-instance&pgm=xrootd&ver=5.0.0")
+	serverInfo := parseServerInfo(serverData)
+
+	assert.Equal(t, "TEST_SITE", serverInfo.Site)
+	assert.Equal(t, "1094", serverInfo.Port)
+	assert.Equal(t, "test-instance", serverInfo.Instance)
+	assert.Equal(t, "xrootd", serverInfo.Program)
+	assert.Equal(t, "5.0.0", serverInfo.Version)
+
+	// Test partial server info (optional fields)
+	partialData := []byte("&site=MYSITE&pgm=xrootd")
+	partialInfo := parseServerInfo(partialData)
+	assert.Equal(t, "MYSITE", partialInfo.Site)
+	assert.Equal(t, "xrootd", partialInfo.Program)
+	assert.Equal(t, "", partialInfo.Port)
+	assert.Equal(t, "", partialInfo.Instance)
+
+	// Test empty server info
+	emptyInfo := parseServerInfo([]byte(""))
+	assert.Equal(t, "", emptyInfo.Site)
+	assert.Equal(t, "", emptyInfo.Port)
+}
+
+func TestParsePacket_ServerInfo(t *testing.T) {
+	// Create a server info packet ('=' type)
+	// Format: header + dictid (4 bytes) + userinfo + '\n' + serverinfo
+	userInfo := "xrootd/testuser.123:456@testhost.example.com"
+	serverInfo := "&site=OSG_SITE&port=1094&inst=prod-cache&pgm=xrootd&ver=5.5.0"
+	info := userInfo + "\n" + serverInfo
+
+	plen := uint16(8 + 4 + len(info))
+	packet := createHeader(PacketTypeMap, plen)
+	packet = append(packet, 0, 0, 0, 50) // dictid = 50
+	packet = append(packet, []byte(info)...)
+
+	parsed, err := ParsePacket(packet)
+
+	require.NoError(t, err)
+	assert.Equal(t, PacketTypeMap, parsed.PacketType)
+	assert.NotNil(t, parsed.MapRecord)
+	assert.Equal(t, uint32(50), parsed.MapRecord.DictId)
+
+	// Check serverInfo was parsed
+	require.NotNil(t, parsed.ServerInfo)
+	assert.Equal(t, "OSG_SITE", parsed.ServerInfo.Site)
+	assert.Equal(t, "1094", parsed.ServerInfo.Port)
+	assert.Equal(t, "prod-cache", parsed.ServerInfo.Instance)
+	assert.Equal(t, "xrootd", parsed.ServerInfo.Program)
+	assert.Equal(t, "5.5.0", parsed.ServerInfo.Version)
+}
