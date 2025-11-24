@@ -105,13 +105,17 @@ func main() {
 }
 
 // emitRecord handles outputting a record to the configured destinations
-func emitRecord(recordJSON []byte, output connectors.OutputConnector) {
-	output.Write(recordJSON)
+func emitRecord(recordJSON []byte, output connectors.OutputConnector, logger *logrus.Logger) {
+	if err := output.Write(recordJSON); err != nil {
+		logger.Errorln("Failed to write record:", err)
+	}
 }
 
 // emitWLCGRecord handles outputting a WLCG-formatted record to the WLCG exchange
-func emitWLCGRecord(recordJSON []byte, config *shoveler.Config, output connectors.OutputConnector) {
-	output.WriteToExchange(recordJSON, config.AmqpExchangeWLCG)
+func emitWLCGRecord(recordJSON []byte, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
+	if err := output.WriteToExchange(recordJSON, config.AmqpExchangeWLCG); err != nil {
+		logger.Errorln("Failed to write WLCG record:", err)
+	}
 }
 
 // emitGStreamEvent handles outputting a gstream event to the appropriate exchange
@@ -130,7 +134,9 @@ func emitGStreamEvent(eventJSON []byte, streamType byte, config *shoveler.Config
 		exchange = config.AmqpExchange
 	}
 
-	output.WriteToExchange(eventJSON, exchange)
+	if err := output.WriteToExchange(eventJSON, exchange); err != nil {
+		logger.Errorln("Failed to write gstream event:", err)
+	}
 }
 
 // runCollectorMode runs the collector mode with full packet parsing and correlation
@@ -240,7 +246,7 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 			}
 
 			logger.Debugln("Emitting WLCG record:", string(wlcgJSON))
-			emitWLCGRecord(wlcgJSON, config, output)
+			emitWLCGRecord(wlcgJSON, config, output, logger)
 		} else {
 			// Convert to JSON and enqueue (normal path)
 			recordJSON, err := record.ToJSON()
@@ -250,7 +256,7 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 			}
 
 			logger.Debugln("Emitting collector record:", string(recordJSON))
-			emitRecord(recordJSON, output)
+			emitRecord(recordJSON, output, logger)
 		}
 	}
 }
