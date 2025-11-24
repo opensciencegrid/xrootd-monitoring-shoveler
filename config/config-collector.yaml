@@ -33,6 +33,12 @@ state:
 amqp:
   url: amqps://username:password@example.com/vhost
   exchange: shoveled-xrd
+  # GStream event exchanges
+  exchange_cache: xrd-cache-events
+  exchange_tcp: xrd-tcp-events
+  exchange_tpc: xrd-tpc-events
+  # WLCG formatted events (CMS VO or /store, /user/dteam paths)
+  exchange_wlcg: xrd-wlcg-events
   topic:
   token_location: /etc/xrootd-monitoring-shoveler/token
 

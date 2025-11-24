@@ -43,6 +43,7 @@ type Config struct {
 	AmqpExchangeCache string   // Exchange for cache gstream events
 	AmqpExchangeTCP   string   // Exchange for TCP gstream events
 	AmqpExchangeTPC   string   // Exchange for TPC gstream events
+	AmqpExchangeWLCG  string   // Exchange for WLCG formatted events
 	AmqpToken         string   // File location of the token
 	ListenPort        int
 	ListenIp          string
@@ -154,6 +155,10 @@ func (c *Config) ReadConfigWithPath(configPath string) {
 
 		c.AmqpExchangeTPC = viper.GetString("amqp.exchange_tpc")
 		log.Debugln("AMQP TPC Exchange:", c.AmqpExchangeTPC)
+
+		viper.SetDefault("amqp.exchange_wlcg", "xrd-wlcg-events")
+		c.AmqpExchangeWLCG = viper.GetString("amqp.exchange_wlcg")
+		log.Debugln("AMQP WLCG Exchange:", c.AmqpExchangeWLCG)
 
 		// Get the Token location
 		c.AmqpToken = viper.GetString("amqp.token_location")

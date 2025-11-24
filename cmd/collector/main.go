@@ -111,6 +111,21 @@ func emitRecord(recordJSON []byte, config *shoveler.Config, cq *shoveler.Confirm
 	}
 }
 
+// emitWLCGRecord handles outputting a WLCG-formatted record to the WLCG exchange
+func emitWLCGRecord(recordJSON []byte, config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
+	// Write to file if configured
+	if fw != nil {
+		if err := fw.Write(recordJSON); err != nil {
+			logger.Errorln("Failed to write WLCG record to file:", err)
+		}
+	}
+
+	// Enqueue to message queue with WLCG exchange if configured
+	if config.Output.Type == "" || config.Output.Type == "mq" || config.Output.Type == "both" {
+		cq.EnqueueToExchange(recordJSON, config.AmqpExchangeWLCG)
+	}
+}
+
 // emitGStreamEvent handles outputting a gstream event to the appropriate exchange
 func emitGStreamEvent(eventJSON []byte, streamType byte, config *shoveler.Config, cq *shoveler.ConfirmationQueue, fw *shoveler.FileWriter, logger *logrus.Logger) {
 	// Write to file if configured
@@ -231,15 +246,34 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 			shoveler.RequestLatencyMs.Observe(float64(latency))
 		}
 
-		// Convert to JSON and enqueue
-		recordJSON, err := record.ToJSON()
-		if err != nil {
-			logger.Errorln("Failed to marshal record:", err)
-			return
-		}
+		// Check if this should be converted to WLCG format
+		if collector.IsWLCGPacket(record) {
+			logger.Debugln("Converting record to WLCG format")
+			wlcgRecord, err := collector.ConvertToWLCG(record)
+			if err != nil {
+				logger.Errorln("Failed to convert to WLCG format:", err)
+				return
+			}
 
-		logger.Debugln("Emitting collector record:", string(recordJSON))
-		emitRecord(recordJSON, config, cq, fw, logger)
+			wlcgJSON, err := wlcgRecord.ToJSON()
+			if err != nil {
+				logger.Errorln("Failed to marshal WLCG record:", err)
+				return
+			}
+
+			logger.Debugln("Emitting WLCG record:", string(wlcgJSON))
+			emitWLCGRecord(wlcgJSON, config, cq, fw, logger)
+		} else {
+			// Convert to JSON and enqueue (normal path)
+			recordJSON, err := record.ToJSON()
+			if err != nil {
+				logger.Errorln("Failed to marshal record:", err)
+				return
+			}
+
+			logger.Debugln("Emitting collector record:", string(recordJSON))
+			emitRecord(recordJSON, config, cq, fw, logger)
+		}
 	}
 }
 
@@ -407,45 +441,38 @@ func runCollectorModeRabbitMQ(config *shoveler.Config, cq *shoveler.Confirmation
 
 	// Process packets from RabbitMQ
 	// We need to read both packets and remote addresses in lockstep
-	for {
+	for pkt := range reader.Packets() {
+		shoveler.PacketsReceived.Inc()
+
+		// Get corresponding remote address
+		var remoteAddr string
 		select {
-		case pkt, ok := <-reader.Packets():
-			if !ok {
-				logger.Infoln("RabbitMQ reader stopped")
-				return
-			}
-
-			shoveler.PacketsReceived.Inc()
-
-			// Get corresponding remote address
-			var remoteAddr string
-			select {
-			case remoteAddr = <-reader.RemoteAddresses():
-			case <-time.After(1 * time.Second):
-				logger.Warningln("Timeout waiting for remote address")
-				remoteAddr = "unknown:0"
-			}
-
-			// Parse packet
-			startParse := time.Now()
-			packet, err := parser.ParsePacket(pkt)
-			parseTime := time.Since(startParse).Milliseconds()
-			shoveler.ParseTimeMs.Observe(float64(parseTime))
-
-			if err != nil {
-				shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
-				logger.Debugln("Failed to parse packet:", err)
-				continue
-			}
-			shoveler.PacketsParsedOK.Inc()
-
-			// Set remote address for server ID calculation
-			if packet != nil {
-				packet.RemoteAddr = remoteAddr
-			}
-
-			// Handle the parsed packet
-			handleParsedPacket(packet, correlator, config, cq, fw, logger)
+		case remoteAddr = <-reader.RemoteAddresses():
+		case <-time.After(1 * time.Second):
+			logger.Warningln("Timeout waiting for remote address")
+			remoteAddr = "unknown:0"
 		}
+
+		// Parse packet
+		startParse := time.Now()
+		packet, err := parser.ParsePacket(pkt)
+		parseTime := time.Since(startParse).Milliseconds()
+		shoveler.ParseTimeMs.Observe(float64(parseTime))
+
+		if err != nil {
+			shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
+			logger.Debugln("Failed to parse packet:", err)
+			continue
+		}
+		shoveler.PacketsParsedOK.Inc()
+
+		// Set remote address for server ID calculation
+		if packet != nil {
+			packet.RemoteAddr = remoteAddr
+		}
+
+		// Handle the parsed packet
+		handleParsedPacket(packet, correlator, config, cq, fw, logger)
 	}
+	logger.Infoln("RabbitMQ reader stopped")
 }

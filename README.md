@@ -151,6 +151,10 @@ Advanced mode with full packet parsing and correlation:
 - Maintains stateful tracking of file operations with TTL-based cleanup
 - Emits structured collector records with detailed metrics
 - Tracks parsing performance and state management via Prometheus metrics
+- **WLCG Format Conversion**: Automatically converts records to [WLCG format](https://twiki.cern.ch/twiki/bin/view/Main/GenericFileMonitoring) when:
+  - The VO is `cms`, OR
+  - The file path starts with `/store` or `/user/dteam`
+  - WLCG records are sent to a separate exchange (`amqp.exchange_wlcg`) instead of the main exchange
 
 Configure with `mode: collector` and set state management parameters:
 
@@ -201,6 +205,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `SHOVELER_AMQP_EXCHANGE_CACHE` - Cache events exchange (default: `xrd-cache-events`)
 * `SHOVELER_AMQP_EXCHANGE_TCP` - TCP events exchange (default: `xrd-tcp-events`)
 * `SHOVELER_AMQP_EXCHANGE_TPC` - TPC events exchange (default: `xrd-tpc-events`)
+* `SHOVELER_AMQP_EXCHANGE_WLCG` - WLCG formatted events exchange (default: `xrd-wlcg-events`)
 * `SHOVELER_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`)
 
 **STOMP Configuration:**
