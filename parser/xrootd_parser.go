@@ -168,6 +168,12 @@ type FileOpenRecord struct {
 	Lfn      []byte // Logical file name
 }
 
+// FileDisconnectRecord represents a user disconnect event
+type FileDisconnectRecord struct {
+	Header FileHeader
+	UserID uint32 // Dictionary ID of the disconnecting user
+}
+
 // UserInfo represents parsed user information from the userInfo field
 // Format: [protocol/]username.pid:sid@host
 type UserInfo struct {
@@ -853,6 +859,24 @@ parseLoop:
 				break parseLoop
 			}
 			records = append(records, openRec)
+
+		case RecTypeDisc:
+			// Disconnect record - userID field contains the dictid of disconnecting user
+			discRec := FileDisconnectRecord{
+				Header: FileHeader{
+					RecType: commonHeader.RecType,
+					RecFlag: commonHeader.RecFlag,
+					RecSize: commonHeader.RecSize,
+					FileId:  commonHeader.FileId, // This is actually userID for disconnect
+				},
+				UserID: commonHeader.FileId, // FileId field contains userID for disconnect records
+			}
+
+			// Skip to end of record
+			if _, err := reader.Seek(pos+int64(commonHeader.RecSize), io.SeekStart); err != nil {
+				break parseLoop
+			}
+			records = append(records, discRec)
 
 		default:
 			// Skip unknown record types

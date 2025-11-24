@@ -163,6 +163,9 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) (*CollectorRecord, err
 			if err != nil || result != nil {
 				return result, err
 			}
+		case parser.FileDisconnectRecord:
+			c.handleDisconnect(r, serverID)
+			// Disconnect doesn't generate a record, just cleanup
 		}
 	}
 
@@ -448,6 +451,34 @@ func (c *Correlator) handleUserRecord(rec *parser.UserRecord, serverID string) {
 	// Store userInfo -> userState mapping
 	userInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(rec.UserInfo))
 	c.userMap.Set(userInfoKey, userState)
+}
+
+// handleDisconnect handles a user disconnect event
+// Cleans up all references to the disconnecting user
+func (c *Correlator) handleDisconnect(rec parser.FileDisconnectRecord, serverID string) {
+	// Get the userInfo from dictID mapping
+	dictKey := fmt.Sprintf("%s-dictid-%d", serverID, rec.UserID)
+	val, exists := c.dictMap.Get(dictKey)
+	if !exists {
+		// User not found in dict map, nothing to clean up
+		return
+	}
+
+	userInfo, ok := val.(parser.UserInfo)
+	if !ok {
+		// Not a UserInfo type, skip
+		return
+	}
+
+	// Delete the dictID -> userInfo mapping
+	c.dictMap.Delete(dictKey)
+
+	// Delete the userInfo -> userState mapping
+	userInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(userInfo))
+	c.userMap.Delete(userInfoKey)
+
+	// Note: We don't delete file states here because disconnect doesn't imply
+	// all files are closed. File states will expire via TTL or be removed on close.
 }
 
 // getUserInfo retrieves user information for a given userID and serverID
