@@ -21,7 +21,6 @@ var (
 	date    string
 	builtBy string
 )
-var DEBUG bool = false
 
 func main() {
 	// Parse command-line flags
@@ -45,7 +44,7 @@ func main() {
 	config := shoveler.Config{}
 	config.ReadConfigWithPath(*configPath)
 
-	if DEBUG || config.Debug {
+	if config.Debug {
 		logger.SetLevel(logrus.DebugLevel)
 		logrus.SetLevel(logrus.DebugLevel)
 	} else {
