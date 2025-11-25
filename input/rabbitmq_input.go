@@ -22,18 +22,21 @@ type RabbitMQMessage struct {
 
 // RabbitMQReader reads JSON-encoded XRootD monitoring packets from RabbitMQ
 type RabbitMQReader struct {
-	brokerURL       string
-	queueName       string
-	exchange        string
-	routingKey      string
-	token           string
-	tokenPath       string
-	conn            *amqp.Connection
-	channel         *amqp.Channel
-	packetsWithAddr chan PacketWithAddr
-	stop            chan struct{}
-	reconnectDelay  time.Duration
-	logger          *logrus.Logger
+	brokerURL          string
+	queueName          string
+	exchange           string
+	routingKey         string
+	token              string
+	tokenPath          string
+	conn               *amqp.Connection
+	channel            *amqp.Channel
+	packetsWithAddr    chan PacketWithAddr
+	stop               chan struct{}
+	reconnectDelay     time.Duration
+	logger             *logrus.Logger
+	unackedCount       int
+	lastAckTime        time.Time
+	lastAckDeliveryTag uint64
 }
 
 // NewRabbitMQReader creates a new RabbitMQ reader
@@ -260,11 +263,40 @@ func (r *RabbitMQReader) consume() error {
 
 	r.logger.Infoln("Started consuming messages from queue:", r.queueName)
 
+	// Reset ack tracking
+	r.unackedCount = 0
+	r.lastAckTime = time.Now()
+	r.lastAckDeliveryTag = 0
+
+	// Create ticker for periodic acks (every second)
+	ackTicker := time.NewTicker(1 * time.Second)
+	defer ackTicker.Stop()
+
 	// Process messages
 	for {
 		select {
 		case <-r.stop:
+			// Ack any remaining messages before stopping
+			if r.unackedCount > 0 && r.lastAckDeliveryTag > 0 {
+				r.logger.Debugf("Acknowledging final %d messages before stopping", r.unackedCount)
+				if ackErr := r.channel.Ack(r.lastAckDeliveryTag, true); ackErr != nil {
+					r.logger.Debugln("Failed to ack final messages:", ackErr)
+				}
+			}
 			return nil
+
+		case <-ackTicker.C:
+			// Periodic ack: acknowledge if we have unacked messages
+			if r.unackedCount > 0 && r.lastAckDeliveryTag > 0 {
+				r.logger.Debugf("Periodic ack: acknowledging %d messages", r.unackedCount)
+				if ackErr := r.channel.Ack(r.lastAckDeliveryTag, true); ackErr != nil {
+					r.logger.Debugln("Failed to ack messages:", ackErr)
+				} else {
+					r.unackedCount = 0
+					r.lastAckTime = time.Now()
+				}
+			}
+
 		case msg, ok := <-msgs:
 			if !ok {
 				return fmt.Errorf("message channel closed")
@@ -274,14 +306,35 @@ func (r *RabbitMQReader) consume() error {
 			err := r.processMessage(msg)
 			if err != nil {
 				r.logger.Debugln("Failed to process message:", err)
-				// Reject the message
+
+				// Ack all previous messages before nacking this one
+				if r.unackedCount > 0 && r.lastAckDeliveryTag > 0 {
+					r.logger.Debugf("Acknowledging %d previous messages before nack", r.unackedCount)
+					if ackErr := r.channel.Ack(r.lastAckDeliveryTag, true); ackErr != nil {
+						r.logger.Debugln("Failed to ack messages before nack:", ackErr)
+					}
+					r.unackedCount = 0
+				}
+
+				// Reject the current message (don't requeue)
 				if nackErr := msg.Nack(false, false); nackErr != nil {
 					r.logger.Debugln("Failed to Nack message:", nackErr)
 				}
+				r.lastAckDeliveryTag = msg.DeliveryTag
 			} else {
-				// Acknowledge the message
-				if ackErr := msg.Ack(false); ackErr != nil {
-					r.logger.Debugln("Failed to Ack message:", ackErr)
+				// Message processed successfully
+				r.unackedCount++
+				r.lastAckDeliveryTag = msg.DeliveryTag
+
+				// Batch acknowledge every 100 messages
+				if r.unackedCount >= 100 {
+					r.logger.Debugf("Batch ack: acknowledging %d messages", r.unackedCount)
+					if ackErr := r.channel.Ack(r.lastAckDeliveryTag, true); ackErr != nil {
+						r.logger.Debugln("Failed to ack messages:", ackErr)
+					} else {
+						r.unackedCount = 0
+						r.lastAckTime = time.Now()
+					}
 				}
 			}
 		}
