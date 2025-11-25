@@ -68,8 +68,13 @@ func main() {
 	if config.Output.Type == "" || config.Output.Type == "mq" || config.Output.Type == "both" {
 		cq = shoveler.NewConfirmationQueue(&config)
 		if config.MQ == "amqp" {
-			// Start the AMQP go func
-			go shoveler.StartAMQP(&config, cq)
+			// Only start AMQP if URL is configured
+			if config.AmqpURL != nil && config.AmqpURL.String() != "" {
+				// Start the AMQP go func
+				go shoveler.StartAMQP(&config, cq)
+			} else {
+				logger.Warnln("Output type is 'mq' with AMQP but no amqp.url configured - skipping AMQP output")
+			}
 		} else if config.MQ == "stomp" {
 			// Start the STOMP go func
 			go shoveler.StartStomp(&config, cq)

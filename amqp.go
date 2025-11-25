@@ -16,17 +16,25 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 
 	// Get the configuration URL
 	amqpURL := config.AmqpURL
-	tokenStat, err := os.Stat(config.AmqpToken)
-	if err != nil {
-		log.Fatalln("Failed to stat token file:", err)
+
+	// Only read token if URL doesn't already have credentials
+	var tokenAge time.Time
+	if amqpURL.User == nil {
+		tokenStat, err := os.Stat(config.AmqpToken)
+		if err != nil {
+			log.Fatalln("Failed to stat token file:", err)
+		}
+		tokenAge = tokenStat.ModTime()
+		tokenContents, err := readToken(config.AmqpToken)
+		if err != nil {
+			log.Fatalln("Failed to read token, cannot recover")
+		}
+		// Set the username/password
+		amqpURL.User = url.UserPassword("shoveler", tokenContents)
+	} else {
+		log.Debugln("Using credentials from AMQP URL, skipping token file")
 	}
-	tokenAge := tokenStat.ModTime()
-	tokenContents, err := readToken(config.AmqpToken)
-	if err != nil {
-		log.Fatalln("Failed to read token, cannot recover")
-	}
-	// Set the username/password
-	amqpURL.User = url.UserPassword("shoveler", tokenContents)
+
 	amqpQueue := New(*amqpURL)
 
 	// Constantly check for new messages
@@ -37,6 +45,7 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	go CheckTokenFile(config, tokenAge, triggerReconnect)
 
 	// Listen to the channel for messages
+	var err error
 	for {
 		select {
 		case <-triggerReconnect:
@@ -98,6 +107,12 @@ func reconnectAmqp(amqpURL *url.URL, curSession *Session) (*Session, error) {
 
 // Listen to the channel for messages
 func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- bool) {
+	// If credentials are already in the URL, skip token file monitoring
+	if config.AmqpURL.User != nil {
+		log.Debugln("Credentials already in URL, skipping token file monitoring")
+		return
+	}
+
 	// Create a timer to check for changes in the token file ever 10 seconds
 	amqpURL := config.AmqpURL
 	checkTokenFile := time.NewTicker(10 * time.Second)
