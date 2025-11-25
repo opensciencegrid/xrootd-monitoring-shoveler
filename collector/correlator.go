@@ -35,6 +35,8 @@ type CollectorRecord struct {
 	TokenOrg               string    `json:"token_org,omitempty"`
 	TokenRole              string    `json:"token_role,omitempty"`
 	TokenGroups            string    `json:"token_groups,omitempty"`
+	Experiment             string    `json:"experiment,omitempty"`
+	Activity               string    `json:"activity,omitempty"`
 	Filename               string    `json:"filename"`
 	Dirname1               string    `json:"dirname1"`
 	Dirname2               string    `json:"dirname2"`
@@ -91,12 +93,14 @@ type FileState struct {
 
 // UserState tracks user information from user packets
 type UserState struct {
-	UserID    uint32
-	UserInfo  parser.UserInfo
-	AuthInfo  parser.AuthInfo
-	TokenInfo parser.TokenInfo
-	AppInfo   string
-	CreatedAt time.Time
+	UserID         uint32
+	UserInfo       parser.UserInfo
+	AuthInfo       parser.AuthInfo
+	TokenInfo      parser.TokenInfo
+	AppInfo        string
+	ExperimentCode string
+	ActivityCode   string
+	CreatedAt      time.Time
 }
 
 // PathInfo represents path mapping with associated user info
@@ -311,7 +315,99 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 				c.userMap.Set(userStateKey, userState)
 			}
 		}
+	} else if packetType == parser.PacketTypeEAInfo { // 'U' packet
+		// Experiment/Activity info: parse eainfo from second part
+		// Format: userid\neainfo where eainfo is &Uc=udid&Ec=expc&Ac=actc
+		if len(parts) > 1 {
+			eaInfo := string(parts[1])
+
+			// Parse the eainfo fields
+			udid, experimentCode, activityCode := parseEAInfo(eaInfo)
+
+			if udid == 0 {
+				c.logger.Debugf("Failed to parse udid from eainfo: %s", eaInfo)
+				return
+			}
+
+			// Look up the existing user by udid
+			existingDictKey := fmt.Sprintf("%s-dictid-%d", serverID, udid)
+			val, exists := c.dictMap.Get(existingDictKey)
+			if !exists {
+				// User doesn't exist yet, create mapping from udid to this userInfo
+				c.dictMap.Set(existingDictKey, userInfo)
+				c.logger.Debugf("Created new dictID mapping %d -> userInfo for eainfo", udid)
+			} else {
+				// Get existing userInfo from udid mapping
+				existingUserInfo, ok := val.(parser.UserInfo)
+				if !ok {
+					c.logger.Debugf("EAInfo found dictID but not a UserInfo type")
+					return
+				}
+				userInfo = existingUserInfo
+			}
+
+			// Update or create user state with experiment/activity codes
+			userStateKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(userInfo))
+			userStateVal, userExists := c.userMap.Get(userStateKey)
+			if userExists {
+				if existingUserState, ok := userStateVal.(*UserState); ok {
+					existingUserState.ExperimentCode = experimentCode
+					existingUserState.ActivityCode = activityCode
+					c.userMap.Set(userStateKey, existingUserState)
+					c.logger.Debugf("Updated user %s (udid=%d) with experiment=%s, activity=%s",
+						userInfo.Username, udid, experimentCode, activityCode)
+				}
+			} else {
+				// Create new user state with experiment/activity codes
+				userState := &UserState{
+					UserID:         udid,
+					UserInfo:       userInfo,
+					ExperimentCode: experimentCode,
+					ActivityCode:   activityCode,
+					CreatedAt:      time.Now(),
+				}
+				c.userMap.Set(userStateKey, userState)
+				c.logger.Debugf("Created new user state for %s (udid=%d) with experiment=%s, activity=%s",
+					userInfo.Username, udid, experimentCode, activityCode)
+			}
+		}
 	}
+}
+
+// parseEAInfo parses experiment and activity info from eainfo string
+// Format: &Uc=udid&Ec=expc&Ac=actc
+// Returns: (udid, experimentCode, activityCode)
+func parseEAInfo(eaInfo string) (uint32, string, string) {
+	var udid uint32
+	var experimentCode, activityCode string
+
+	// Split by & and parse each key=value pair
+	parts := strings.Split(eaInfo, "&")
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := kv[0]
+		value := kv[1]
+
+		switch key {
+		case "Uc":
+			// Parse udid as uint32
+			if val, err := strconv.ParseUint(value, 10, 32); err == nil {
+				udid = uint32(val)
+			}
+		case "Ec":
+			experimentCode = value
+		case "Ac":
+			activityCode = value
+		}
+	}
+
+	return udid, experimentCode, activityCode
 }
 
 // parseUserInfo parses userInfo from bytes
@@ -853,6 +949,14 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		}
 	}
 
+	// Extract experiment and activity codes
+	experiment := ""
+	activity := ""
+	if userInfo != nil {
+		experiment = userInfo.ExperimentCode
+		activity = userInfo.ActivityCode
+	}
+
 	// Extract directory names from filename
 	dirname1, dirname2, logicalDirname := extractDirnames(state.Filename)
 
@@ -902,6 +1006,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		TokenOrg:               tokenOrg,
 		TokenRole:              tokenRole,
 		TokenGroups:            tokenGroups,
+		Experiment:             experiment,
+		Activity:               activity,
 		Filename:               state.Filename,
 		Dirname1:               dirname1,
 		Dirname2:               dirname2,

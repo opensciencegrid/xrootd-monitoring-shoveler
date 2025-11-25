@@ -743,7 +743,7 @@ func TestCorrelator_ServerInfoTTL(t *testing.T) {
 	correlator.handleServerInfo(serverInfo, serverID)
 
 	// Verify it's stored
-	val, exists := correlator.serverMap.Get(serverID)
+	_, exists := correlator.serverMap.Get(serverID)
 	require.True(t, exists, "Server info should be stored initially")
 
 	// Wait a bit but not long enough for expiry
@@ -757,7 +757,7 @@ func TestCorrelator_ServerInfoTTL(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 
 	// Server info should still exist because TTL was reset
-	val, exists = correlator.serverMap.Get(serverID)
+	val, exists := correlator.serverMap.Get(serverID)
 	assert.True(t, exists, "Server info should still exist after TTL reset")
 	if exists {
 		info, ok := val.(*parser.ServerInfo)
