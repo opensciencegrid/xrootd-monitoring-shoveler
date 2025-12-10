@@ -34,35 +34,37 @@ type OutputConfig struct {
 }
 
 type Config struct {
-	Input             InputConfig
-	State             StateConfig
-	Output            OutputConfig
-	MQ                string   // Which technology to use for the MQ connection
-	AmqpURL           *url.URL // AMQP URL (password comes from the token)
-	AmqpExchange      string   // Exchange to shovel file-close messages
-	AmqpExchangeCache string   // Exchange for cache gstream events
-	AmqpExchangeTCP   string   // Exchange for TCP gstream events
-	AmqpExchangeTPC   string   // Exchange for TPC gstream events
-	AmqpExchangeWLCG  string   // Exchange for WLCG formatted events
-	AmqpToken         string   // File location of the token
-	ListenPort        int
-	ListenIp          string
-	DestUdp           []string
-	Debug             bool
-	Verify            bool
-	StompUser         string
-	StompPassword     string
-	StompURL          *url.URL
-	StompTopic        string
-	Metrics           bool
-	MetricsPort       int
-	Profile           bool
-	ProfilePort       int
-	StompCert         string
-	StompCertKey      string
-	QueueDir          string
-	IpMapAll          string
-	IpMap             map[string]string
+	Input              InputConfig
+	State              StateConfig
+	Output             OutputConfig
+	Mode               string   // Operating mode: "shoveler" or "collector"
+	MQ                 string   // Which technology to use for the MQ connection
+	AmqpURL            *url.URL // AMQP URL (password comes from the token)
+	AmqpExchange       string   // Exchange to shovel file-close messages
+	AmqpExchangeCache  string   // Exchange for cache gstream events
+	AmqpExchangeTCP    string   // Exchange for TCP gstream events
+	AmqpExchangeTPC    string   // Exchange for TPC gstream events
+	AmqpExchangeWLCG   string   // Exchange for WLCG formatted events
+	AmqpToken          string   // File location of the token
+	AmqpPublishWorkers int      // Number of concurrent publishing workers
+	ListenPort         int
+	ListenIp           string
+	DestUdp            []string
+	Debug              bool
+	Verify             bool
+	StompUser          string
+	StompPassword      string
+	StompURL           *url.URL
+	StompTopic         string
+	Metrics            bool
+	MetricsPort        int
+	Profile            bool
+	ProfilePort        int
+	StompCert          string
+	StompCertKey       string
+	QueueDir           string
+	IpMapAll           string
+	IpMap              map[string]string
 }
 
 func (c *Config) ReadConfig() {
@@ -91,6 +93,15 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		log.Warningln("Unable to read in config file, will check environment for configuration:", err)
 	}
 	viper.SetEnvPrefix(envPrefix)
+
+	// Set the mode based on the environment prefix
+	if envPrefix == "SHOVELER" {
+		c.Mode = "shoveler"
+	} else if envPrefix == "COLLECTOR" {
+		c.Mode = "collector"
+	} else {
+		c.Mode = "unknown"
+	}
 
 	// Autmatically look to the ENV for all "Gets"
 	viper.AutomaticEnv()
@@ -167,6 +178,11 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		// Get the Token location
 		c.AmqpToken = viper.GetString("amqp.token_location")
 		log.Debugln("AMQP Token location:", c.AmqpToken)
+
+		// Get the number of publish workers
+		viper.SetDefault("amqp.publish_workers", 10)
+		c.AmqpPublishWorkers = viper.GetInt("amqp.publish_workers")
+		log.Debugln("AMQP Publish Workers:", c.AmqpPublishWorkers)
 	} else if c.MQ == "stomp" {
 		viper.SetDefault("stomp.topic", "xrootd.shoveler")
 

@@ -208,6 +208,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `SHOVELER_AMQP_EXCHANGE_TPC` - TPC events exchange (default: `xrd-tpc-events`)
 * `SHOVELER_AMQP_EXCHANGE_WLCG` - WLCG formatted events exchange (default: `xrd-wlcg-events`)
 * `SHOVELER_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`)
+* `SHOVELER_AMQP_PUBLISH_WORKERS` - Number of concurrent publishing workers for collector mode (default: `10`, forced to `1` in shoveler mode)
 
 **STOMP Configuration:**
 * `SHOVELER_STOMP_USER` - STOMP username
@@ -285,6 +286,85 @@ From Docker, you can start the container from the OSG hub with the following com
     docker run -v config.yaml:/etc/xrootd-monitoring-shoveler/config.yaml hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler
 
 ## :compass: Design 
+
+### AMQP Publishing Worker Pool
+
+The system uses a configurable pool of concurrent worker goroutines for publishing messages to RabbitMQ, improving throughput and resource utilization.
+
+#### Architecture
+
+**Worker Pool Components:**
+- **Shared Message Queue**: Single buffered channel (1000 messages) that all workers read from
+- **Multiple Workers**: Configurable number of worker goroutines (default: 10)
+- **Independent Connections**: Each worker maintains its own AMQP connection to the broker
+- **Context-Based Cancellation**: Clean shutdown using Go contexts
+- **Automatic Token Rotation**: Workers restart with new credentials when JWT tokens are updated
+
+#### Mode-Specific Behavior
+
+**Collector Mode (Default: 10 workers)**
+- Uses configured number of workers for parallel publishing
+- Workers compete for messages from the shared queue (automatic load balancing)
+- Improves throughput for high-volume collector output
+- Configure via `amqp.publish_workers` in YAML or `SHOVELER_AMQP_PUBLISH_WORKERS` environment variable
+
+**Shoveler Mode (Always: 1 worker)**
+- **Forced to use exactly 1 worker regardless of configuration**
+- Preserves strict message ordering required for shoveling mode
+- Configuration value is ignored to ensure data integrity
+- Single worker guarantees messages are published in the exact order received
+
+#### Load Distribution
+
+Workers use a **shared channel pattern** instead of round-robin distribution:
+- All workers read from a single buffered channel
+- Fastest available worker picks up the next message
+- Natural load balancing - busy workers don't block others
+- No per-worker queues, reducing memory overhead
+
+#### Example Configuration
+
+```yaml
+amqp:
+  url: amqps://broker.example.com:5671/
+  token_location: /etc/xrootd-monitoring-shoveler/token
+  publish_workers: 20  # Only used in collector mode, ignored in shoveler mode
+  exchange: shoveled-xrd
+```
+
+**Environment Variable:**
+```bash
+export SHOVELER_AMQP_PUBLISH_WORKERS=20
+```
+
+#### Performance Guidelines
+
+Recommended worker counts based on message volume:
+
+| Message Rate | Recommended Workers |
+|--------------|---------------------|
+| < 1,000/sec  | 5-10 workers       |
+| 1,000-10,000/sec | 10-20 workers  |
+| > 10,000/sec | 20-50 workers      |
+
+**Note:** Too many workers can:
+- Consume excessive connections to RabbitMQ
+- Increase memory overhead
+- Cause contention on the broker
+
+Monitor the `shoveler_queue_size` metric to tune worker count appropriately.
+
+#### Token Rotation
+
+When using JWT token-based authentication:
+1. System monitors token file every 10 seconds
+2. On token update (file modification time changes):
+   - All workers' contexts are cancelled
+   - Workers gracefully close their AMQP connections
+   - New workers are created with updated credentials
+   - Message publishing resumes seamlessly
+
+This ensures zero-downtime token rotation with automatic credential updates.
 
 ### Processing Pipelines
 

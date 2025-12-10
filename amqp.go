@@ -1,158 +1,320 @@
 package shoveler
 
 import (
+	"context"
 	"errors"
 	"math/rand"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/streadway/amqp"
 )
 
+// WorkerPool manages multiple publishing workers
+type WorkerPool struct {
+	config        *Config
+	queue         *ConfirmationQueue
+	workers       []*PublishWorker
+	tokenAge      time.Time
+	useToken      bool
+	mu            sync.RWMutex
+	ctx           context.Context
+	cancel        context.CancelFunc
+	messagesQueue chan *MessageStruct // Shared channel for all workers
+	wg            sync.WaitGroup
+}
+
+// PublishWorker handles publishing messages to AMQP
+type PublishWorker struct {
+	id            int
+	config        *Config
+	amqpURL       url.URL
+	session       *Session
+	messagesQueue chan *MessageStruct // Reference to shared channel
+	ctx           context.Context
+	wg            sync.WaitGroup
+}
+
 // This should run in a new go co-routine.
 func StartAMQP(config *Config, queue *ConfirmationQueue) {
+	ctx, cancel := context.WithCancel(context.Background())
+	pool := &WorkerPool{
+		config:        config,
+		queue:         queue,
+		workers:       make([]*PublishWorker, 0, config.AmqpPublishWorkers),
+		ctx:           ctx,
+		cancel:        cancel,
+		messagesQueue: make(chan *MessageStruct, 1000), // Shared buffered channel
+	}
 
-	// Get the configuration URL
-	amqpURL := config.AmqpURL
-
-	// Only read token if URL doesn't already have credentials
-	var tokenAge time.Time
-	if amqpURL.User == nil {
+	// Check if we need to use tokens
+	if config.AmqpURL.User == nil {
+		pool.useToken = true
 		tokenStat, err := os.Stat(config.AmqpToken)
 		if err != nil {
 			log.Fatalln("Failed to stat token file:", err)
 		}
-		tokenAge = tokenStat.ModTime()
+		pool.tokenAge = tokenStat.ModTime()
 		tokenContents, err := readToken(config.AmqpToken)
 		if err != nil {
 			log.Fatalln("Failed to read token, cannot recover")
 		}
-		// Set the username/password
+		// Set the username/password in a copy of the URL
+		amqpURL := copyURL(config.AmqpURL)
 		amqpURL.User = url.UserPassword("shoveler", tokenContents)
+		config.AmqpURL = amqpURL
 	} else {
 		log.Debugln("Using credentials from AMQP URL, skipping token file")
 	}
 
-	amqpQueue := New(*amqpURL)
+	// Start worker pool
+	pool.Start()
 
-	// Constantly check for new messages
-	messagesQueue := make(chan *MessageStruct)
-	triggerReconnect := make(chan bool)
-	go readMsg(messagesQueue, queue)
+	// Monitor token file for changes if using tokens
+	if pool.useToken {
+		go pool.CheckTokenFile()
+	}
 
-	go CheckTokenFile(config, tokenAge, triggerReconnect)
+	// Keep the main routine running
+	<-pool.ctx.Done()
+	pool.Stop()
+}
 
-	// Listen to the channel for messages
-	var err error
+// Start initializes and starts all workers
+func (p *WorkerPool) Start() {
+	// In shoveler mode, only use 1 worker to preserve message ordering
+	workerCount := p.config.AmqpPublishWorkers
+	if p.config.Mode == "shoveler" {
+		workerCount = 1
+		log.Infof("Starting AMQP worker pool with 1 worker (shoveler mode - message ordering required)")
+	} else {
+		log.Infof("Starting AMQP worker pool with %d workers", workerCount)
+	}
+
+	for i := 0; i < workerCount; i++ {
+		worker := &PublishWorker{
+			id:            i,
+			config:        p.config,
+			amqpURL:       *copyURL(p.config.AmqpURL),
+			messagesQueue: p.messagesQueue, // Share the pool's channel
+			ctx:           p.ctx,
+		}
+		p.workers = append(p.workers, worker)
+		worker.Start()
+	}
+
+	// Start feeding messages to the shared queue
+	p.wg.Add(1)
+	go p.feedMessages()
+}
+
+// Stop gracefully shuts down all workers
+func (p *WorkerPool) Stop() {
+	log.Infoln("Stopping AMQP worker pool")
+	p.cancel()
+
+	for _, worker := range p.workers {
+		worker.Stop()
+	}
+
+	p.wg.Wait()
+	close(p.messagesQueue)
+	log.Infoln("AMQP worker pool stopped")
+}
+
+// Restart stops all workers and starts new ones with updated credentials
+func (p *WorkerPool) Restart(newURL *url.URL) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	log.Infoln("Restarting AMQP worker pool with new credentials")
+
+	// Cancel old context to stop all workers
+	p.cancel()
+
+	// Wait for all workers to finish
+	for _, worker := range p.workers {
+		worker.wg.Wait()
+	}
+
+	// Update config URL
+	p.config.AmqpURL = newURL
+
+	// Create new context for new workers
+	ctx, cancel := context.WithCancel(context.Background())
+	p.ctx = ctx
+	p.cancel = cancel
+
+	// Clear old workers
+	p.workers = make([]*PublishWorker, 0, p.config.AmqpPublishWorkers)
+
+	// Start new workers with updated credentials
+	// In shoveler mode, only use 1 worker to preserve message ordering
+	workerCount := p.config.AmqpPublishWorkers
+	if p.config.Mode == "shoveler" {
+		workerCount = 1
+	}
+	for i := 0; i < workerCount; i++ {
+		worker := &PublishWorker{
+			id:            i,
+			config:        p.config,
+			amqpURL:       *copyURL(p.config.AmqpURL),
+			messagesQueue: p.messagesQueue, // Share the pool's channel
+			ctx:           p.ctx,
+		}
+		p.workers = append(p.workers, worker)
+		worker.Start()
+	}
+
+	log.Infoln("AMQP worker pool restarted")
+}
+
+// feedMessages reads from the queue and feeds the shared message channel
+func (p *WorkerPool) feedMessages() {
+	defer p.wg.Done()
+
 	for {
 		select {
-		case <-triggerReconnect:
-			log.Debugln("Triggering reconnect")
-			amqpQueue, err = reconnectAmqp(amqpURL, amqpQueue)
+		case <-p.ctx.Done():
+			return
+		default:
+			msgStruct, err := p.queue.Dequeue()
 			if err != nil {
-				log.Errorln("Failed to reconnect to AMQP:", err)
+				log.Errorln("Failed to read from queue:", err)
+				time.Sleep(100 * time.Millisecond)
+				continue
 			}
-		case msgStruct := <-messagesQueue:
-			// Handle a new message to put on the message queue
-			// Use specific exchange if provided, otherwise use default
-			exchange := config.AmqpExchange
-			if msgStruct.Exchange != "" {
-				exchange = msgStruct.Exchange
-			}
-		TryPush:
-			for {
-				err = amqpQueue.Push(exchange, msgStruct.Message)
-				if err != nil {
-					// How to handle a failure to push?
-					// The UnsafePush function already should have tried to reconnect
-					log.Errorln("Failed to push message:", err)
-					// Try again in 1 second
-					// Sleep for random amount between 1 and 5 seconds
-					// Watch for new token files
-					randSleep := rand.Intn(4000) + 1000
-					log.Debugln("Sleeping for", randSleep/1000, "seconds")
-					select {
-					case <-triggerReconnect:
-						log.Debugln("Triggering reconnect from within failure")
-						amqpQueue, err = reconnectAmqp(amqpURL, amqpQueue)
-						if err != nil {
-							log.Errorln("Failed to reconnect to AMQP:", err)
-						}
-					case <-time.After(time.Duration(randSleep) * time.Millisecond):
-						continue TryPush
-					}
 
-				}
-				break TryPush
+			// Send to shared channel - all workers compete for messages
+			select {
+			case p.messagesQueue <- msgStruct:
+				// Message sent successfully
+			case <-p.ctx.Done():
+				return
 			}
 		}
 	}
 }
 
-// reconnectAmqp reconnects to AMQP if something fails or if the token changes.
-// This is safer than just reconnecting, as it will ensure that
-// resources from the previous connection are cleaned up.
-func reconnectAmqp(amqpURL *url.URL, curSession *Session) (*Session, error) {
-	// close the current session
-	if err := curSession.Close(); err != nil {
-		log.Debugln("Error closing previous AMQP session:", err)
-	}
-
-	// Create a new session and return it
-	newSession := New(*amqpURL)
-	return newSession, nil
-}
-
-// Listen to the channel for messages
-func CheckTokenFile(config *Config, tokenAge time.Time, triggerReconnect chan<- bool) {
-	// If credentials are already in the URL, skip token file monitoring
-	if config.AmqpURL.User != nil {
-		log.Debugln("Credentials already in URL, skipping token file monitoring")
-		return
-	}
-
-	// Create a timer to check for changes in the token file ever 10 seconds
-	amqpURL := config.AmqpURL
+// CheckTokenFile monitors token file for changes
+func (p *WorkerPool) CheckTokenFile() {
 	checkTokenFile := time.NewTicker(10 * time.Second)
+	defer checkTokenFile.Stop()
+
 	for {
-		<-checkTokenFile.C
-		log.Debugln("Checking the age of the token file...")
-		// Recheck the age of the token file
-		tokenStat, err := os.Stat(config.AmqpToken)
-		if err != nil {
-			log.Fatalln("Failed to stat token file", config.AmqpToken, "error:", err)
-		}
-		newTokenAge := tokenStat.ModTime()
-		if newTokenAge.After(tokenAge) {
-			tokenAge = newTokenAge
-			log.Debugln("Token file was updated, recreating AMQP connection...")
-			// New Token, reload the connection
-			tokenContents, err := readToken(config.AmqpToken)
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-checkTokenFile.C:
+			log.Debugln("Checking the age of the token file...")
+			tokenStat, err := os.Stat(p.config.AmqpToken)
 			if err != nil {
-				log.Fatalln("Failed to read token, cannot recover")
+				log.Fatalln("Failed to stat token file", p.config.AmqpToken, "error:", err)
 			}
 
-			// Set the username/password
-			amqpURL.User = url.UserPassword("shoveler", tokenContents)
-			triggerReconnect <- true
+			newTokenAge := tokenStat.ModTime()
+			if newTokenAge.After(p.tokenAge) {
+				p.tokenAge = newTokenAge
+				log.Infoln("Token file was updated, recreating AMQP connections...")
 
+				// Read new token
+				tokenContents, err := readToken(p.config.AmqpToken)
+				if err != nil {
+					log.Fatalln("Failed to read token, cannot recover")
+				}
+
+				// Create new URL with updated credentials
+				newURL := copyURL(p.config.AmqpURL)
+				newURL.User = url.UserPassword("shoveler", tokenContents)
+
+				// Restart workers with new credentials
+				p.Restart(newURL)
+			}
 		}
-
 	}
 }
 
-// Read a message from the queue
-func readMsg(messagesQueue chan<- *MessageStruct, queue *ConfirmationQueue) {
-	for {
-		msgStruct, err := queue.Dequeue()
-		if err != nil {
-			log.Errorln("Failed to read from queue:", err)
-			continue
+// Start starts the worker
+func (w *PublishWorker) Start() {
+	w.wg.Add(1)
+	go w.run()
+}
+
+// Stop waits for the worker to finish
+func (w *PublishWorker) Stop() {
+	w.wg.Wait()
+}
+
+// run is the main worker loop
+func (w *PublishWorker) run() {
+	defer w.wg.Done()
+
+	log.Debugf("Worker %d: Starting with own AMQP connection", w.id)
+
+	// Create own AMQP session
+	w.session = New(w.amqpURL)
+	defer func() {
+		if w.session != nil {
+			w.session.Close()
 		}
-		messagesQueue <- msgStruct
+	}()
+
+	for {
+		select {
+		case <-w.ctx.Done():
+			log.Debugf("Worker %d: Stopping", w.id)
+			return
+		case msgStruct := <-w.messagesQueue:
+			w.publishMessage(msgStruct)
+		}
 	}
+}
+
+// publishMessage publishes a single message with retry logic
+func (w *PublishWorker) publishMessage(msgStruct *MessageStruct) {
+	// Use specific exchange if provided, otherwise use default
+	exchange := w.config.AmqpExchange
+	if msgStruct.Exchange != "" {
+		exchange = msgStruct.Exchange
+	}
+
+	for {
+		select {
+		case <-w.ctx.Done():
+			return
+		default:
+			err := w.session.Push(exchange, msgStruct.Message)
+			if err != nil {
+				log.Warningf("Worker %d: Failed to push message: %v", w.id, err)
+				// Random backoff between 1-5 seconds
+				randSleep := rand.Intn(4000) + 1000
+				select {
+				case <-w.ctx.Done():
+					return
+				case <-time.After(time.Duration(randSleep) * time.Millisecond):
+					continue
+				}
+			}
+			// Successfully published
+			return
+		}
+	}
+}
+
+// copyURL creates a deep copy of a URL
+func copyURL(original *url.URL) *url.URL {
+	if original == nil {
+		return nil
+	}
+	copy := *original
+	if original.User != nil {
+		userInfo := *original.User
+		copy.User = &userInfo
+	}
+	return &copy
 }
 
 // Read the token from the token location
