@@ -1,9 +1,11 @@
 package main
 
 import (
+	"flag"
 	"net"
 
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/input"
 	"github.com/sirupsen/logrus"
 )
 
@@ -16,6 +18,10 @@ var (
 var DEBUG bool = false
 
 func main() {
+	// Parse command-line flags
+	configPath := flag.String("c", "", "path to configuration file")
+	flag.StringVar(configPath, "config", "", "path to configuration file (alias for -c)")
+	flag.Parse()
 
 	shoveler.ShovelerVersion = version
 	shoveler.ShovelerCommit = commit
@@ -32,7 +38,7 @@ func main() {
 
 	// Load the configuration
 	config := shoveler.Config{}
-	config.ReadConfig()
+	config.ReadConfigWithPathAndPrefix(*configPath, "SHOVELER")
 
 	if DEBUG || config.Debug {
 		logger.SetLevel(logrus.DebugLevel)
@@ -46,10 +52,11 @@ func main() {
 	// Start the message queue
 	cq := shoveler.NewConfirmationQueue(&config)
 
-	if config.MQ == "amqp" {
+	switch config.MQ {
+	case "amqp":
 		// Start the AMQP go func
 		go shoveler.StartAMQP(&config, cq)
-	} else if config.MQ == "stomp" {
+	case "stomp":
 		// Start the STOMP go func
 		go shoveler.StartStomp(&config, cq)
 	}
@@ -59,6 +66,65 @@ func main() {
 		shoveler.StartMetrics(config.MetricsPort)
 	}
 
+	// Start pprof profiling if enabled
+	if config.Profile {
+		shoveler.StartProfile(config.ProfilePort)
+	}
+
+	// Shoveler always runs in shoveling mode (minimal processing)
+	runShovelingMode(&config, cq, logger)
+}
+
+// runShovelingMode runs the traditional shoveling mode (minimal processing)
+func runShovelingMode(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
+	// Support both UDP and file inputs
+	if config.Input.Type == "file" {
+		runShovelingModeFile(config, cq, logger)
+	} else {
+		// Default to UDP
+		runShovelingModeUDP(config, cq, logger)
+	}
+}
+
+// runShovelingModeFile processes packets from a file in shoveling mode
+func runShovelingModeFile(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
+	fr := input.NewFileReaderWithFollow(config.Input.Path, config.Input.Base64Encoded, config.Input.Follow)
+	if err := fr.Start(); err != nil {
+		logger.Fatalln("Failed to start file reader:", err)
+	}
+	defer func() {
+		if err := fr.Stop(); err != nil {
+			logger.Errorln("Failed to stop file reader:", err)
+		}
+	}()
+
+	logger.Infoln("Shoveling mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
+
+	for pkt := range fr.PacketsWithAddr() {
+		shoveler.PacketsReceived.Inc()
+
+		if config.Verify && !shoveler.VerifyPacket(pkt.Data) {
+			shoveler.ValidationsFailed.Inc()
+			continue
+		}
+
+		var remoteAddr *net.UDPAddr
+		if pkt.RemoteAddr != "" {
+			var err error
+			remoteAddr, err = net.ResolveUDPAddr("udp", pkt.RemoteAddr)
+			if err != nil {
+				logger.Warningln("Failed to parse remote addr:", pkt.RemoteAddr, err)
+			}
+		}
+		msg := shoveler.PackageUdp(pkt.Data, remoteAddr, config)
+
+		logger.Debugln("Sending msg:", string(msg))
+		cq.Enqueue(msg)
+	}
+}
+
+// runShovelingModeUDP processes packets from UDP in shoveling mode
+func runShovelingModeUDP(config *shoveler.Config, cq *shoveler.ConfirmationQueue, logger *logrus.Logger) {
 	// Process incoming UDP packets
 	addr := net.UDPAddr{
 		Port: config.ListenPort,
@@ -116,7 +182,7 @@ func main() {
 			continue
 		}
 
-		msg := shoveler.PackageUdp(buf[:rlen], remote, &config)
+		msg := shoveler.PackageUdp(buf[:rlen], remote, config)
 
 		// Send the message to the queue
 		logger.Debugln("Sending msg:", string(msg))
@@ -131,6 +197,5 @@ func main() {
 				}
 			}
 		}
-
 	}
 }

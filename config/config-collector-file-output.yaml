@@ -1,0 +1,31 @@
+# XRootD Monitoring Collector Configuration (File Output Mode)
+#
+# This configuration demonstrates the file output mode for debugging.
+# The collector will write correlated records to a file in JSON format.
+
+# Mode: collector for parsing and correlating packets
+mode: collector
+
+# Input configuration - reading from file
+input:
+  type: file
+  path: tests/use_case
+  base64_encoded: true
+  follow: false
+
+# State management (for correlating file open/close events)
+state:
+  entry_ttl: 300  # TTL in seconds for state entries (5 minutes)
+  max_entries: 0  # Max entries in state map (0 for unlimited)
+
+# Output configuration - write to file for debugging
+output:
+  type: file  # Options: "mq", "file", or "both"
+  path: /tmp/collector-output.jsonl  # Output file path (JSON Lines format)
+
+# Debug logging to see packet details
+debug: true
+
+# Metrics
+metrics: true
+metrics_port: 8080
