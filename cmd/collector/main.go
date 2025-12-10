@@ -170,7 +170,7 @@ func runCollectorMode(config *shoveler.Config, output connectors.OutputConnector
 func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Debug: Print packet details
 	if logger.Level == logrus.DebugLevel && packet != nil {
-		serverID := fmt.Sprintf("%d#%s", packet.Header.ServerStart, packet.RemoteAddr)
+		serverID := collector.BuildServerID(packet.Header.ServerStart, packet.RemoteAddr)
 		logger.Debugf("Parsed packet from %s (ServerID: %s) - Type: %c, IsXML: %v, MapRecord: %v, UserRecord: %v, FileRecords: %d",
 			packet.RemoteAddr, serverID, packet.PacketType, packet.IsXML, packet.MapRecord != nil, packet.UserRecord != nil, len(packet.FileRecords))
 		if packet.MapRecord != nil {

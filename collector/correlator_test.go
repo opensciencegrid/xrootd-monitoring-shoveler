@@ -1,7 +1,6 @@
 package collector
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -811,7 +810,7 @@ func TestCorrelator_TokenAugmentsUser(t *testing.T) {
 
 	// Verify user was stored
 	serverID := correlator.getServerID(userPacket)
-	userInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(userRec.UserInfo))
+	userInfoKey := BuildUserInfoKey(serverID, userRec.UserInfo)
 	val, exists := correlator.userMap.Get(userInfoKey)
 	require.True(t, exists, "User should be in userMap")
 	userState, ok := val.(*UserState)

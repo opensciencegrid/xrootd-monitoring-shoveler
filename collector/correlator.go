@@ -246,7 +246,7 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 // getServerID creates a unique server identifier from server start time, address, and port
 // Format: serverStart#addr#port (matching Python implementation)
 func (c *Correlator) getServerID(packet *parser.Packet) string {
-	return fmt.Sprintf("%d#%s", packet.Header.ServerStart, packet.RemoteAddr)
+	return BuildServerID(packet.Header.ServerStart, packet.RemoteAddr)
 }
 
 // handleDictIDRecord stores path/user dictionary ID mappings
@@ -266,7 +266,7 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 	userInfo, err := parseUserInfo(userInfoBytes)
 	if err != nil {
 		// If we can't parse userInfo, just store the raw string for paths
-		key := fmt.Sprintf("%s-dict-%d", serverID, rec.DictId)
+		key := BuildDictKey(serverID, rec.DictId)
 		c.dictMap.Set(key, string(rec.Info))
 		return
 	}
@@ -278,12 +278,12 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 				Path:     string(parts[1]),
 				UserInfo: userInfo,
 			}
-			key := fmt.Sprintf("%s-dict-%d", serverID, rec.DictId)
+			key := BuildDictKey(serverID, rec.DictId)
 			c.dictMap.Set(key, pathInfo)
 		}
 
 		// Also store dictID -> userInfo for user lookup
-		userKey := fmt.Sprintf("%s-dictid-%d", serverID, rec.DictId)
+		userKey := BuildDictIDKey(serverID, rec.DictId)
 		c.dictMap.Set(userKey, userInfo)
 
 	} else if packetType == parser.PacketTypeInfo { // 'i' packet
@@ -292,12 +292,12 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 			appInfo := string(parts[1])
 
 			// Store dictID -> userInfo mapping
-			userKey := fmt.Sprintf("%s-dictid-%d", serverID, rec.DictId)
+			userKey := BuildDictIDKey(serverID, rec.DictId)
 			c.dictMap.Set(userKey, userInfo)
 
 			// Update or create user state with appinfo
 			// Create a user key based on the userInfo string representation
-			userStateKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(userInfo))
+			userStateKey := BuildUserInfoKey(serverID, userInfo)
 			val, exists := c.userMap.Get(userStateKey)
 			if exists {
 				if userState, ok := val.(*UserState); ok {
@@ -330,7 +330,7 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 			}
 
 			// Look up the existing user by udid
-			existingDictKey := fmt.Sprintf("%s-dictid-%d", serverID, udid)
+			existingDictKey := BuildDictIDKey(serverID, udid)
 			val, exists := c.dictMap.Get(existingDictKey)
 			if !exists {
 				// User doesn't exist yet, create mapping from udid to this userInfo
@@ -347,7 +347,7 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 			}
 
 			// Update or create user state with experiment/activity codes
-			userStateKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(userInfo))
+			userStateKey := BuildUserInfoKey(serverID, userInfo)
 			userStateVal, userExists := c.userMap.Get(userStateKey)
 			if userExists {
 				if existingUserState, ok := userStateVal.(*UserState); ok {
@@ -458,11 +458,6 @@ func parseUserInfo(data []byte) (parser.UserInfo, error) {
 	}, nil
 }
 
-// userInfoString creates a unique string key for a UserInfo
-func userInfoString(info parser.UserInfo) string {
-	return fmt.Sprintf("%s/%s.%d:%d@%s", info.Protocol, info.Username, info.Pid, info.Sid, info.Host)
-}
-
 // isIPPattern checks if a string looks like an IP address pattern
 // Based on Python regex: r"^[\[\:f\d\.]+" (starts with [, :, f, or digits/dots)
 func isIPPattern(s string) bool {
@@ -513,7 +508,7 @@ func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Pa
 	filename := string(rec.Lfn)
 	if filename == "" && rec.Header.FileId != 0 {
 		// No filename in open record, try to get it from dict ID
-		dictKey := fmt.Sprintf("%s-dict-%d", serverID, rec.Header.FileId)
+		dictKey := BuildDictKey(serverID, rec.Header.FileId)
 		if val, exists := c.dictMap.Get(dictKey); exists {
 			if path, ok := val.(string); ok {
 				filename = path
@@ -538,7 +533,7 @@ func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Pa
 	}
 
 	// Key is only serverID + fileID (not userId)
-	key := fmt.Sprintf("%s-file-%d", serverID, rec.Header.FileId)
+	key := BuildFileKey(serverID, rec.Header.FileId)
 	c.stateMap.Set(key, state)
 
 	return nil, nil
@@ -547,7 +542,7 @@ func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Pa
 // handleFileClose handles a file close event
 func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.Packet, serverID string) (*CollectorRecord, error) {
 	// Key is only serverID + fileID (matches the key used in handleFileOpen)
-	key := fmt.Sprintf("%s-file-%d", serverID, rec.Header.FileId)
+	key := BuildFileKey(serverID, rec.Header.FileId)
 
 	c.logger.Debugf("Correlating file close: serverID=%s, fileID=%d, userID=%d", serverID, rec.Header.FileId, rec.Header.UserId)
 
@@ -577,7 +572,7 @@ func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.
 func (c *Correlator) handleTimeRecord(rec parser.FileTimeRecord, packet *parser.Packet, serverID string) (*CollectorRecord, error) {
 	// Time records can be used to update state or create timing records
 	// For now, we'll store them for potential correlation
-	key := fmt.Sprintf("%s-time-%d-%d", serverID, rec.Header.FileId, rec.SID)
+	key := BuildTimeKey(serverID, rec.Header.FileId, rec.SID)
 	state := &FileState{
 		FileID:    rec.Header.FileId,
 		UserID:    rec.Header.UserId,
@@ -610,7 +605,7 @@ func (c *Correlator) handleUserRecord(rec *parser.UserRecord, serverID string) {
 		c.logger.Debugf("Received token record for UserDictID=%d on server=%s", rec.TokenInfo.UserDictID, serverID)
 
 		// Look up the existing user by the UserDictID from the token
-		existingDictKey := fmt.Sprintf("%s-dictid-%d", serverID, rec.TokenInfo.UserDictID)
+		existingDictKey := BuildDictIDKey(serverID, rec.TokenInfo.UserDictID)
 		val, exists := c.dictMap.Get(existingDictKey)
 		if !exists {
 			c.logger.Debugf("Token record references non-existent user dictID=%d", rec.TokenInfo.UserDictID)
@@ -624,7 +619,7 @@ func (c *Correlator) handleUserRecord(rec *parser.UserRecord, serverID string) {
 		}
 
 		// Find and augment the existing user state
-		existingUserInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(existingUserInfo))
+		existingUserInfoKey := BuildUserInfoKey(serverID, existingUserInfo)
 		userStateVal, userExists := c.userMap.Get(existingUserInfoKey)
 		if !userExists {
 			c.logger.Debugf("Token record found UserInfo but no UserState for user=%s", existingUserInfo.Username)
@@ -656,11 +651,11 @@ func (c *Correlator) handleUserRecord(rec *parser.UserRecord, serverID string) {
 	}
 
 	// Store dictID -> userInfo mapping
-	dictKey := fmt.Sprintf("%s-dictid-%d", serverID, rec.DictId)
+	dictKey := BuildDictIDKey(serverID, rec.DictId)
 	c.dictMap.Set(dictKey, rec.UserInfo)
 
 	// Store userInfo -> userState mapping
-	userInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(rec.UserInfo))
+	userInfoKey := BuildUserInfoKey(serverID, rec.UserInfo)
 	c.userMap.Set(userInfoKey, userState)
 }
 
@@ -668,7 +663,7 @@ func (c *Correlator) handleUserRecord(rec *parser.UserRecord, serverID string) {
 // Cleans up all references to the disconnecting user
 func (c *Correlator) handleDisconnect(rec parser.FileDisconnectRecord, serverID string) {
 	// Get the userInfo from dictID mapping
-	dictKey := fmt.Sprintf("%s-dictid-%d", serverID, rec.UserID)
+	dictKey := BuildDictIDKey(serverID, rec.UserID)
 	val, exists := c.dictMap.Get(dictKey)
 	if !exists {
 		// User not found in dict map, nothing to clean up
@@ -685,7 +680,7 @@ func (c *Correlator) handleDisconnect(rec parser.FileDisconnectRecord, serverID 
 	c.dictMap.Delete(dictKey)
 
 	// Delete the userInfo -> userState mapping
-	userInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(userInfo))
+	userInfoKey := BuildUserInfoKey(serverID, userInfo)
 	c.userMap.Delete(userInfoKey)
 
 	// Note: We don't delete file states here because disconnect doesn't imply
@@ -702,7 +697,7 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 
 	// Try to get userInfo from dictID mapping (for userID if non-zero)
 	if userID != 0 {
-		dictKey := fmt.Sprintf("%s-dictid-%d", serverID, userID)
+		dictKey := BuildDictIDKey(serverID, userID)
 		if val, exists := c.dictMap.Get(dictKey); exists {
 			if ui, ok := val.(parser.UserInfo); ok {
 				userInfo = ui
@@ -716,7 +711,7 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 
 	// If userID is 0 or not found, try to get from fileID (path mapping)
 	if !found && fileID != 0 {
-		dictKey := fmt.Sprintf("%s-dict-%d", serverID, fileID)
+		dictKey := BuildDictKey(serverID, fileID)
 		if val, exists := c.dictMap.Get(dictKey); exists {
 			if pathInfo, ok := val.(*PathInfo); ok {
 				userInfo = pathInfo.UserInfo
@@ -736,7 +731,7 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 	}
 
 	// Now look up the full user state using userInfo
-	userInfoKey := fmt.Sprintf("%s-userinfo-%s", serverID, userInfoString(userInfo))
+	userInfoKey := BuildUserInfoKey(serverID, userInfo)
 	val, exists := c.userMap.Get(userInfoKey)
 	if !exists {
 		c.logger.Debugf("Full user state not found (no 'u' packet), using basic userInfo from 'd' packet: username=%s", userInfo.Username)
@@ -866,7 +861,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	userInfo := c.getUserInfo(state.UserID, state.FileID, state.ServerID)
 
 	// Set defaults
-	user := fmt.Sprintf("%x", state.UserID)
+	user := BuildUserHex(state.UserID)
 	userDN := ""
 	userDomain := ""
 	vo := ""
@@ -991,7 +986,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		StartTime:              state.OpenTime,
 		EndTime:                now.Unix(),
 		OperationTime:          now.Unix() - state.OpenTime,
-		ServerID:               fmt.Sprintf("%d#%s", packet.Header.ServerStart, packet.RemoteAddr),
+		ServerID:               BuildServerID(packet.Header.ServerStart, packet.RemoteAddr),
 		ServerHostname:         serverHostname,
 		Server:                 serverIP,
 		ServerIP:               serverIP,

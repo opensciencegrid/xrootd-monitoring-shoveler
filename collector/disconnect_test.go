@@ -33,8 +33,7 @@ func TestHandleDisconnect(t *testing.T) {
 
 	// Verify user is in the maps
 	dictKey := "12345#host:1094-dictid-100"
-	userInfoStr := userInfoString(userRec.UserInfo)
-	userInfoKey := "12345#host:1094-userinfo-" + userInfoStr
+	userInfoKey := BuildUserInfoKey(serverID, userRec.UserInfo)
 
 	val, exists := correlator.dictMap.Get(dictKey)
 	if !exists {
