@@ -1,0 +1,36 @@
+# XRootD Monitoring Collector Configuration (RabbitMQ Mode)
+#
+# This configuration shows how to run the collector in RabbitMQ mode,
+# reading JSON-encoded monitoring packets from a RabbitMQ queue.
+
+# Mode: collector for parsing and correlating packets
+mode: collector
+
+# Input configuration for RabbitMQ
+input:
+  type: rabbitmq  # or "amqp" - reads JSON messages from RabbitMQ
+  broker_url: amqps://rabbitmq.example.com:5671
+  queue: xrootd.monitoring  # Queue name to consume from (can also use 'topic')
+  # Note: You can use either 'queue' or 'topic' - they are aliases
+  # Credentials can be in broker_url (amqps://user:pass@host) or use token_path
+  # Message format should match: {"remote":"host:port","version":"0.1.3","data":"base64-encoded-packet-data"}
+
+# State management (for correlating file open/close events)
+state:
+  entry_ttl: 300  # TTL in seconds for state entries (5 minutes)
+  max_entries: 0  # Max entries in state map (0 for unlimited)
+
+# Message queue for output (where correlated records are sent)
+mq: amqp  # or "stomp"
+
+# AMQP configuration for output
+amqp_url: amqps://output-broker.example.com:5671/vhost
+amqp_exchange: xrootd.correlated
+amqp_token: /path/to/token/file
+
+# Metrics
+metrics: true
+metrics_port: 8080
+
+# Debug logging
+debug: false

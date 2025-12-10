@@ -1,12 +1,30 @@
-# Input configuration (optional, defaults to UDP on listen.port)
-# input:
-#   type: udp
-#   buffer_size: 65536
+# Example configuration for xrootd-monitoring-collector
+# The collector binary performs full packet parsing and correlation
+
+# Input configuration
+input:
+  # Type of input: "udp" or "message_bus"
+  type: udp
+  # Optional: Override host/port (defaults to listen.ip/listen.port)
+  # host: 0.0.0.0
+  # port: 9993
+  buffer_size: 65536
+  
+  # For message_bus input:
+  # broker_url: amqp://guest:guest@localhost:5672/
+  # topic: xrootd-packets
+  # subscription: xrootd-shoveler
+  # base64_encoded: true
 
 # State management (collector mode only)
-# state:
-#   entry_ttl: 300  # TTL in seconds
-#   max_entries: 10000  # Max state entries (0 for unlimited)
+state:
+  # Time-to-live for state entries in seconds (5 minutes default)
+  entry_ttl: 300
+  # Maximum number of state entries (0 for unlimited)
+  max_entries: 10000
+  # Disable reverse DNS lookups for performance (default: true)
+  # When enabled (false), will attempt to resolve IP addresses to hostnames for user_domain field
+  disable_reverse_dns: true
 
 # Select which protocol to use in order to connect to the MQ
 # mq: amqp/stomp
@@ -15,6 +33,12 @@
 amqp:
   url: amqps://username:password@example.com/vhost
   exchange: shoveled-xrd
+  # GStream event exchanges
+  exchange_cache: xrd-cache-events
+  exchange_tcp: xrd-tcp-events
+  exchange_tpc: xrd-tpc-events
+  # WLCG formatted events (CMS VO or /store, /user/dteam paths)
+  exchange_wlcg: xrd-wlcg-events
   topic:
   token_location: /etc/xrootd-monitoring-shoveler/token
 
@@ -38,13 +62,19 @@ listen:
 #    - 127.0.0.1:1234
 
 # Whether to verify the header of the packet matches XRootD's monitoring
-# packet format
+# packet format (only applies to shoveling mode, collector mode always parses)
 verify: true
 
 # Export prometheus metrics
 metrics:
   enable: true
   port: 8000
+
+# Enable pprof profiling (for troubleshooting/debugging)
+# Access at http://host:port/debug/pprof/
+profile:
+  enable: false
+  port: 3030
 
 # Directory to store overflow of queue onto disk.
 # The queue keeps 100 messages in memory.  If the shoveler is disconnected from the message bus,

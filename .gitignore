@@ -21,3 +21,6 @@
 go.work
 
 dist/
+shoveler
+bin/
+references/
