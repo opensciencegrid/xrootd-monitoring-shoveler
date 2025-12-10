@@ -95,11 +95,12 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	viper.SetEnvPrefix(envPrefix)
 
 	// Set the mode based on the environment prefix
-	if envPrefix == "SHOVELER" {
+	switch envPrefix {
+	case "SHOVELER":
 		c.Mode = "shoveler"
-	} else if envPrefix == "COLLECTOR" {
+	case "COLLECTOR":
 		c.Mode = "collector"
-	} else {
+	default:
 		c.Mode = "unknown"
 	}
 
@@ -144,7 +145,8 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	viper.SetDefault("mq", "amqp")
 	c.MQ = viper.GetString("mq")
 
-	if c.MQ == "amqp" {
+	switch c.MQ {
+	case "amqp":
 		viper.SetDefault("amqp.exchange", "shoveled-xrd")
 		viper.SetDefault("amqp.exchange_cache", "xrd-cache-events")
 		viper.SetDefault("amqp.exchange_tcp", "xrd-tcp-events")
@@ -183,7 +185,7 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		viper.SetDefault("amqp.publish_workers", 10)
 		c.AmqpPublishWorkers = viper.GetInt("amqp.publish_workers")
 		log.Debugln("AMQP Publish Workers:", c.AmqpPublishWorkers)
-	} else if c.MQ == "stomp" {
+	case "stomp":
 		viper.SetDefault("stomp.topic", "xrootd.shoveler")
 
 		c.StompUser = viper.GetString("stomp.user")
@@ -207,7 +209,7 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		// Get the STOMP certkey
 		c.StompCertKey = viper.GetString("stomp.certkey")
 		log.Debugln("STOMP CERTKEY:", c.StompCertKey)
-	} else {
+	default:
 		log.Panic("MQ option is not one of the allowed ones (amqp, stomp)")
 	}
 	// Get the UDP listening parameters

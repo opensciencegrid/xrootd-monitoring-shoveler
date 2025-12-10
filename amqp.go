@@ -258,7 +258,9 @@ func (w *PublishWorker) run() {
 	w.session = New(w.amqpURL)
 	defer func() {
 		if w.session != nil {
-			w.session.Close()
+			if err := w.session.Close(); err != nil {
+				log.Debugf("Worker %d: Error closing session: %v", w.id, err)
+			}
 		}
 	}()
 

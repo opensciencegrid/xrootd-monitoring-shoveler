@@ -271,7 +271,8 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 		return
 	}
 
-	if packetType == parser.PacketTypeDictID { // 'd' packet
+	switch packetType {
+	case parser.PacketTypeDictID: // 'd' packet
 		// Path mapping: store dictID -> PathInfo
 		if len(parts) > 1 {
 			pathInfo := &PathInfo{
@@ -286,7 +287,7 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 		userKey := BuildDictIDKey(serverID, rec.DictId)
 		c.dictMap.Set(userKey, userInfo)
 
-	} else if packetType == parser.PacketTypeInfo { // 'i' packet
+	case parser.PacketTypeInfo: // 'i' packet
 		// App info: rest of info after userInfo
 		if len(parts) > 1 {
 			appInfo := string(parts[1])
@@ -315,7 +316,7 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 				c.userMap.Set(userStateKey, userState)
 			}
 		}
-	} else if packetType == parser.PacketTypeEAInfo { // 'U' packet
+	case parser.PacketTypeEAInfo: // 'U' packet
 		// Experiment/Activity info: parse eainfo from second part
 		// Format: userid\neainfo where eainfo is &Uc=udid&Ec=expc&Ac=actc
 		if len(parts) > 1 {

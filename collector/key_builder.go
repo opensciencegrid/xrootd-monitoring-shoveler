@@ -43,8 +43,9 @@ func (kb *KeyBuilder) Reset() {
 }
 
 // WriteByte writes a single byte
-func (kb *KeyBuilder) WriteByte(b byte) {
+func (kb *KeyBuilder) WriteByte(b byte) error {
 	kb.buf = append(kb.buf, b)
+	return nil
 }
 
 // WriteString writes a string
@@ -116,7 +117,7 @@ func BuildTimeKey(serverID string, fileID uint32, sid int64) string {
 	kb.WriteString(serverID)
 	kb.WriteString("-time-")
 	kb.WriteUint32(fileID)
-	kb.WriteByte('-')
+	_ = kb.WriteByte('-') // Error is always nil
 	kb.WriteInt64(sid)
 
 	return kb.String()
@@ -130,13 +131,13 @@ func BuildUserInfoKey(serverID string, info parser.UserInfo) string {
 	kb.WriteString(serverID)
 	kb.WriteString("-userinfo-")
 	kb.WriteString(info.Protocol)
-	kb.WriteByte('/')
+	_ = kb.WriteByte('/') // Error is always nil
 	kb.WriteString(info.Username)
-	kb.WriteByte('.')
+	_ = kb.WriteByte('.') // Error is always nil
 	kb.WriteUint32(uint32(info.Pid))
-	kb.WriteByte(':')
+	_ = kb.WriteByte(':') // Error is always nil
 	kb.WriteUint32(uint32(info.Sid))
-	kb.WriteByte('@')
+	_ = kb.WriteByte('@') // Error is always nil
 	kb.WriteString(info.Host)
 
 	return kb.String()
@@ -148,7 +149,7 @@ func BuildServerID(serverStart int32, remoteAddr string) string {
 	defer kb.Release()
 
 	kb.buf = strconv.AppendInt(kb.buf, int64(serverStart), 10)
-	kb.WriteByte('#')
+	_ = kb.WriteByte('#') // Error is always nil
 	kb.WriteString(remoteAddr)
 
 	return kb.String()

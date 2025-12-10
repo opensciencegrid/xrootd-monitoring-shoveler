@@ -52,10 +52,11 @@ func main() {
 	// Start the message queue
 	cq := shoveler.NewConfirmationQueue(&config)
 
-	if config.MQ == "amqp" {
+	switch config.MQ {
+	case "amqp":
 		// Start the AMQP go func
 		go shoveler.StartAMQP(&config, cq)
-	} else if config.MQ == "stomp" {
+	case "stomp":
 		// Start the STOMP go func
 		go shoveler.StartStomp(&config, cq)
 	}

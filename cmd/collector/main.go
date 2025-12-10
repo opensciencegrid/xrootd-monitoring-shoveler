@@ -67,7 +67,8 @@ func main() {
 	var cq *shoveler.ConfirmationQueue
 	if config.Output.Type == "" || config.Output.Type == "mq" || config.Output.Type == "both" {
 		cq = shoveler.NewConfirmationQueue(&config)
-		if config.MQ == "amqp" {
+		switch config.MQ {
+		case "amqp":
 			// Only start AMQP if URL is configured
 			if config.AmqpURL != nil && config.AmqpURL.String() != "" {
 				// Start the AMQP go func
@@ -75,7 +76,7 @@ func main() {
 			} else {
 				logger.Warnln("Output type is 'mq' with AMQP but no amqp.url configured - skipping AMQP output")
 			}
-		} else if config.MQ == "stomp" {
+		case "stomp":
 			// Start the STOMP go func
 			go shoveler.StartStomp(&config, cq)
 		}
@@ -159,7 +160,9 @@ func runCollectorMode(config *shoveler.Config, output connectors.OutputConnector
 	case "file":
 		runCollectorModeFile(config, output, logger)
 	case "rabbitmq", "amqp":
-		runCollectorModeRabbitMQ(config, output, logger)
+		if err := runCollectorModeRabbitMQ(config, output, logger); err != nil {
+			logger.Fatalln("Failed to run RabbitMQ collector:", err)
+		}
 	default:
 		// Default to UDP
 		runCollectorModeUDP(config, output, logger)
