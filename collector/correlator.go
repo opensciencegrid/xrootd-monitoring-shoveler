@@ -590,10 +590,6 @@ func (c *Correlator) handleTimeRecord(rec parser.FileTimeRecord, packet *parser.
 	return nil, nil
 }
 
-// handleUserRecord handles a user packet (type 'u' or 'T')
-// For 'u' packets: Stores user information mapped by dictID and serverID for later correlation with file operations
-// For 'T' packets (token info): Augments an existing user record with token information
-// Following Python logic: dictID -> userInfo mapping, and userInfo -> full user state
 // handleServerInfo stores server identification information
 // Server info packets ('=' type) contain: &site=sname&port=pnum&inst=iname&pgm=prog&ver=vname
 // The StateMap automatically resets TTL on each Set, so server entries persist as long as packets arrive
@@ -604,6 +600,10 @@ func (c *Correlator) handleServerInfo(info *parser.ServerInfo, serverID string) 
 		serverID, info.Site, info.Program, info.Version, info.Instance, info.Port)
 }
 
+// handleUserRecord handles a user packet (type 'u' or 'T')
+// For 'u' packets: Stores user information mapped by dictID and serverID for later correlation with file operations
+// For 'T' packets (token info): Augments an existing user record with token information
+// Following Python logic: dictID -> userInfo mapping, and userInfo -> full user state
 func (c *Correlator) handleUserRecord(rec *parser.UserRecord, serverID string) {
 	// Check if this is a token record (has TokenInfo.UserDictID set)
 	if rec.TokenInfo.UserDictID != 0 {

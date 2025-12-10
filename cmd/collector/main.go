@@ -42,7 +42,7 @@ func main() {
 
 	// Load the configuration
 	config := shoveler.Config{}
-	config.ReadConfigWithPath(*configPath)
+	config.ReadConfigWithPathAndPrefix(*configPath, "COLLECTOR")
 
 	if config.Debug {
 		logger.SetLevel(logrus.DebugLevel)

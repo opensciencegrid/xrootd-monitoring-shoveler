@@ -66,10 +66,14 @@ type Config struct {
 }
 
 func (c *Config) ReadConfig() {
-	c.ReadConfigWithPath("")
+	c.ReadConfigWithPathAndPrefix("", "SHOVELER")
 }
 
 func (c *Config) ReadConfigWithPath(configPath string) {
+	c.ReadConfigWithPathAndPrefix(configPath, "SHOVELER")
+}
+
+func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string) {
 	if configPath != "" {
 		// Use the specified config file
 		viper.SetConfigFile(configPath)
@@ -86,7 +90,7 @@ func (c *Config) ReadConfigWithPath(configPath string) {
 	if err != nil {             // Handle errors reading the config file
 		log.Warningln("Unable to read in config file, will check environment for configuration:", err)
 	}
-	viper.SetEnvPrefix("SHOVELER")
+	viper.SetEnvPrefix(envPrefix)
 
 	// Autmatically look to the ENV for all "Gets"
 	viper.AutomaticEnv()

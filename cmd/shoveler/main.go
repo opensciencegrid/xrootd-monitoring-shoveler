@@ -38,7 +38,7 @@ func main() {
 
 	// Load the configuration
 	config := shoveler.Config{}
-	config.ReadConfigWithPath(*configPath)
+	config.ReadConfigWithPathAndPrefix(*configPath, "SHOVELER")
 
 	if DEBUG || config.Debug {
 		logger.SetLevel(logrus.DebugLevel)
