@@ -41,10 +41,11 @@ graph LR
   end;
   subgraph OSG Operations
   shoveler1 -- TCP/TLS --> C[Message Bus];
-  C -- Raw --> D[XRootD Collector];
-  D -- Summary --> C;
+  C -- Raw --> collector1{XRootD Collector};
+  collector1{XRootD Collector} -- Summary --> C;
   C --> E[(Storage)];
-  style shoveler1 font-weight:bolder,stroke-width:4px,stroke:#E74C3C,font-size:4em,color:#E74C3C
+  style shoveler1 font-weight:bolder,stroke-width:4px,stroke:#E74C3C,color:#E74C3C
+  style collector1 font-weight:bolder,stroke-width:4px,stroke:#E74C3C,color:#E74C3C
   end;
 ```
 
