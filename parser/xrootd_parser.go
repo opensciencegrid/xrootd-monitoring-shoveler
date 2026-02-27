@@ -366,7 +366,15 @@ func ParsePacket(b []byte) (*Packet, error) {
 			return nil, fmt.Errorf("failed to parse eainfo record: %w", err)
 		}
 		packet.MapRecord = mapRec
-	case PacketTypeInfo, PacketTypePurg, PacketTypeRedir:
+	case PacketTypeInfo:
+		// 'i' packets are appinfo dictionary mappings
+		// Parse as map record for use in correlator
+		mapRec, err := parseMapRecord(header, b)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse info record: %w", err)
+		}
+		packet.MapRecord = mapRec
+	case PacketTypePurg, PacketTypeRedir:
 		// These packet types are supported but not fully parsed yet
 		// They will be handled in shoveling mode as pass-through
 	default:

@@ -380,3 +380,30 @@ func TestParsePacket_ServerInfo(t *testing.T) {
 	assert.Equal(t, "xrootd", parsed.ServerInfo.Program)
 	assert.Equal(t, "5.5.0", parsed.ServerInfo.Version)
 }
+
+func TestParsePacket_InfoRecord(t *testing.T) {
+	// 'i' packets are appinfo dictionary mappings with the same format as 'd' packets
+	// Format: header (8) + dictid (4) + userinfo + \n + appinfo
+	userInfo := "xrootd/user123.12345:67890@host.example.com"
+	appInfo := "xrdcl-pelican/1.2.1"
+	info := userInfo + "\n" + appInfo
+
+	plen := uint16(8 + 4 + len(info))
+	data := createHeader(PacketTypeInfo, plen)
+
+	// Add dict id (4 bytes)
+	dictId := make([]byte, 4)
+	binary.BigEndian.PutUint32(dictId, 54321)
+	data = append(data, dictId...)
+
+	// Add info
+	data = append(data, []byte(info)...)
+
+	packet, err := ParsePacket(data)
+
+	require.NoError(t, err)
+	assert.Equal(t, PacketTypeInfo, packet.PacketType)
+	assert.NotNil(t, packet.MapRecord, "Info packet should have MapRecord for correlator to process")
+	assert.Equal(t, uint32(54321), packet.MapRecord.DictId)
+	assert.Equal(t, []byte(info), packet.MapRecord.Info)
+}
