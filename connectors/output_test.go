@@ -13,13 +13,13 @@ func TestFileConnector(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "test-connector-*.jsonl")
 	require.NoError(t, err)
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-	defer os.Remove(tmpPath)
+	require.NoError(t, tmpFile.Close())
+	t.Cleanup(func() { _ = os.Remove(tmpPath) })
 
 	// Create file connector
 	fc, err := NewFileConnector(tmpPath, nil)
 	require.NoError(t, err)
-	defer fc.Close()
+	t.Cleanup(func() { _ = fc.Close() })
 
 	// Write some data
 	testData := []byte(`{"test": "data1"}`)
@@ -36,7 +36,7 @@ func TestFileConnector(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Close and read back
-	fc.Close()
+	require.NoError(t, fc.Close())
 
 	content, err := os.ReadFile(tmpPath)
 	require.NoError(t, err)
@@ -51,23 +51,23 @@ func TestMultiOutputConnector(t *testing.T) {
 	tmpFile1, err := os.CreateTemp("", "test-multi-1-*.jsonl")
 	require.NoError(t, err)
 	tmpPath1 := tmpFile1.Name()
-	tmpFile1.Close()
-	defer os.Remove(tmpPath1)
+	require.NoError(t, tmpFile1.Close())
+	t.Cleanup(func() { _ = os.Remove(tmpPath1) })
 
 	tmpFile2, err := os.CreateTemp("", "test-multi-2-*.jsonl")
 	require.NoError(t, err)
 	tmpPath2 := tmpFile2.Name()
-	tmpFile2.Close()
-	defer os.Remove(tmpPath2)
+	require.NoError(t, tmpFile2.Close())
+	t.Cleanup(func() { _ = os.Remove(tmpPath2) })
 
 	// Create two file connectors
 	fc1, err := NewFileConnector(tmpPath1, nil)
 	require.NoError(t, err)
-	defer fc1.Close()
+	t.Cleanup(func() { _ = fc1.Close() })
 
 	fc2, err := NewFileConnector(tmpPath2, nil)
 	require.NoError(t, err)
-	defer fc2.Close()
+	t.Cleanup(func() { _ = fc2.Close() })
 
 	// Create multi-output connector
 	multi := NewMultiOutputConnector([]OutputConnector{fc1, fc2}, nil)
