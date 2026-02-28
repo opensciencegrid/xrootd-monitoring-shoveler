@@ -1,4 +1,4 @@
-FROM golang:1.26-trixie
+FROM golang:1.25-trixie
 
 EXPOSE 9993
 EXPOSE 8000
