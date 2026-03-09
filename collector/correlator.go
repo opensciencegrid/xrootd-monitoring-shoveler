@@ -2,6 +2,7 @@ package collector
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -71,6 +72,10 @@ type CollectorRecord struct {
 	ReadBytesAtClose       int64     `json:"read_bytes_at_close"`
 	WriteBytesAtClose      int64     `json:"write_bytes_at_close"`
 	HasFileCloseMsg        int       `json:"HasFileCloseMsg"`
+
+	// Internal fields for DNS enrichment (not serialized to JSON)
+	needsDNSEnrichment bool   `json:\"-\"` // True if record needs async DNS enrichment
+	enrichmentIP       string `json:\"-\"` // IP address that needs enrichment
 }
 
 // GStreamEvent represents a gstream event with added server information
@@ -109,6 +114,31 @@ type PathInfo struct {
 	UserInfo parser.UserInfo
 }
 
+// dnsEnrichmentRequest represents a request to enrich a record with DNS lookup
+type dnsEnrichmentRequest struct {
+	ip         string
+	resultChan chan dnsEnrichmentResult
+}
+
+// dnsEnrichmentResult contains the result of a DNS lookup
+type dnsEnrichmentResult struct {
+	ip       string
+	hostname string
+	err      error
+}
+
+// DNSResolver interface allows mocking DNS lookups in tests
+type DNSResolver interface {
+	LookupAddr(ctx context.Context, addr string) ([]string, error)
+}
+
+// defaultDNSResolver wraps net.DefaultResolver
+type defaultDNSResolver struct{}
+
+func (r *defaultDNSResolver) LookupAddr(ctx context.Context, addr string) ([]string, error) {
+	return net.DefaultResolver.LookupAddr(ctx, addr)
+}
+
 // Correlator correlates file open and close events
 type Correlator struct {
 	stateMap          *StateMap
@@ -116,22 +146,242 @@ type Correlator struct {
 	dictMap           *StateMap // Maps dictid to path/user info
 	serverMap         *StateMap // Maps serverID to server identification info
 	logger            *logrus.Logger
-	disableReverseDNS bool // Skip reverse DNS lookups for performance
+	disableReverseDNS bool // Skip reverse DNS lookups for performance (deprecated - use enableDNSEnrichment)
+
+	// DNS enrichment fields
+	enableDNSEnrichment bool
+	dnsCache            *StateMap // Maps IP -> hostname with TTL
+	dnsRequestChan      chan dnsEnrichmentRequest
+	dnsWorkerCount      int
+	dnsTimeout          time.Duration
+	dnsResolver         DNSResolver
+	ctx                 context.Context
+	cancel              context.CancelFunc
 }
 
-// NewCorrelator creates a new correlator
+// CorrelatorConfig holds configuration for the correlator including DNS enrichment
+type CorrelatorConfig struct {
+	TTL                 time.Duration
+	MaxEntries          int
+	DisableReverseDNS   bool // Deprecated: use EnableDNSEnrichment instead
+	EnableDNSEnrichment bool
+	DNSCacheTTL         time.Duration
+	DNSWorkers          int
+	DNSTimeout          time.Duration
+	Logger              *logrus.Logger
+}
+
+// NewCorrelator creates a new correlator (backward compatible)
 func NewCorrelator(ttl time.Duration, maxEntries int, disableReverseDNS bool, logger *logrus.Logger) *Correlator {
-	if logger == nil {
-		logger = logrus.New()
+	config := CorrelatorConfig{
+		TTL:                 ttl,
+		MaxEntries:          maxEntries,
+		DisableReverseDNS:   disableReverseDNS,
+		EnableDNSEnrichment: false,
+		Logger:              logger,
 	}
-	return &Correlator{
-		stateMap:          NewStateMap(ttl, maxEntries, ttl/10),
-		userMap:           NewStateMap(ttl, maxEntries, ttl/10),
-		dictMap:           NewStateMap(ttl, maxEntries, ttl/10),
-		serverMap:         NewStateMap(ttl, maxEntries, ttl/10),
-		logger:            logger,
-		disableReverseDNS: disableReverseDNS,
+	return NewCorrelatorWithConfig(config)
+}
+
+// NewCorrelatorWithConfig creates a new correlator with full configuration
+func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
+	if config.Logger == nil {
+		config.Logger = logrus.New()
 	}
+
+	// Set DNS enrichment defaults
+	if config.DNSCacheTTL == 0 {
+		config.DNSCacheTTL = 1 * time.Hour // Default 1 hour cache
+	}
+	if config.DNSWorkers == 0 {
+		config.DNSWorkers = 5 // Default 5 concurrent DNS lookups
+	}
+	if config.DNSTimeout == 0 {
+		config.DNSTimeout = 2 * time.Second // Default 2 second timeout
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	c := &Correlator{
+		stateMap:            NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
+		userMap:             NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
+		dictMap:             NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
+		serverMap:           NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
+		logger:              config.Logger,
+		disableReverseDNS:   config.DisableReverseDNS,
+		enableDNSEnrichment: config.EnableDNSEnrichment,
+		dnsWorkerCount:      config.DNSWorkers,
+		dnsTimeout:          config.DNSTimeout,
+		dnsResolver:         &defaultDNSResolver{},
+		ctx:                 ctx,
+		cancel:              cancel,
+	}
+
+	if config.EnableDNSEnrichment {
+		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
+		c.dnsRequestChan = make(chan dnsEnrichmentRequest, config.DNSWorkers*2)
+		c.startDNSWorkers()
+	}
+
+	return c
+}
+
+// startDNSWorkers starts the DNS worker pool
+func (c *Correlator) startDNSWorkers() {
+	for i := 0; i < c.dnsWorkerCount; i++ {
+		go c.dnsWorker()
+	}
+	c.logger.Infof("Started %d DNS enrichment workers with %s timeout", c.dnsWorkerCount, c.dnsTimeout)
+}
+
+// dnsWorker processes DNS enrichment requests
+func (c *Correlator) dnsWorker() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case req := <-c.dnsRequestChan:
+			c.processDNSRequest(req)
+		}
+	}
+}
+
+// processDNSRequest performs the actual DNS lookup with timeout
+func (c *Correlator) processDNSRequest(req dnsEnrichmentRequest) {
+	ctx, cancel := context.WithTimeout(c.ctx, c.dnsTimeout)
+	defer cancel()
+
+	hostname := c.performDNSLookup(ctx, req.ip)
+
+	result := dnsEnrichmentResult{
+		ip:       req.ip,
+		hostname: hostname,
+	}
+
+	// Cache the result (even if empty/failed)
+	if hostname != "" {
+		c.dnsCache.Set(req.ip, hostname)
+	}
+
+	// Send result back (non-blocking with context check)
+	select {
+	case req.resultChan <- result:
+	case <-c.ctx.Done():
+	}
+}
+
+// performDNSLookup does the actual reverse DNS lookup
+func (c *Correlator) performDNSLookup(ctx context.Context, ipStr string) string {
+	// Validate IP
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return ""
+	}
+
+	// Perform reverse DNS lookup with context
+	names, err := c.dnsResolver.LookupAddr(ctx, ipStr)
+	if err != nil || len(names) == 0 {
+		c.logger.Debugf("DNS lookup failed for %s: %v", ipStr, err)
+		return ""
+	}
+
+	// Return first hostname, normalized
+	hostname := strings.TrimSuffix(names[0], ".")
+	c.logger.Debugf("DNS lookup success: %s -> %s", ipStr, hostname)
+	return hostname
+}
+
+// enrichWithDNSSync performs synchronous DNS enrichment for an IP address
+// Only returns hostname if it's already in cache (fast path)
+// Returns (hostname, needsAsync) where needsAsync=true means caller should use enrichWithDNSAsync
+func (c *Correlator) enrichWithDNSSync(ipStr string) (string, bool) {
+	if !c.enableDNSEnrichment || ipStr == "" {
+		return "", false
+	}
+
+	// Fast path: check cache first (no goroutine needed)
+	if val, exists := c.dnsCache.Get(ipStr); exists {
+		if hostname, ok := val.(string); ok {
+			c.logger.Debugf("DNS cache hit: %s -> %s", ipStr, hostname)
+			return hostname, false
+		}
+	}
+
+	// Cache miss: caller should use async enrichment
+	c.logger.Debugf("DNS cache miss: %s, needs async lookup", ipStr)
+	return "", true
+}
+
+// enrichWithDNSAsync performs asynchronous DNS enrichment
+// Calls the callback with the hostname once DNS lookup completes (or times out)
+// Returns immediately, does NOT block the caller
+func (c *Correlator) enrichWithDNSAsync(ipStr string, callback func(hostname string)) {
+	if !c.enableDNSEnrichment || ipStr == "" {
+		callback("")
+		return
+	}
+
+	// Spawn goroutine to handle DNS lookup and callback
+	go func() {
+		resultChan := make(chan dnsEnrichmentResult, 1)
+		req := dnsEnrichmentRequest{
+			ip:         ipStr,
+			resultChan: resultChan,
+		}
+
+		// Send request to worker pool (with timeout)
+		select {
+		case c.dnsRequestChan <- req:
+			// Request queued successfully
+		case <-time.After(c.dnsTimeout):
+			// Worker pool is backed up, skip enrichment
+			c.logger.Warnf("DNS enrichment queue timeout for %s", ipStr)
+			callback("")
+			return
+		case <-c.ctx.Done():
+			callback("")
+			return
+		}
+
+		// Wait for result
+		select {
+		case result := <-resultChan:
+			callback(result.hostname)
+		case <-time.After(c.dnsTimeout * 2): // Extra time for worker processing
+			c.logger.Warnf("DNS enrichment result timeout for %s", ipStr)
+			callback("")
+		case <-c.ctx.Done():
+			callback("")
+		}
+	}()
+}
+
+// EnrichRecordAsync enriches a record with DNS and calls the callback
+// This is a helper for callers who want to handle async enrichment
+// Spawns a goroutine, returns immediately (non-blocking)
+func (c *Correlator) EnrichRecordAsync(record *CollectorRecord, callback func(*CollectorRecord)) {
+	if !record.needsDNSEnrichment {
+		// No enrichment needed, call callback immediately
+		callback(record)
+		return
+	}
+
+	// Enrich asynchronously
+	c.enrichWithDNSAsync(record.enrichmentIP, func(hostname string) {
+		if hostname != "" {
+			// Extract domain from hostname
+			parts := strings.Split(hostname, ".")
+			if len(parts) >= 2 {
+				record.UserDomain = strings.Join(parts[len(parts)-2:], ".")
+			}
+		}
+		callback(record)
+	})
+}
+
+// NeedsDNSEnrichment returns true if the record needs async DNS enrichment
+func (r *CollectorRecord) NeedsDNSEnrichment() bool {
+	return r.needsDNSEnrichment
 }
 
 // ProcessPacket processes a packet and returns records for all correlated file operations
@@ -876,6 +1126,10 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	tokenRole := ""
 	tokenGroups := ""
 
+	// DNS enrichment tracking
+	var needsDNSEnrichment bool
+	var enrichmentIP string
+
 	if userInfo != nil {
 		// Use username from userInfo
 		user = userInfo.UserInfo.Username
@@ -885,17 +1139,27 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		// Extract user_domain from hostname
 		if host != "" {
 			if isIPPattern(host) {
-				// Host is an IP address - try reverse DNS lookup if not disabled
-				if !c.disableReverseDNS {
-					ipStr := extractIPFromHost(host)
-					hostname := reverseDNSLookup(ipStr)
-					if hostname != "" {
-						// Successfully resolved - extract domain from hostname
-						parts := strings.Split(hostname, ".")
-						if len(parts) >= 2 {
-							userDomain = strings.Join(parts[len(parts)-2:], ".")
-						}
+				// Host is an IP address - try DNS enrichment (cache only, non-blocking)
+				ipStr := extractIPFromHost(host)
+
+				// Try synchronous cache lookup first (fast path)
+				hostname, needsAsync := c.enrichWithDNSSync(ipStr)
+
+				// Fallback to legacy method if DNS enrichment disabled
+				if hostname == "" && !c.disableReverseDNS && !c.enableDNSEnrichment {
+					hostname = reverseDNSLookup(ipStr)
+				}
+
+				if hostname != "" {
+					// Successfully resolved - extract domain from hostname
+					parts := strings.Split(hostname, ".")
+					if len(parts) >= 2 {
+						userDomain = strings.Join(parts[len(parts)-2:], ".")
 					}
+				} else if needsAsync {
+					// Mark record as needing async DNS enrichment
+					needsDNSEnrichment = true
+					enrichmentIP = ipStr
 				}
 			} else {
 				// Host is already a hostname - extract domain directly
@@ -1038,6 +1302,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		ReadBytesAtClose:       rec.Xfr.Read,
 		WriteBytesAtClose:      rec.Xfr.Write,
 		HasFileCloseMsg:        1,
+		needsDNSEnrichment:     needsDNSEnrichment,
+		enrichmentIP:           enrichmentIP,
 	}
 }
 
@@ -1063,6 +1329,11 @@ func (r *CollectorRecord) ToJSON() ([]byte, error) {
 
 // Stop stops the correlator
 func (c *Correlator) Stop() {
+	// Stop DNS workers first
+	if c.cancel != nil {
+		c.cancel()
+	}
+
 	if c.stateMap != nil {
 		c.stateMap.Stop()
 	}
@@ -1071,6 +1342,9 @@ func (c *Correlator) Stop() {
 	}
 	if c.serverMap != nil {
 		c.serverMap.Stop()
+	}
+	if c.dnsCache != nil {
+		c.dnsCache.Stop()
 	}
 }
 

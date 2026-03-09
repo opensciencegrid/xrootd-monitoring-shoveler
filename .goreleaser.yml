@@ -1,5 +1,6 @@
 # This is an example .goreleaser.yml file with some sensible defaults.
 # Make sure to check the documentation at https://goreleaser.com
+version: 2
 before:
   hooks:
     # You may remove this if you don't use go modules.
@@ -65,8 +66,8 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
-    builds:
+        formats: zip
+    ids:
       - xrootd-monitoring-shoveler
       - xrootd-monitoring-collector
       - createtoken
@@ -76,7 +77,7 @@ archives:
 checksum:
   name_template: 'checksums.txt'
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 changelog:
   sort: asc
   filters:
@@ -91,7 +92,7 @@ release:
 
 nfpms:
   - package_name: xrootd-monitoring-shoveler
-    builds:
+    ids:
       - xrootd-monitoring-shoveler
       - xrootd-monitoring-collector
       - createtoken
@@ -154,9 +155,6 @@ dockers:
       - "ghcr.io/opensciencegrid/xrootd-monitoring-shoveler:{{ .Tag }}"
       - "opensciencegrid/xrootd-monitoring-shoveler:{{ .Tag }}"
       - "opensciencegrid/xrootd-monitoring-shoveler:latest"
-    goos: linux
-    goarch: amd64
-    use: buildx
     ids:
       - xrootd-monitoring-shoveler-nfpms
     build_flag_templates:

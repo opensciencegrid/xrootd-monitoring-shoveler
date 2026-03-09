@@ -125,6 +125,46 @@ func emitRecord(recordJSON []byte, output connectors.OutputConnector, logger *lo
 	}
 }
 
+// publishRecord handles the complete publishing flow for a record (metrics + output)
+func publishRecord(record *collector.CollectorRecord, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
+	shoveler.RecordsEmitted.Inc()
+
+	// Calculate latency if we have timing info
+	if record.StartTime > 0 && record.EndTime > 0 {
+		latency := record.EndTime - record.StartTime
+		shoveler.RequestLatencyMs.Observe(float64(latency))
+	}
+
+	// Check if this should be converted to WLCG format
+	if collector.IsWLCGPacket(record) {
+		logger.Debugln("Converting record to WLCG format")
+		wlcgRecord, err := collector.ConvertToWLCG(record)
+		if err != nil {
+			logger.Errorln("Failed to convert to WLCG format:", err)
+			return
+		}
+
+		wlcgJSON, err := wlcgRecord.ToJSON()
+		if err != nil {
+			logger.Errorln("Failed to marshal WLCG record:", err)
+			return
+		}
+
+		logger.Debugln("Emitting WLCG record:", string(wlcgJSON))
+		emitWLCGRecord(wlcgJSON, config, output, logger)
+	} else {
+		// Convert to JSON and enqueue (normal path)
+		recordJSON, err := record.ToJSON()
+		if err != nil {
+			logger.Errorln("Failed to marshal record:", err)
+			return
+		}
+
+		logger.Debugln("Emitting collector record:", string(recordJSON))
+		emitRecord(recordJSON, output, logger)
+	}
+}
+
 // emitWLCGRecord handles outputting a WLCG-formatted record to the WLCG exchange
 func emitWLCGRecord(recordJSON []byte, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	if err := output.WriteToExchange(recordJSON, config.AmqpExchangeWLCG); err != nil {
@@ -151,6 +191,24 @@ func emitGStreamEvent(eventJSON []byte, streamType byte, config *shoveler.Config
 	if err := output.WriteToExchange(eventJSON, exchange); err != nil {
 		logger.Errorln("Failed to write gstream event:", err)
 	}
+}
+
+// buildCorrelatorConfig creates a correlator config from the main config
+func buildCorrelatorConfig(config *shoveler.Config, logger *logrus.Logger) collector.CorrelatorConfig {
+	ttl := time.Duration(config.State.EntryTTL) * time.Second
+
+	correlatorConfig := collector.CorrelatorConfig{
+		TTL:                 ttl,
+		MaxEntries:          config.State.MaxEntries,
+		DisableReverseDNS:   config.State.DisableReverseDNS,
+		EnableDNSEnrichment: config.State.EnableDNSEnrichment,
+		DNSCacheTTL:         time.Duration(config.State.DNSCacheTTL) * time.Second,
+		DNSWorkers:          config.State.DNSWorkers,
+		DNSTimeout:          time.Duration(config.State.DNSTimeout) * time.Second,
+		Logger:              logger,
+	}
+
+	return correlatorConfig
 }
 
 // runCollectorMode runs the collector mode with full packet parsing and correlation
@@ -238,41 +296,15 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 
 	// If we got complete records, emit them
 	for _, record := range records {
-		shoveler.RecordsEmitted.Inc()
-
-		// Calculate latency if we have timing info
-		if record.StartTime > 0 && record.EndTime > 0 {
-			latency := record.EndTime - record.StartTime
-			shoveler.RequestLatencyMs.Observe(float64(latency))
-		}
-
-		// Check if this should be converted to WLCG format
-		if collector.IsWLCGPacket(record) {
-			logger.Debugln("Converting record to WLCG format")
-			wlcgRecord, err := collector.ConvertToWLCG(record)
-			if err != nil {
-				logger.Errorln("Failed to convert to WLCG format:", err)
-				continue
-			}
-
-			wlcgJSON, err := wlcgRecord.ToJSON()
-			if err != nil {
-				logger.Errorln("Failed to marshal WLCG record:", err)
-				continue
-			}
-
-			logger.Debugln("Emitting WLCG record:", string(wlcgJSON))
-			emitWLCGRecord(wlcgJSON, config, output, logger)
+		// Check if record needs async DNS enrichment
+		if record.NeedsDNSEnrichment() {
+			// Enrich asynchronously and publish when done (non-blocking)
+			correlator.EnrichRecordAsync(record, func(enrichedRecord *collector.CollectorRecord) {
+				publishRecord(enrichedRecord, config, output, logger)
+			})
 		} else {
-			// Convert to JSON and enqueue (normal path)
-			recordJSON, err := record.ToJSON()
-			if err != nil {
-				logger.Errorln("Failed to marshal record:", err)
-				continue
-			}
-
-			logger.Debugln("Emitting collector record:", string(recordJSON))
-			emitRecord(recordJSON, output, logger)
+			// No enrichment needed, publish immediately
+			publishRecord(record, config, output, logger)
 		}
 	}
 }
@@ -308,8 +340,8 @@ func processPackets(source input.PacketSource, correlator *collector.Correlator,
 // runCollectorModeFile processes packets from a file in collector mode
 func runCollectorModeFile(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Create correlator
-	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, config.State.DisableReverseDNS, logger)
+	correlatorConfig := buildCorrelatorConfig(config, logger)
+	correlator := collector.NewCorrelatorWithConfig(correlatorConfig)
 	defer correlator.Stop()
 
 	// Update state size metric periodically
@@ -341,8 +373,8 @@ func runCollectorModeFile(config *shoveler.Config, output connectors.OutputConne
 // runCollectorModeUDP processes packets from UDP in collector mode
 func runCollectorModeUDP(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Create correlator
-	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, config.State.DisableReverseDNS, logger)
+	correlatorConfig := buildCorrelatorConfig(config, logger)
+	correlator := collector.NewCorrelatorWithConfig(correlatorConfig)
 	defer correlator.Stop()
 
 	// Update state size metric periodically
@@ -374,8 +406,8 @@ func runCollectorModeUDP(config *shoveler.Config, output connectors.OutputConnec
 // runCollectorModeRabbitMQ processes packets from RabbitMQ in collector mode
 func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) error {
 	// Create correlator
-	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, config.State.DisableReverseDNS, logger)
+	correlatorConfig := buildCorrelatorConfig(config, logger)
+	correlator := collector.NewCorrelatorWithConfig(correlatorConfig)
 	defer correlator.Stop()
 
 	// Update state size metric periodically

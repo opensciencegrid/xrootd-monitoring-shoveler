@@ -25,7 +25,13 @@ type InputConfig struct {
 type StateConfig struct {
 	EntryTTL          int  // TTL in seconds for state entries
 	MaxEntries        int  // Max entries in state map (0 for unlimited)
-	DisableReverseDNS bool // Disable reverse DNS lookups for performance (default: true)
+	DisableReverseDNS bool // Disable reverse DNS lookups for performance (default: true, deprecated)
+
+	// DNS Enrichment configuration (new approach)
+	EnableDNSEnrichment bool // Enable DNS enrichment with caching and worker pool
+	DNSCacheTTL         int  // DNS cache TTL in seconds (default: 3600)
+	DNSWorkers          int  // Number of DNS worker goroutines (default: 5)
+	DNSTimeout          int  // DNS lookup timeout in seconds (default: 2)
 }
 
 type OutputConfig struct {
@@ -136,6 +142,16 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.State.MaxEntries = viper.GetInt("state.max_entries")
 	viper.SetDefault("state.disable_reverse_dns", true) // disabled by default for performance
 	c.State.DisableReverseDNS = viper.GetBool("state.disable_reverse_dns")
+
+	// DNS Enrichment configuration
+	viper.SetDefault("state.enable_dns_enrichment", false) // disabled by default
+	c.State.EnableDNSEnrichment = viper.GetBool("state.enable_dns_enrichment")
+	viper.SetDefault("state.dns_cache_ttl", 3600) // 1 hour default
+	c.State.DNSCacheTTL = viper.GetInt("state.dns_cache_ttl")
+	viper.SetDefault("state.dns_workers", 5) // 5 workers default
+	c.State.DNSWorkers = viper.GetInt("state.dns_workers")
+	viper.SetDefault("state.dns_timeout", 2) // 2 seconds default
+	c.State.DNSTimeout = viper.GetInt("state.dns_timeout")
 
 	// Output configuration (for collector mode)
 	viper.SetDefault("output.type", "mq") // message queue by default
