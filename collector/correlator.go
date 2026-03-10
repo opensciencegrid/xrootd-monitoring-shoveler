@@ -118,8 +118,8 @@ type PathInfo struct {
 
 // dnsEnrichmentRequest represents a request to enrich a record with DNS lookup
 type dnsEnrichmentRequest struct {
-	ip         string
-	resultChan chan dnsEnrichmentResult
+	ip       string
+	callback func(dnsEnrichmentResult) // invoked by the worker goroutine when the lookup completes
 }
 
 // dnsEnrichmentResult contains the result of a DNS lookup
@@ -262,11 +262,8 @@ func (c *Correlator) processDNSRequest(req dnsEnrichmentRequest) {
 		c.dnsCache.Set(req.ip, hostname)
 	}
 
-	// Send result back (non-blocking with context check)
-	select {
-	case req.resultChan <- result:
-	case <-c.ctx.Done():
-	}
+	// Invoke the callback directly in the worker goroutine (no channel needed)
+	req.callback(result)
 }
 
 // performDNSLookup does the actual reverse DNS lookup
@@ -292,7 +289,7 @@ func (c *Correlator) performDNSLookup(ctx context.Context, ipStr string) string 
 
 // enrichWithDNSSync performs synchronous DNS enrichment for an IP address
 // Only returns hostname if it's already in cache (fast path)
-// Returns (hostname, needsAsync) where needsAsync=true means caller should use enrichWithDNSBlocking
+// Returns (hostname, needsAsync) where needsAsync=true means caller should use submitDNSCallback
 func (c *Correlator) enrichWithDNSSync(ipStr string) (string, bool) {
 	if !c.enableDNSEnrichment || ipStr == "" {
 		return "", false
@@ -311,36 +308,50 @@ func (c *Correlator) enrichWithDNSSync(ipStr string) (string, bool) {
 	return "", true
 }
 
-// enrichWithDNSBlocking sends a DNS lookup request to the worker pool and blocks until the result is ready
+// submitDNSCallback submits a DNS lookup to the worker pool with a callback that is
+// invoked by the worker goroutine when the lookup completes. It is non-blocking: if
+// the request channel has capacity the request is sent immediately and the function
+// returns; if the channel is full a short-lived goroutine is spawned that blocks only
+// until a slot becomes available (or the context is cancelled), but never waits for
+// the DNS result itself. This keeps the number of long-lived waiting goroutines bounded
+// by the worker pool size rather than the number of in-flight records.
+func (c *Correlator) submitDNSCallback(ipStr string, callback func(dnsEnrichmentResult)) {
+	req := dnsEnrichmentRequest{
+		ip:       ipStr,
+		callback: callback,
+	}
+
+	select {
+	case c.dnsRequestChan <- req:
+		// Fast path: submitted immediately
+	default:
+		// Queue is full; spawn a minimal goroutine that only blocks until a slot
+		// opens up, not until the DNS result is ready.
+		go func() {
+			select {
+			case c.dnsRequestChan <- req:
+			case <-c.ctx.Done():
+				callback(dnsEnrichmentResult{ip: ipStr})
+			}
+		}()
+	}
+}
+
+// enrichWithDNSBlocking sends a DNS lookup request to the worker pool and blocks until the result is ready.
+// It is implemented on top of submitDNSCallback and is used in tests and as a convenience for
+// callers that can tolerate blocking (e.g. tests in the same package).
 func (c *Correlator) enrichWithDNSBlocking(ipStr string) string {
 	if !c.enableDNSEnrichment || ipStr == "" {
 		return ""
 	}
 
 	resultChan := make(chan dnsEnrichmentResult, 1)
-	req := dnsEnrichmentRequest{
-		ip:         ipStr,
-		resultChan: resultChan,
-	}
-
-	// Send request to worker pool (with timeout).
-	// Use NewTimer instead of time.After so the timer can be stopped
-	// immediately when the send succeeds, avoiding timer accumulation.
-	queueTimer := time.NewTimer(c.dnsTimeout)
-	select {
-	case c.dnsRequestChan <- req:
-		queueTimer.Stop()
-	case <-queueTimer.C:
-		c.logger.Warnf("DNS enrichment queue timeout for %s", ipStr)
-		return ""
-	case <-c.ctx.Done():
-		queueTimer.Stop()
-		return ""
-	}
+	c.submitDNSCallback(ipStr, func(result dnsEnrichmentResult) {
+		resultChan <- result
+	})
 
 	// Wait for result. Use 2x the DNS timeout to account for both
 	// queuing delay and the actual DNS lookup performed by the worker.
-	// Use NewTimer so it can be stopped as soon as the result arrives.
 	resultTimer := time.NewTimer(c.dnsTimeout * 2)
 	select {
 	case result := <-resultChan:
@@ -355,35 +366,45 @@ func (c *Correlator) enrichWithDNSBlocking(ipStr string) string {
 	}
 }
 
-// EnrichRecordAsync enriches a record with DNS and calls the callback
-// This is a helper for callers who want to handle async enrichment
-// Spawns a goroutine, returns immediately (non-blocking)
+// EnrichRecordAsync enriches a record with DNS and calls the callback when complete.
+// It returns immediately without spawning a goroutine that waits for DNS results;
+// instead, callbacks are chained through the DNS worker goroutines. This keeps
+// concurrency bounded by the DNS worker pool size regardless of the number of
+// in-flight records.
 func (c *Correlator) EnrichRecordAsync(record *CollectorRecord, callback func(*CollectorRecord)) {
 	if !record.needsDNSEnrichment && !record.needsServerDNS {
 		callback(record)
 		return
 	}
 
-	go func() {
-		if record.needsDNSEnrichment {
-			hostname := c.enrichWithDNSBlocking(record.enrichmentIP)
-			if hostname != "" {
-				parts := strings.Split(hostname, ".")
+	// Server DNS step: submitted after user DNS completes (or directly if no user DNS needed).
+	doServerDNS := func() {
+		if record.needsServerDNS {
+			c.submitDNSCallback(record.serverEnrichmentIP, func(result dnsEnrichmentResult) {
+				if result.hostname != "" {
+					record.ServerHostname = result.hostname
+				}
+				callback(record)
+			})
+		} else {
+			callback(record)
+		}
+	}
+
+	// User DNS step: submitted first; on completion, triggers the server DNS step.
+	if record.needsDNSEnrichment {
+		c.submitDNSCallback(record.enrichmentIP, func(result dnsEnrichmentResult) {
+			if result.hostname != "" {
+				parts := strings.Split(result.hostname, ".")
 				if len(parts) >= 2 {
 					record.UserDomain = strings.Join(parts[len(parts)-2:], ".")
 				}
 			}
-		}
-
-		if record.needsServerDNS {
-			hostname := c.enrichWithDNSBlocking(record.serverEnrichmentIP)
-			if hostname != "" {
-				record.ServerHostname = hostname
-			}
-		}
-
-		callback(record)
-	}()
+			doServerDNS()
+		})
+	} else {
+		doServerDNS()
+	}
 }
 
 // NeedsDNSEnrichment returns true if the record needs async DNS enrichment

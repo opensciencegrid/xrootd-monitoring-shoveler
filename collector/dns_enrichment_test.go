@@ -529,3 +529,70 @@ func TestDNSEnrichment_InvalidIP(t *testing.T) {
 	result := c.enrichWithDNSBlocking("not-an-ip")
 	assert.Equal(t, "", result, "Invalid IP should return empty hostname")
 }
+
+// TestEnrichRecordAsync_BoundedConcurrency verifies that EnrichRecordAsync does not
+// spawn goroutines that wait for DNS results. All callbacks must be invoked even
+// when many records are submitted concurrently.
+func TestEnrichRecordAsync_BoundedConcurrency(t *testing.T) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	const numWorkers = 3
+	const numRecords = 50
+
+	// Slow resolver so workers are occupied during the burst
+	ready := make(chan struct{})
+	config := CorrelatorConfig{
+		TTL:                 5 * time.Minute,
+		MaxEntries:          1000,
+		EnableDNSEnrichment: true,
+		DNSCacheTTL:         1 * time.Hour,
+		DNSWorkers:          numWorkers,
+		DNSTimeout:          5 * time.Second,
+		Logger:              logger,
+	}
+
+	c := NewCorrelatorWithConfig(config)
+	defer c.Stop()
+
+	c.dnsResolver = &mockDNSResolver{
+		lookupFunc: func(ctx context.Context, addr string) ([]string, error) {
+			// Block until all records have been submitted so the queue is full
+			// during submission, exercising the non-blocking fallback path.
+			select {
+			case <-ready:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return []string{"host.example.com."}, nil
+		},
+	}
+
+	results := make(chan *CollectorRecord, numRecords)
+
+	for i := 0; i < numRecords; i++ {
+		record := &CollectorRecord{
+			needsDNSEnrichment: true,
+			enrichmentIP:       "192.0.2." + strconv.Itoa(i%200),
+		}
+		c.EnrichRecordAsync(record, func(r *CollectorRecord) {
+			results <- r
+		})
+	}
+
+	// Signal the resolver to proceed
+	close(ready)
+
+	// All callbacks must be invoked within a generous timeout
+	received := 0
+	timeout := time.After(10 * time.Second)
+	for received < numRecords {
+		select {
+		case <-results:
+			received++
+		case <-timeout:
+			t.Fatalf("Only %d/%d callbacks received before timeout", received, numRecords)
+		}
+	}
+	assert.Equal(t, numRecords, received)
+}
