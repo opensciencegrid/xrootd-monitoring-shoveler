@@ -22,7 +22,6 @@ func TestNewRabbitMQReader(t *testing.T) {
 
 	if reader == nil {
 		t.Fatal("NewRabbitMQReader returned nil")
-		return
 	}
 
 	if reader.brokerURL != "amqp://localhost:5672" {
