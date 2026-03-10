@@ -217,7 +217,8 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 
 	if config.EnableDNSEnrichment {
 		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
-		// Buffer is 2x the worker count to allow limited queuing of DNS requests without blocking producers.
+		// Buffer is 2x the worker count to allow limited queuing of DNS requests, reducing producer blocking;
+		// producers will still block if the buffer becomes full.
 		c.dnsRequestChan = make(chan dnsEnrichmentRequest, config.DNSWorkers*2)
 		c.startDNSWorkers()
 	}
@@ -323,26 +324,34 @@ func (c *Correlator) enrichWithDNSBlocking(ipStr string) string {
 		resultChan: resultChan,
 	}
 
-	// Send request to worker pool (with timeout)
+	// Send request to worker pool (with timeout).
+	// Use NewTimer instead of time.After so the timer can be stopped
+	// immediately when the send succeeds, avoiding timer accumulation.
+	queueTimer := time.NewTimer(c.dnsTimeout)
 	select {
 	case c.dnsRequestChan <- req:
-		// Request queued successfully
-	case <-time.After(c.dnsTimeout):
+		queueTimer.Stop()
+	case <-queueTimer.C:
 		c.logger.Warnf("DNS enrichment queue timeout for %s", ipStr)
 		return ""
 	case <-c.ctx.Done():
+		queueTimer.Stop()
 		return ""
 	}
 
 	// Wait for result. Use 2x the DNS timeout to account for both
 	// queuing delay and the actual DNS lookup performed by the worker.
+	// Use NewTimer so it can be stopped as soon as the result arrives.
+	resultTimer := time.NewTimer(c.dnsTimeout * 2)
 	select {
 	case result := <-resultChan:
+		resultTimer.Stop()
 		return result.hostname
-	case <-time.After(c.dnsTimeout * 2):
+	case <-resultTimer.C:
 		c.logger.Warnf("DNS enrichment result timeout for %s", ipStr)
 		return ""
 	case <-c.ctx.Done():
+		resultTimer.Stop()
 		return ""
 	}
 }
