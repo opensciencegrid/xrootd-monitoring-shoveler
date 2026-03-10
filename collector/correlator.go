@@ -187,14 +187,14 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		config.Logger = logrus.New()
 	}
 
-	// Set DNS enrichment defaults
-	if config.DNSCacheTTL == 0 {
+	// Set DNS enrichment defaults (treat non-positive values as unset)
+	if config.DNSCacheTTL <= 0 {
 		config.DNSCacheTTL = 1 * time.Hour // Default 1 hour cache
 	}
-	if config.DNSWorkers == 0 {
+	if config.DNSWorkers <= 0 {
 		config.DNSWorkers = 5 // Default 5 concurrent DNS lookups
 	}
-	if config.DNSTimeout == 0 {
+	if config.DNSTimeout <= 0 {
 		config.DNSTimeout = 2 * time.Second // Default 2 second timeout
 	}
 

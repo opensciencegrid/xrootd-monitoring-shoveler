@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,11 +16,11 @@ import (
 // mockDNSResolver implements DNSResolver for testing
 type mockDNSResolver struct {
 	lookupFunc  func(ctx context.Context, addr string) ([]string, error)
-	lookupCount int
+	lookupCount atomic.Int64
 }
 
 func (m *mockDNSResolver) LookupAddr(ctx context.Context, addr string) ([]string, error) {
-	m.lookupCount++
+	m.lookupCount.Add(1)
 	if m.lookupFunc != nil {
 		return m.lookupFunc(ctx, addr)
 	}
@@ -84,7 +85,7 @@ func TestDNSEnrichment_CacheHit(t *testing.T) {
 	assert.False(t, needsAsync, "Should not need async on cache hit")
 
 	// Verify no DNS lookup was performed (cache hit)
-	assert.Equal(t, 0, mockResolver.lookupCount, "DNS lookup should not be called on cache hit")
+	assert.Equal(t, int64(0), mockResolver.lookupCount.Load(), "DNS lookup should not be called on cache hit")
 }
 
 // TestDNSEnrichment_CacheMiss_Success tests cache miss with successful lookup
@@ -122,7 +123,7 @@ func TestDNSEnrichment_CacheMiss_Success(t *testing.T) {
 	assert.Equal(t, "resolved.example.com", result, "Should return resolved hostname")
 
 	// Verify DNS lookup was performed
-	assert.Equal(t, 1, mockResolver.lookupCount, "DNS lookup should be called on cache miss")
+	assert.Equal(t, int64(1), mockResolver.lookupCount.Load(), "DNS lookup should be called on cache miss")
 
 	// Verify result was cached
 	val, exists := c.dnsCache.Get("192.0.2.2")
@@ -130,11 +131,11 @@ func TestDNSEnrichment_CacheMiss_Success(t *testing.T) {
 	assert.Equal(t, "resolved.example.com", val.(string), "Cached value should match resolved hostname")
 
 	// Second call should hit cache (no additional lookup)
-	mockResolver.lookupCount = 0
+	mockResolver.lookupCount.Store(0)
 	hostname2, needsAsync2 := c.enrichWithDNSSync("192.0.2.2")
 	assert.Equal(t, "resolved.example.com", hostname2, "Should return cached hostname")
 	assert.False(t, needsAsync2, "Should not need async on cache hit")
-	assert.Equal(t, 0, mockResolver.lookupCount, "Second call should hit cache")
+	assert.Equal(t, int64(0), mockResolver.lookupCount.Load(), "Second call should hit cache")
 }
 
 // TestDNSEnrichment_CacheMiss_Timeout tests cache miss with timeout
@@ -173,7 +174,7 @@ func TestDNSEnrichment_CacheMiss_Timeout(t *testing.T) {
 	assert.Equal(t, "", result, "Should return empty on timeout")
 
 	// Verify DNS lookup was attempted
-	assert.Equal(t, 1, mockResolver.lookupCount, "DNS lookup should be attempted")
+	assert.Equal(t, int64(1), mockResolver.lookupCount.Load(), "DNS lookup should be attempted")
 }
 
 // TestDNSEnrichment_CacheMiss_Failure tests cache miss with DNS failure
@@ -206,7 +207,7 @@ func TestDNSEnrichment_CacheMiss_Failure(t *testing.T) {
 	assert.Equal(t, "", result, "Should return empty on DNS failure")
 
 	// Verify DNS lookup was attempted
-	assert.Equal(t, 1, mockResolver.lookupCount, "DNS lookup should be attempted")
+	assert.Equal(t, int64(1), mockResolver.lookupCount.Load(), "DNS lookup should be attempted")
 }
 
 // TestDNSEnrichment_CacheTTL tests that cache entries expire after TTL
@@ -239,22 +240,27 @@ func TestDNSEnrichment_CacheTTL(t *testing.T) {
 	// First lookup - cache miss (blocking)
 	result1 := c.enrichWithDNSBlocking("192.0.2.5")
 	assert.Equal(t, "ttl-test.example.com", result1)
-	assert.Equal(t, 1, mockResolver.lookupCount)
+	assert.Equal(t, int64(1), mockResolver.lookupCount.Load())
 
 	// Immediate second lookup - cache hit
-	mockResolver.lookupCount = 0
+	mockResolver.lookupCount.Store(0)
 	hostname2, needsAsync2 := c.enrichWithDNSSync("192.0.2.5")
 	assert.Equal(t, "ttl-test.example.com", hostname2)
 	assert.False(t, needsAsync2, "Should hit cache")
-	assert.Equal(t, 0, mockResolver.lookupCount, "Should hit cache")
+	assert.Equal(t, int64(0), mockResolver.lookupCount.Load(), "Should hit cache")
 
-	// Wait for cache entry to expire
-	time.Sleep(600 * time.Millisecond)
+	// Wait for cache entry to expire and verify a new lookup occurs
+	assert.Eventually(t, func() bool {
+		mockResolver.lookupCount.Store(0)
+		_, needsAsync := c.enrichWithDNSSync("192.0.2.5")
+		return needsAsync
+	}, 5*time.Second, 100*time.Millisecond, "Cache entry should eventually expire")
 
-	// Third lookup after expiry - cache miss again
+	// Now do a blocking lookup to get fresh result
+	mockResolver.lookupCount.Store(0)
 	result3 := c.enrichWithDNSBlocking("192.0.2.5")
 	assert.Equal(t, "ttl-test.example.com", result3)
-	assert.Equal(t, 1, mockResolver.lookupCount, "Should do new lookup after TTL expiry")
+	assert.Equal(t, int64(1), mockResolver.lookupCount.Load(), "Should do new lookup after TTL expiry")
 }
 
 // TestDNSEnrichment_Concurrency tests multiple concurrent DNS lookups
@@ -306,7 +312,7 @@ func TestDNSEnrichment_Concurrency(t *testing.T) {
 
 	// All requests should succeed (workers handle them concurrently)
 	assert.Equal(t, numRequests, successCount, "All concurrent lookups should succeed")
-	assert.GreaterOrEqual(t, mockResolver.lookupCount, numRequests, "All lookups should be performed")
+	assert.GreaterOrEqual(t, mockResolver.lookupCount.Load(), int64(numRequests), "All lookups should be performed")
 }
 
 // TestDNSEnrichment_Integration tests full integration with record creation
@@ -426,7 +432,7 @@ func TestDNSEnrichment_Integration(t *testing.T) {
 	assert.Equal(t, "university.edu", record.UserDomain, "User domain should be extracted from enriched hostname")
 
 	// Verify DNS lookup was performed (once for user IP, once for server IP)
-	assert.Equal(t, 2, mockResolver.lookupCount, "DNS lookup should be performed for user and server IPs")
+	assert.Equal(t, int64(2), mockResolver.lookupCount.Load(), "DNS lookup should be performed for user and server IPs")
 
 	// Verify result was cached for user IP
 	val, exists := c.dnsCache.Get("192.0.2.10")

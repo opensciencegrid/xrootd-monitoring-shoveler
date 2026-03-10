@@ -191,6 +191,10 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 **State Management (Collector Mode):**
 * `SHOVELER_STATE_ENTRY_TTL` - TTL for state entries in seconds (default: `300`)
 * `SHOVELER_STATE_MAX_ENTRIES` - Maximum state entries, 0 for unlimited (default: `0`)
+* `COLLECTOR_STATE_ENABLE_DNS_ENRICHMENT` - Enable DNS enrichment of monitoring records: `true` or `false` (default: `false`)
+* `COLLECTOR_STATE_DNS_CACHE_TTL` - DNS cache time-to-live in seconds (default: `3600`)
+* `COLLECTOR_STATE_DNS_WORKERS` - Number of concurrent DNS worker routines (default: `5`)
+* `COLLECTOR_STATE_DNS_TIMEOUT` - DNS query timeout in seconds (default: `2`)
 
 **Output Configuration (Collector Mode):**
 * `SHOVELER_OUTPUT_TYPE` - Output destination: `mq`, `file`, or `both` (default: `mq`)
