@@ -145,10 +145,19 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.State.EnableDNSEnrichment = viper.GetBool("state.enable_dns_enrichment")
 	viper.SetDefault("state.dns_cache_ttl", 3600) // 1 hour default
 	c.State.DNSCacheTTL = viper.GetInt("state.dns_cache_ttl")
+	if c.State.DNSCacheTTL <= 0 {
+		c.State.DNSCacheTTL = 3600
+	}
 	viper.SetDefault("state.dns_workers", 5) // 5 workers default
 	c.State.DNSWorkers = viper.GetInt("state.dns_workers")
+	if c.State.DNSWorkers <= 0 {
+		c.State.DNSWorkers = 5
+	}
 	viper.SetDefault("state.dns_timeout", 2) // 2 seconds default
 	c.State.DNSTimeout = viper.GetInt("state.dns_timeout")
+	if c.State.DNSTimeout <= 0 {
+		c.State.DNSTimeout = 2
+	}
 
 	// Output configuration (for collector mode)
 	viper.SetDefault("output.type", "mq") // message queue by default

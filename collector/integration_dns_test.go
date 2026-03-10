@@ -3,7 +3,6 @@ package collector
 import (
 	"context"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
@@ -136,18 +135,22 @@ func TestEndToEnd_DNSEnrichmentFlow(t *testing.T) {
 	// Verify the record needs DNS enrichment
 	assert.True(t, record.NeedsDNSEnrichment(), "Record should need DNS enrichment")
 
-	// Simulate what the main.go publish loop does
-	var wg sync.WaitGroup
-	wg.Add(1)
+	// Simulate what the main.go publish loop does with a timeout to avoid hanging
+	doneCh := make(chan struct{})
 
 	var enrichedRecord *CollectorRecord
 	correlator.EnrichRecordAsync(record, func(r *CollectorRecord) {
 		enrichedRecord = r
-		wg.Done()
+		close(doneCh)
 	})
 
-	// Wait for enrichment to complete
-	wg.Wait()
+	// Wait for enrichment to complete with timeout
+	select {
+	case <-doneCh:
+		// Success
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timeout waiting for DNS enrichment to complete")
+	}
 
 	// Verify the enriched record has the user domain set
 	assert.NotNil(t, enrichedRecord)
@@ -155,7 +158,7 @@ func TestEndToEnd_DNSEnrichmentFlow(t *testing.T) {
 	assert.Equal(t, "server.example.com", enrichedRecord.ServerHostname, "ServerHostname should be resolved via DNS")
 
 	// Verify DNS was called for both user IP and server IP
-	assert.Equal(t, 2, mockResolver.lookupCount, "DNS resolver should have been called twice")
+	assert.Equal(t, int64(2), mockResolver.lookupCount.Load(), "DNS resolver should have been called twice")
 }
 
 // TestEndToEnd_DNSEnrichmentCacheHit tests that cached DNS results don't trigger async enrichment
@@ -280,5 +283,5 @@ func TestEndToEnd_DNSEnrichmentCacheHit(t *testing.T) {
 	assert.Equal(t, "server.example.com", record.ServerHostname, "ServerHostname should be set from cache")
 
 	// Verify DNS was NOT called (cache hit)
-	assert.Equal(t, 0, mockResolver.lookupCount, "DNS resolver should NOT have been called (cache hit)")
+	assert.Equal(t, int64(0), mockResolver.lookupCount.Load(), "DNS resolver should NOT have been called (cache hit)")
 }
