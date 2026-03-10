@@ -425,10 +425,15 @@ func TestDNSEnrichment_Integration(t *testing.T) {
 	// Verify DNS lookup was performed (once for user IP, once for server IP)
 	assert.Equal(t, 2, mockResolver.lookupCount, "DNS lookup should be performed for user and server IPs")
 
-	// Verify result was cached
+	// Verify result was cached for user IP
 	val, exists := c.dnsCache.Get("192.0.2.10")
-	assert.True(t, exists, "DNS result should be cached")
+	assert.True(t, exists, "DNS result for user IP should be cached")
 	assert.Equal(t, "client.university.edu", val.(string))
+
+	// Verify result was cached for server IP
+	serverVal, serverExists := c.dnsCache.Get("127.0.0.1")
+	assert.True(t, serverExists, "DNS result for server IP should be cached")
+	assert.Equal(t, "", serverVal.(string), "Server IP should not resolve to client hostname in mock")
 }
 
 // TestDNSEnrichment_ShutdownCleanup tests that workers exit cleanly on shutdown
