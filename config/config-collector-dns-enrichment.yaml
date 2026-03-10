@@ -9,11 +9,7 @@ state:
   # Maximum entries in state map (0 = unlimited)
   max_entries: 100000
   
-  # Legacy option (deprecated): Disable synchronous reverse DNS lookups
-  # When dns enrichment is enabled, this should be true to avoid blocking
-  disable_reverse_dns: true
-  
-  # ---- DNS Enrichment Configuration (NEW) ----
+  # ---- DNS Enrichment Configuration ----
   
   # Enable DNS enrichment with caching and worker pool
   # When enabled:

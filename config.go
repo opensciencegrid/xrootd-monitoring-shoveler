@@ -23,11 +23,10 @@ type InputConfig struct {
 }
 
 type StateConfig struct {
-	EntryTTL          int  // TTL in seconds for state entries
-	MaxEntries        int  // Max entries in state map (0 for unlimited)
-	DisableReverseDNS bool // Disable reverse DNS lookups for performance (default: true, deprecated)
+	EntryTTL   int // TTL in seconds for state entries
+	MaxEntries int // Max entries in state map (0 for unlimited)
 
-	// DNS Enrichment configuration (new approach)
+	// DNS Enrichment configuration
 	EnableDNSEnrichment bool // Enable DNS enrichment with caching and worker pool
 	DNSCacheTTL         int  // DNS cache TTL in seconds (default: 3600)
 	DNSWorkers          int  // Number of DNS worker goroutines (default: 5)
@@ -140,8 +139,6 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.State.EntryTTL = viper.GetInt("state.entry_ttl")
 	viper.SetDefault("state.max_entries", 0) // unlimited by default
 	c.State.MaxEntries = viper.GetInt("state.max_entries")
-	viper.SetDefault("state.disable_reverse_dns", true) // disabled by default for performance
-	c.State.DisableReverseDNS = viper.GetBool("state.disable_reverse_dns")
 
 	// DNS Enrichment configuration
 	viper.SetDefault("state.enable_dns_enrichment", false) // disabled by default

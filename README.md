@@ -165,7 +165,6 @@ Configure state management parameters:
 state:
   entry_ttl: 300              # Time-to-live for state entries in seconds
   max_entries: 10000          # Maximum state entries (0 for unlimited)
-  disable_reverse_dns: true   # Disable reverse DNS lookups (default: true for performance)
 ```
 
 See [config-collector.yaml](config/config-collector.yaml) for a complete example.
@@ -192,7 +191,6 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 **State Management (Collector Mode):**
 * `SHOVELER_STATE_ENTRY_TTL` - TTL for state entries in seconds (default: `300`)
 * `SHOVELER_STATE_MAX_ENTRIES` - Maximum state entries, 0 for unlimited (default: `0`)
-* `SHOVELER_STATE_DISABLE_REVERSE_DNS` - Disable reverse DNS lookups for performance (default: `true`)
 
 **Output Configuration (Collector Mode):**
 * `SHOVELER_OUTPUT_TYPE` - Output destination: `mq`, `file`, or `both` (default: `mq`)
@@ -516,7 +514,7 @@ The collector uses a TTL-based concurrent state map (`collector/state.go`) to tr
 - Configurable max entries (prevents unbounded memory growth)
 - Thread-safe (RWMutex)
 - O(1) operations
-- Optional reverse DNS lookup (disabled by default for performance)
+- DNS enrichment for IP-to-hostname resolution
 
 **Example Usage:**
 ```go

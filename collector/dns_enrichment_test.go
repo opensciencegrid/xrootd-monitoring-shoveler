@@ -116,19 +116,9 @@ func TestDNSEnrichment_CacheMiss_Success(t *testing.T) {
 	assert.Equal(t, "", hostname, "Should return empty on cache miss")
 	assert.True(t, needsAsync, "Should need async on cache miss")
 
-	// Perform async enrichment
-	done := make(chan string, 1)
-	c.enrichWithDNSAsync("192.0.2.2", func(result string) {
-		done <- result
-	})
-
-	// Wait for result
-	select {
-	case result := <-done:
-		assert.Equal(t, "resolved.example.com", result, "Should return resolved hostname")
-	case <-time.After(5 * time.Second):
-		t.Fatal("Timeout waiting for async DNS result")
-	}
+	// Perform blocking enrichment
+	result := c.enrichWithDNSBlocking("192.0.2.2")
+	assert.Equal(t, "resolved.example.com", result, "Should return resolved hostname")
 
 	// Verify DNS lookup was performed
 	assert.Equal(t, 1, mockResolver.lookupCount, "DNS lookup should be called on cache miss")
@@ -177,19 +167,9 @@ func TestDNSEnrichment_CacheMiss_Timeout(t *testing.T) {
 	}
 	c.dnsResolver = mockResolver
 
-	// Perform async enrichment - should timeout
-	done := make(chan string, 1)
-	c.enrichWithDNSAsync("192.0.2.3", func(result string) {
-		done <- result
-	})
-
-	// Wait for result
-	select {
-	case result := <-done:
-		assert.Equal(t, "", result, "Should return empty on timeout")
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for async callback")
-	}
+	// Perform blocking enrichment - should timeout
+	result := c.enrichWithDNSBlocking("192.0.2.3")
+	assert.Equal(t, "", result, "Should return empty on timeout")
 
 	// Verify DNS lookup was attempted
 	assert.Equal(t, 1, mockResolver.lookupCount, "DNS lookup should be attempted")
@@ -220,19 +200,9 @@ func TestDNSEnrichment_CacheMiss_Failure(t *testing.T) {
 	}
 	c.dnsResolver = mockResolver
 
-	// Perform async enrichment - should fail gracefully
-	done := make(chan string, 1)
-	c.enrichWithDNSAsync("192.0.2.4", func(result string) {
-		done <- result
-	})
-
-	// Wait for result
-	select {
-	case result := <-done:
-		assert.Equal(t, "", result, "Should return empty on DNS failure")
-	case <-time.After(5 * time.Second):
-		t.Fatal("Timeout waiting for async callback")
-	}
+	// Perform blocking enrichment - should fail gracefully
+	result := c.enrichWithDNSBlocking("192.0.2.4")
+	assert.Equal(t, "", result, "Should return empty on DNS failure")
 
 	// Verify DNS lookup was attempted
 	assert.Equal(t, 1, mockResolver.lookupCount, "DNS lookup should be attempted")
@@ -265,12 +235,8 @@ func TestDNSEnrichment_CacheTTL(t *testing.T) {
 	}
 	c.dnsResolver = mockResolver
 
-	// First lookup - cache miss (async)
-	done1 := make(chan string, 1)
-	c.enrichWithDNSAsync("192.0.2.5", func(result string) {
-		done1 <- result
-	})
-	result1 := <-done1
+	// First lookup - cache miss (blocking)
+	result1 := c.enrichWithDNSBlocking("192.0.2.5")
 	assert.Equal(t, "ttl-test.example.com", result1)
 	assert.Equal(t, 1, mockResolver.lookupCount)
 
@@ -285,11 +251,7 @@ func TestDNSEnrichment_CacheTTL(t *testing.T) {
 	time.Sleep(600 * time.Millisecond)
 
 	// Third lookup after expiry - cache miss again
-	done3 := make(chan string, 1)
-	c.enrichWithDNSAsync("192.0.2.5", func(result string) {
-		done3 <- result
-	})
-	result3 := <-done3
+	result3 := c.enrichWithDNSBlocking("192.0.2.5")
 	assert.Equal(t, "ttl-test.example.com", result3)
 	assert.Equal(t, 1, mockResolver.lookupCount, "Should do new lookup after TTL expiry")
 }
@@ -328,9 +290,7 @@ func TestDNSEnrichment_Concurrency(t *testing.T) {
 	for i := 0; i < numRequests; i++ {
 		ip := "192.0.2." + string(rune('0'+i))
 		go func(ipAddr string) {
-			c.enrichWithDNSAsync(ipAddr, func(result string) {
-				results <- result
-			})
+			results <- c.enrichWithDNSBlocking(ipAddr)
 		}(ip)
 	}
 
@@ -461,8 +421,8 @@ func TestDNSEnrichment_Integration(t *testing.T) {
 	assert.NotEmpty(t, record.UserDomain, "User domain should be populated from DNS enrichment")
 	assert.Equal(t, "university.edu", record.UserDomain, "User domain should be extracted from enriched hostname")
 
-	// Verify DNS lookup was performed
-	assert.Equal(t, 1, mockResolver.lookupCount, "DNS lookup should be performed once")
+	// Verify DNS lookup was performed (once for user IP, once for server IP)
+	assert.Equal(t, 2, mockResolver.lookupCount, "DNS lookup should be performed for user and server IPs")
 
 	// Verify result was cached
 	val, exists := c.dnsCache.Get("192.0.2.10")
@@ -497,7 +457,7 @@ func TestDNSEnrichment_ShutdownCleanup(t *testing.T) {
 	c.dnsResolver = mockResolver
 
 	// Launch a lookup (async, won't wait for result)
-	c.enrichWithDNSAsync("192.0.2.20", func(result string) {})
+	go c.enrichWithDNSBlocking("192.0.2.20")
 
 	// Immediately stop - should not hang or panic
 	time.Sleep(10 * time.Millisecond)
@@ -557,16 +517,6 @@ func TestDNSEnrichment_InvalidIP(t *testing.T) {
 	c.dnsResolver = mockResolver
 
 	// Invalid IP should be handled gracefully
-	done := make(chan string, 1)
-	c.enrichWithDNSAsync("not-an-ip", func(result string) {
-		done <- result
-	})
-
-	// Wait for result
-	select {
-	case result := <-done:
-		assert.Equal(t, "", result, "Invalid IP should return empty hostname")
-	case <-time.After(5 * time.Second):
-		t.Fatal("Timeout waiting for async callback")
-	}
+	result := c.enrichWithDNSBlocking("not-an-ip")
+	assert.Equal(t, "", result, "Invalid IP should return empty hostname")
 }

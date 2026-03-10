@@ -200,7 +200,6 @@ func buildCorrelatorConfig(config *shoveler.Config, logger *logrus.Logger) colle
 	correlatorConfig := collector.CorrelatorConfig{
 		TTL:                 ttl,
 		MaxEntries:          config.State.MaxEntries,
-		DisableReverseDNS:   config.State.DisableReverseDNS,
 		EnableDNSEnrichment: config.State.EnableDNSEnrichment,
 		DNSCacheTTL:         time.Duration(config.State.DNSCacheTTL) * time.Second,
 		DNSWorkers:          config.State.DNSWorkers,

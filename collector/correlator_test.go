@@ -10,7 +10,7 @@ import (
 )
 
 func TestCorrelator_FileOpenClose(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create an open record
@@ -93,7 +93,7 @@ func TestCorrelator_FileOpenClose(t *testing.T) {
 }
 
 func TestCorrelator_CloseWithoutOpen(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a close record without a prior open
@@ -132,7 +132,7 @@ func TestCorrelator_CloseWithoutOpen(t *testing.T) {
 }
 
 func TestCorrelator_TimeRecord(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	timeRec := parser.FileTimeRecord{
@@ -164,7 +164,7 @@ func TestCorrelator_TimeRecord(t *testing.T) {
 }
 
 func TestCorrelator_XMLPacket(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	xmlPacket := &parser.Packet{
@@ -178,7 +178,7 @@ func TestCorrelator_XMLPacket(t *testing.T) {
 }
 
 func TestCorrelator_RecordAverages(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create open
@@ -253,7 +253,7 @@ func TestCollectorRecord_ToJSON(t *testing.T) {
 }
 
 func TestCorrelator_UserRecord(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a user record
@@ -354,7 +354,7 @@ func TestCorrelator_UserRecord(t *testing.T) {
 }
 
 func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a user record with IPv6
@@ -405,7 +405,7 @@ func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
 }
 
 func TestCorrelator_UserDomainFromIP(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Test with a well-known IP that should resolve (Google DNS)
@@ -615,7 +615,7 @@ func TestExtractDirnames(t *testing.T) {
 }
 
 func TestCorrelator_ServerInfo(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a server info packet ('=' type)
@@ -726,7 +726,7 @@ func TestCorrelator_ServerInfo(t *testing.T) {
 func TestCorrelator_ServerInfoTTL(t *testing.T) {
 	// Use a very short TTL for testing
 	ttl := 200 * time.Millisecond
-	correlator := NewCorrelator(ttl, 0, false, nil)
+	correlator := NewCorrelator(ttl, 0, nil)
 	defer correlator.Stop()
 
 	serverID := "2000#192.168.1.1:1094"
@@ -773,7 +773,7 @@ func TestCorrelator_ServerInfoTTL(t *testing.T) {
 }
 
 func TestCorrelator_TokenAugmentsUser(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// First, create a regular user record
@@ -865,7 +865,7 @@ func TestCorrelator_TokenAugmentsUser(t *testing.T) {
 }
 
 func TestCorrelator_AppInfoFromInfoPacket(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, true, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	serverID := "1000#127.0.0.1:9930"

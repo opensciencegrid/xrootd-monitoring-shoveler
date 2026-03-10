@@ -74,8 +74,10 @@ type CollectorRecord struct {
 	HasFileCloseMsg        int       `json:"HasFileCloseMsg"`
 
 	// Internal fields for DNS enrichment (not serialized to JSON)
-	needsDNSEnrichment bool   `json:\"-\"` // True if record needs async DNS enrichment
-	enrichmentIP       string `json:\"-\"` // IP address that needs enrichment
+	needsDNSEnrichment bool   `json:"-"` // True if record needs async DNS enrichment for user domain
+	enrichmentIP       string `json:"-"` // User IP address that needs enrichment
+	needsServerDNS     bool   `json:"-"` // True if server hostname needs async DNS enrichment
+	serverEnrichmentIP string `json:"-"` // Server IP address that needs enrichment
 }
 
 // GStreamEvent represents a gstream event with added server information
@@ -141,12 +143,11 @@ func (r *defaultDNSResolver) LookupAddr(ctx context.Context, addr string) ([]str
 
 // Correlator correlates file open and close events
 type Correlator struct {
-	stateMap          *StateMap
-	userMap           *StateMap
-	dictMap           *StateMap // Maps dictid to path/user info
-	serverMap         *StateMap // Maps serverID to server identification info
-	logger            *logrus.Logger
-	disableReverseDNS bool // Skip reverse DNS lookups for performance (deprecated - use enableDNSEnrichment)
+	stateMap  *StateMap
+	userMap   *StateMap
+	dictMap   *StateMap // Maps dictid to path/user info
+	serverMap *StateMap // Maps serverID to server identification info
+	logger    *logrus.Logger
 
 	// DNS enrichment fields
 	enableDNSEnrichment bool
@@ -163,7 +164,6 @@ type Correlator struct {
 type CorrelatorConfig struct {
 	TTL                 time.Duration
 	MaxEntries          int
-	DisableReverseDNS   bool // Deprecated: use EnableDNSEnrichment instead
 	EnableDNSEnrichment bool
 	DNSCacheTTL         time.Duration
 	DNSWorkers          int
@@ -171,12 +171,11 @@ type CorrelatorConfig struct {
 	Logger              *logrus.Logger
 }
 
-// NewCorrelator creates a new correlator (backward compatible)
-func NewCorrelator(ttl time.Duration, maxEntries int, disableReverseDNS bool, logger *logrus.Logger) *Correlator {
+// NewCorrelator creates a new correlator
+func NewCorrelator(ttl time.Duration, maxEntries int, logger *logrus.Logger) *Correlator {
 	config := CorrelatorConfig{
 		TTL:                 ttl,
 		MaxEntries:          maxEntries,
-		DisableReverseDNS:   disableReverseDNS,
 		EnableDNSEnrichment: false,
 		Logger:              logger,
 	}
@@ -208,7 +207,6 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		dictMap:             NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
 		serverMap:           NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
 		logger:              config.Logger,
-		disableReverseDNS:   config.DisableReverseDNS,
 		enableDNSEnrichment: config.EnableDNSEnrichment,
 		dnsWorkerCount:      config.DNSWorkers,
 		dnsTimeout:          config.DNSTimeout,
@@ -293,7 +291,7 @@ func (c *Correlator) performDNSLookup(ctx context.Context, ipStr string) string 
 
 // enrichWithDNSSync performs synchronous DNS enrichment for an IP address
 // Only returns hostname if it's already in cache (fast path)
-// Returns (hostname, needsAsync) where needsAsync=true means caller should use enrichWithDNSAsync
+// Returns (hostname, needsAsync) where needsAsync=true means caller should use enrichWithDNSBlocking
 func (c *Correlator) enrichWithDNSSync(ipStr string) (string, bool) {
 	if !c.enableDNSEnrichment || ipStr == "" {
 		return "", false
@@ -312,76 +310,75 @@ func (c *Correlator) enrichWithDNSSync(ipStr string) (string, bool) {
 	return "", true
 }
 
-// enrichWithDNSAsync performs asynchronous DNS enrichment
-// Calls the callback with the hostname once DNS lookup completes (or times out)
-// Returns immediately, does NOT block the caller
-func (c *Correlator) enrichWithDNSAsync(ipStr string, callback func(hostname string)) {
+// enrichWithDNSBlocking sends a DNS lookup request to the worker pool and blocks until the result is ready
+func (c *Correlator) enrichWithDNSBlocking(ipStr string) string {
 	if !c.enableDNSEnrichment || ipStr == "" {
-		callback("")
-		return
+		return ""
 	}
 
-	// Spawn goroutine to handle DNS lookup and callback
-	go func() {
-		resultChan := make(chan dnsEnrichmentResult, 1)
-		req := dnsEnrichmentRequest{
-			ip:         ipStr,
-			resultChan: resultChan,
-		}
+	resultChan := make(chan dnsEnrichmentResult, 1)
+	req := dnsEnrichmentRequest{
+		ip:         ipStr,
+		resultChan: resultChan,
+	}
 
-		// Send request to worker pool (with timeout)
-		select {
-		case c.dnsRequestChan <- req:
-			// Request queued successfully
-		case <-time.After(c.dnsTimeout):
-			// Worker pool is backed up, skip enrichment
-			c.logger.Warnf("DNS enrichment queue timeout for %s", ipStr)
-			callback("")
-			return
-		case <-c.ctx.Done():
-			callback("")
-			return
-		}
+	// Send request to worker pool (with timeout)
+	select {
+	case c.dnsRequestChan <- req:
+		// Request queued successfully
+	case <-time.After(c.dnsTimeout):
+		c.logger.Warnf("DNS enrichment queue timeout for %s", ipStr)
+		return ""
+	case <-c.ctx.Done():
+		return ""
+	}
 
-		// Wait for result
-		select {
-		case result := <-resultChan:
-			callback(result.hostname)
-		case <-time.After(c.dnsTimeout * 2): // Extra time for worker processing
-			c.logger.Warnf("DNS enrichment result timeout for %s", ipStr)
-			callback("")
-		case <-c.ctx.Done():
-			callback("")
-		}
-	}()
+	// Wait for result
+	select {
+	case result := <-resultChan:
+		return result.hostname
+	case <-time.After(c.dnsTimeout * 2):
+		c.logger.Warnf("DNS enrichment result timeout for %s", ipStr)
+		return ""
+	case <-c.ctx.Done():
+		return ""
+	}
 }
 
 // EnrichRecordAsync enriches a record with DNS and calls the callback
 // This is a helper for callers who want to handle async enrichment
 // Spawns a goroutine, returns immediately (non-blocking)
 func (c *Correlator) EnrichRecordAsync(record *CollectorRecord, callback func(*CollectorRecord)) {
-	if !record.needsDNSEnrichment {
-		// No enrichment needed, call callback immediately
+	if !record.needsDNSEnrichment && !record.needsServerDNS {
 		callback(record)
 		return
 	}
 
-	// Enrich asynchronously
-	c.enrichWithDNSAsync(record.enrichmentIP, func(hostname string) {
-		if hostname != "" {
-			// Extract domain from hostname
-			parts := strings.Split(hostname, ".")
-			if len(parts) >= 2 {
-				record.UserDomain = strings.Join(parts[len(parts)-2:], ".")
+	go func() {
+		if record.needsDNSEnrichment {
+			hostname := c.enrichWithDNSBlocking(record.enrichmentIP)
+			if hostname != "" {
+				parts := strings.Split(hostname, ".")
+				if len(parts) >= 2 {
+					record.UserDomain = strings.Join(parts[len(parts)-2:], ".")
+				}
 			}
 		}
+
+		if record.needsServerDNS {
+			hostname := c.enrichWithDNSBlocking(record.serverEnrichmentIP)
+			if hostname != "" {
+				record.ServerHostname = hostname
+			}
+		}
+
 		callback(record)
-	})
+	}()
 }
 
 // NeedsDNSEnrichment returns true if the record needs async DNS enrichment
 func (r *CollectorRecord) NeedsDNSEnrichment() bool {
-	return r.needsDNSEnrichment
+	return r.needsDNSEnrichment || r.needsServerDNS
 }
 
 // ProcessPacket processes a packet and returns records for all correlated file operations
@@ -732,25 +729,6 @@ func extractIPFromHost(host string) string {
 	// Remove leading :: if present
 	host = strings.TrimPrefix(host, "::")
 	return host
-}
-
-// reverseDNSLookup attempts to perform a reverse DNS lookup on an IP address
-// Returns the hostname if successful, empty string otherwise
-func reverseDNSLookup(ipStr string) string {
-	// Parse the IP address
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return ""
-	}
-
-	// Perform reverse DNS lookup
-	names, err := net.LookupAddr(ipStr)
-	if err != nil || len(names) == 0 {
-		return ""
-	}
-
-	// Return the first hostname, trimming trailing dot if present
-	return strings.TrimSuffix(names[0], ".")
 }
 
 // handleFileOpen handles a file open event
@@ -1145,11 +1123,6 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 				// Try synchronous cache lookup first (fast path)
 				hostname, needsAsync := c.enrichWithDNSSync(ipStr)
 
-				// Fallback to legacy method if DNS enrichment disabled
-				if hostname == "" && !c.disableReverseDNS && !c.enableDNSEnrichment {
-					hostname = reverseDNSLookup(ipStr)
-				}
-
 				if hostname != "" {
 					// Successfully resolved - extract domain from hostname
 					parts := strings.Split(hostname, ".")
@@ -1223,16 +1196,30 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	// Parse RemoteAddr to extract server IP and hostname
 	serverIP := "unknown"
 	serverHostname := "unknown"
+	var needsServerDNS bool
+	var serverEnrichmentIP string
 	if packet.RemoteAddr != "" {
 		// RemoteAddr is in format "host:port" or "[ipv6]:port"
 		host, _, err := net.SplitHostPort(packet.RemoteAddr)
 		if err == nil {
 			serverIP = host
-			serverHostname = host // Could do reverse DNS lookup here if needed
+			serverHostname = host
 		} else {
 			// If SplitHostPort fails, use the whole RemoteAddr
 			serverIP = packet.RemoteAddr
 			serverHostname = packet.RemoteAddr
+		}
+
+		// Try DNS enrichment for server hostname
+		if isIPPattern(serverIP) {
+			ipStr := extractIPFromHost(serverIP)
+			hostname, needsAsync := c.enrichWithDNSSync(ipStr)
+			if hostname != "" {
+				serverHostname = hostname
+			} else if needsAsync {
+				needsServerDNS = true
+				serverEnrichmentIP = ipStr
+			}
 		}
 	}
 
@@ -1304,6 +1291,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		HasFileCloseMsg:        1,
 		needsDNSEnrichment:     needsDNSEnrichment,
 		enrichmentIP:           enrichmentIP,
+		needsServerDNS:         needsServerDNS,
+		serverEnrichmentIP:     serverEnrichmentIP,
 	}
 }
 

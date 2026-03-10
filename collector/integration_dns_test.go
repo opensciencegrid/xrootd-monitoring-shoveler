@@ -21,10 +21,14 @@ func TestEndToEnd_DNSEnrichmentFlow(t *testing.T) {
 	// Create mock DNS resolver
 	mockResolver := &mockDNSResolver{
 		lookupFunc: func(ctx context.Context, addr string) ([]string, error) {
-			if addr == "192.0.2.1" {
+			switch addr {
+			case "192.0.2.1":
 				return []string{"test-host.example.com"}, nil
+			case "192.168.1.100":
+				return []string{"server.example.com"}, nil
+			default:
+				return nil, &net.DNSError{Err: "no such host", Name: addr}
 			}
-			return nil, &net.DNSError{Err: "no such host", Name: addr}
 		},
 	}
 
@@ -148,9 +152,10 @@ func TestEndToEnd_DNSEnrichmentFlow(t *testing.T) {
 	// Verify the enriched record has the user domain set
 	assert.NotNil(t, enrichedRecord)
 	assert.Equal(t, "example.com", enrichedRecord.UserDomain, "UserDomain should be extracted from DNS result")
+	assert.Equal(t, "server.example.com", enrichedRecord.ServerHostname, "ServerHostname should be resolved via DNS")
 
-	// Verify DNS was actually called
-	assert.Equal(t, 1, mockResolver.lookupCount, "DNS resolver should have been called once")
+	// Verify DNS was called for both user IP and server IP
+	assert.Equal(t, 2, mockResolver.lookupCount, "DNS resolver should have been called twice")
 }
 
 // TestEndToEnd_DNSEnrichmentCacheHit tests that cached DNS results don't trigger async enrichment
@@ -184,6 +189,7 @@ func TestEndToEnd_DNSEnrichmentCacheHit(t *testing.T) {
 
 	// Pre-populate the DNS cache
 	correlator.dnsCache.Set("192.0.2.1", "cached-host.example.com")
+	correlator.dnsCache.Set("192.168.1.100", "server.example.com")
 
 	// Create packets with the same IP
 	serverStart := int32(1639505770)
@@ -271,6 +277,7 @@ func TestEndToEnd_DNSEnrichmentCacheHit(t *testing.T) {
 
 	// Verify the domain was set from cache
 	assert.Equal(t, "example.com", record.UserDomain, "UserDomain should be set from cache")
+	assert.Equal(t, "server.example.com", record.ServerHostname, "ServerHostname should be set from cache")
 
 	// Verify DNS was NOT called (cache hit)
 	assert.Equal(t, 0, mockResolver.lookupCount, "DNS resolver should NOT have been called (cache hit)")
