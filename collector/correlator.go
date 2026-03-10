@@ -217,7 +217,7 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 	if config.EnableDNSEnrichment {
 		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
 		// Buffer is 2x the worker count to allow limited queuing of DNS requests, reducing producer blocking;
-		// when the buffer is full, producers block only up to the configured DNS send timeout.
+		// when the buffer is full, producers block until a slot opens up or the context is cancelled.
 		c.dnsRequestChan = make(chan dnsEnrichmentRequest, config.DNSWorkers*2)
 		c.startDNSWorkers()
 	}
@@ -262,8 +262,9 @@ func (c *Correlator) processDNSRequest(req dnsEnrichmentRequest) {
 		c.dnsCache.Set(req.ip, hostname)
 	}
 
-	// Invoke the callback directly in the worker goroutine (no channel needed)
-	req.callback(result)
+	// Invoke the callback asynchronously so DNS workers are not blocked by heavy callbacks
+	// (e.g. JSON marshaling or output writes in the publish path).
+	go req.callback(result)
 }
 
 // performDNSLookup does the actual reverse DNS lookup
@@ -309,12 +310,10 @@ func (c *Correlator) enrichWithDNSSync(ipStr string) (string, bool) {
 }
 
 // submitDNSCallback submits a DNS lookup to the worker pool with a callback that is
-// invoked by the worker goroutine when the lookup completes. It is non-blocking: if
-// the request channel has capacity the request is sent immediately and the function
-// returns; if the channel is full a short-lived goroutine is spawned that blocks only
-// until a slot becomes available (or the context is cancelled), but never waits for
-// the DNS result itself. This keeps the number of long-lived waiting goroutines bounded
-// by the worker pool size rather than the number of in-flight records.
+// invoked asynchronously when the lookup completes. If the request channel has capacity
+// the request is sent immediately; otherwise the function blocks until a slot opens up
+// or the context is cancelled. This applies backpressure to callers and caps goroutine
+// count to the DNS worker pool size.
 func (c *Correlator) submitDNSCallback(ipStr string, callback func(dnsEnrichmentResult)) {
 	req := dnsEnrichmentRequest{
 		ip:       ipStr,
@@ -324,16 +323,9 @@ func (c *Correlator) submitDNSCallback(ipStr string, callback func(dnsEnrichment
 	select {
 	case c.dnsRequestChan <- req:
 		// Fast path: submitted immediately
-	default:
-		// Queue is full; spawn a minimal goroutine that only blocks until a slot
-		// opens up, not until the DNS result is ready.
-		go func() {
-			select {
-			case c.dnsRequestChan <- req:
-			case <-c.ctx.Done():
-				callback(dnsEnrichmentResult{ip: ipStr})
-			}
-		}()
+	case <-c.ctx.Done():
+		// Context cancelled before we could enqueue; invoke callback with empty result
+		callback(dnsEnrichmentResult{ip: ipStr})
 	}
 }
 
