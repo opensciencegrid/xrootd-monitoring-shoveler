@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -288,7 +289,7 @@ func TestDNSEnrichment_Concurrency(t *testing.T) {
 	results := make(chan string, numRequests)
 
 	for i := 0; i < numRequests; i++ {
-		ip := "192.0.2." + string(rune('0'+i))
+		ip := "192.0.2." + strconv.Itoa(i)
 		go func(ipAddr string) {
 			results <- c.enrichWithDNSBlocking(ipAddr)
 		}(ip)

@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -66,7 +67,7 @@ func BenchmarkDNSEnrichment_CacheMiss(b *testing.B) {
 		i := 0
 		for pb.Next() {
 			// Use different IPs to avoid cache hits
-			ip := "192.0.2." + string(rune('0'+(i%10)))
+			ip := "192.0.2." + strconv.Itoa(i%10)
 			// Benchmark the sync check only (async would require waiting)
 			_, _ = c.enrichWithDNSSync(ip)
 			i++

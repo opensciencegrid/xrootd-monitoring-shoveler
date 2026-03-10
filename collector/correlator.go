@@ -217,6 +217,7 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 
 	if config.EnableDNSEnrichment {
 		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
+		// Buffer is 2x the worker count to allow limited queuing of DNS requests without blocking producers.
 		c.dnsRequestChan = make(chan dnsEnrichmentRequest, config.DNSWorkers*2)
 		c.startDNSWorkers()
 	}
@@ -333,7 +334,8 @@ func (c *Correlator) enrichWithDNSBlocking(ipStr string) string {
 		return ""
 	}
 
-	// Wait for result
+	// Wait for result. Use 2x the DNS timeout to account for both
+	// queuing delay and the actual DNS lookup performed by the worker.
 	select {
 	case result := <-resultChan:
 		return result.hostname
