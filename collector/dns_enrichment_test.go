@@ -333,6 +333,9 @@ func TestDNSEnrichment_Integration(t *testing.T) {
 			if addr == "192.0.2.10" {
 				return []string{"client.university.edu."}, nil
 			}
+			if addr == "127.0.0.1" {
+				return []string{"localhost."}, nil
+			}
 			return nil, errors.New("not found")
 		},
 	}
@@ -433,7 +436,7 @@ func TestDNSEnrichment_Integration(t *testing.T) {
 	// Verify result was cached for server IP
 	serverVal, serverExists := c.dnsCache.Get("127.0.0.1")
 	assert.True(t, serverExists, "DNS result for server IP should be cached")
-	assert.Equal(t, "", serverVal.(string), "Server IP should not resolve to client hostname in mock")
+	assert.Equal(t, "localhost", serverVal.(string), "Server IP should resolve to localhost in mock")
 }
 
 // TestDNSEnrichment_ShutdownCleanup tests that workers exit cleanly on shutdown

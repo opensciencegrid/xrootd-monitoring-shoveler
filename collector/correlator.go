@@ -126,7 +126,6 @@ type dnsEnrichmentRequest struct {
 type dnsEnrichmentResult struct {
 	ip       string
 	hostname string
-	err      error
 }
 
 // DNSResolver interface allows mocking DNS lookups in tests
@@ -218,7 +217,7 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 	if config.EnableDNSEnrichment {
 		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
 		// Buffer is 2x the worker count to allow limited queuing of DNS requests, reducing producer blocking;
-		// producers will still block if the buffer becomes full.
+		// when the buffer is full, producers block only up to the configured DNS send timeout.
 		c.dnsRequestChan = make(chan dnsEnrichmentRequest, config.DNSWorkers*2)
 		c.startDNSWorkers()
 	}
