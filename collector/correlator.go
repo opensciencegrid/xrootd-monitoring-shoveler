@@ -257,7 +257,7 @@ func (c *Correlator) processDNSRequest(req dnsEnrichmentRequest) {
 		hostname: hostname,
 	}
 
-	// Cache the result (even if empty/failed)
+	// Cache the result only for successful lookups (non-empty hostname)
 	if hostname != "" {
 		c.dnsCache.Set(req.ip, hostname)
 	}
