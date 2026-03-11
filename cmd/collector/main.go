@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
@@ -118,18 +119,46 @@ func main() {
 	runCollectorMode(&config, output, logger)
 }
 
-// emitRecord handles outputting a record to the configured destinations
-func emitRecord(recordJSON []byte, output connectors.OutputConnector, logger *logrus.Logger) {
-	if err := output.Write(recordJSON); err != nil {
-		logger.Errorln("Failed to write record:", err)
+// emitEnrichedRecord handles outputting an already-enriched payload to the configured destination.
+func emitEnrichedRecord(msg collector.EnrichedRecord, output connectors.OutputConnector, logger *logrus.Logger) {
+	if msg.Exchange == "" {
+		if err := output.Write(msg.Payload); err != nil {
+			logger.Errorln("Failed to write record:", err)
+		}
+		return
+	}
+
+	if err := output.WriteToExchange(msg.Payload, msg.Exchange); err != nil {
+		logger.Errorln("Failed to write record to exchange:", err)
 	}
 }
 
-// emitWLCGRecord handles outputting a WLCG-formatted record to the WLCG exchange
-func emitWLCGRecord(recordJSON []byte, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
-	if err := output.WriteToExchange(recordJSON, config.AmqpExchangeWLCG); err != nil {
-		logger.Errorln("Failed to write WLCG record:", err)
+// publishEnrichedRecord handles the complete publish flow for a pipeline result (metrics + output)
+func publishEnrichedRecord(msg collector.EnrichedRecord, output connectors.OutputConnector, logger *logrus.Logger) {
+	shoveler.RecordsEmitted.Inc()
+
+	// Calculate latency if we have timing info
+	if msg.Record != nil && msg.Record.StartTime > 0 && msg.Record.EndTime > 0 {
+		latency := msg.Record.EndTime - msg.Record.StartTime
+		// msg.Record timestamps are in seconds; convert to milliseconds for the RequestLatencyMs metric.
+		shoveler.RequestLatencyMs.Observe(float64(latency) * 1000.0)
 	}
+	emitEnrichedRecord(msg, output, logger)
+}
+
+func startRecordPublisher(output connectors.OutputConnector, logger *logrus.Logger) (chan collector.EnrichedRecord, *sync.WaitGroup) {
+	records := make(chan collector.EnrichedRecord, 4096)
+	var publisherWG sync.WaitGroup
+	publisherWG.Add(1)
+
+	go func() {
+		defer publisherWG.Done()
+		for record := range records {
+			publishEnrichedRecord(record, output, logger)
+		}
+	}()
+
+	return records, &publisherWG
 }
 
 // emitGStreamEvent handles outputting a gstream event to the appropriate exchange
@@ -153,6 +182,23 @@ func emitGStreamEvent(eventJSON []byte, streamType byte, config *shoveler.Config
 	}
 }
 
+// buildCorrelatorConfig creates a correlator config from the main config
+func buildCorrelatorConfig(config *shoveler.Config, logger *logrus.Logger) collector.CorrelatorConfig {
+	ttl := time.Duration(config.State.EntryTTL) * time.Second
+
+	correlatorConfig := collector.CorrelatorConfig{
+		TTL:                 ttl,
+		MaxEntries:          config.State.MaxEntries,
+		EnableDNSEnrichment: config.State.EnableDNSEnrichment,
+		DNSCacheTTL:         time.Duration(config.State.DNSCacheTTL) * time.Second,
+		DNSWorkers:          config.State.DNSWorkers,
+		DNSTimeout:          time.Duration(config.State.DNSTimeout) * time.Second,
+		Logger:              logger,
+	}
+
+	return correlatorConfig
+}
+
 // runCollectorMode runs the collector mode with full packet parsing and correlation
 func runCollectorMode(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Support UDP, file, and RabbitMQ inputs
@@ -170,7 +216,7 @@ func runCollectorMode(config *shoveler.Config, output connectors.OutputConnector
 }
 
 // handleParsedPacket processes a parsed packet (gstream or regular correlation)
-func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
+func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, enrichmentDestination collector.EnrichmentDestination, logger *logrus.Logger) {
 	// Debug: Print packet details
 	if logger.Level == logrus.DebugLevel && packet != nil {
 		serverID := collector.BuildServerID(packet.Header.ServerStart, packet.RemoteAddr)
@@ -236,49 +282,14 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 		return
 	}
 
-	// If we got complete records, emit them
+	// If we got complete records, route them through the enrichment pipeline
 	for _, record := range records {
-		shoveler.RecordsEmitted.Inc()
-
-		// Calculate latency if we have timing info
-		if record.StartTime > 0 && record.EndTime > 0 {
-			latency := record.EndTime - record.StartTime
-			shoveler.RequestLatencyMs.Observe(float64(latency))
-		}
-
-		// Check if this should be converted to WLCG format
-		if collector.IsWLCGPacket(record) {
-			logger.Debugln("Converting record to WLCG format")
-			wlcgRecord, err := collector.ConvertToWLCG(record)
-			if err != nil {
-				logger.Errorln("Failed to convert to WLCG format:", err)
-				continue
-			}
-
-			wlcgJSON, err := wlcgRecord.ToJSON()
-			if err != nil {
-				logger.Errorln("Failed to marshal WLCG record:", err)
-				continue
-			}
-
-			logger.Debugln("Emitting WLCG record:", string(wlcgJSON))
-			emitWLCGRecord(wlcgJSON, config, output, logger)
-		} else {
-			// Convert to JSON and enqueue (normal path)
-			recordJSON, err := record.ToJSON()
-			if err != nil {
-				logger.Errorln("Failed to marshal record:", err)
-				continue
-			}
-
-			logger.Debugln("Emitting collector record:", string(recordJSON))
-			emitRecord(recordJSON, output, logger)
-		}
+		correlator.EnqueueForEnrichment(record, enrichmentDestination)
 	}
 }
 
 // processPackets is the common packet processing loop for all input types
-func processPackets(source input.PacketSource, correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
+func processPackets(source input.PacketSource, correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, enrichmentDestination collector.EnrichmentDestination, logger *logrus.Logger) {
 	for pktWithAddr := range source.PacketsWithAddr() {
 		shoveler.PacketsReceived.Inc()
 
@@ -301,16 +312,25 @@ func processPackets(source input.PacketSource, correlator *collector.Correlator,
 		}
 
 		// Handle the parsed packet
-		handleParsedPacket(packet, correlator, config, output, logger)
+		handleParsedPacket(packet, correlator, config, output, enrichmentDestination, logger)
 	}
 }
 
 // runCollectorModeFile processes packets from a file in collector mode
 func runCollectorModeFile(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Create correlator
-	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, config.State.DisableReverseDNS, logger)
-	defer correlator.Stop()
+	correlatorConfig := buildCorrelatorConfig(config, logger)
+	correlator := collector.NewCorrelatorWithConfig(correlatorConfig)
+	recordDestination, publisherWG := startRecordPublisher(output, logger)
+	enrichmentDestination := collector.EnrichmentDestination{
+		Results:      recordDestination,
+		WLCGExchange: config.AmqpExchangeWLCG,
+	}
+	defer func() {
+		correlator.Stop()
+		close(recordDestination)
+		publisherWG.Wait()
+	}()
 
 	// Update state size metric periodically
 	go func() {
@@ -335,15 +355,24 @@ func runCollectorModeFile(config *shoveler.Config, output connectors.OutputConne
 	logger.Infoln("Collector mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
 
 	// Process packets using common logic
-	processPackets(fr, correlator, config, output, logger)
+	processPackets(fr, correlator, config, output, enrichmentDestination, logger)
 }
 
 // runCollectorModeUDP processes packets from UDP in collector mode
 func runCollectorModeUDP(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Create correlator
-	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, config.State.DisableReverseDNS, logger)
-	defer correlator.Stop()
+	correlatorConfig := buildCorrelatorConfig(config, logger)
+	correlator := collector.NewCorrelatorWithConfig(correlatorConfig)
+	recordDestination, publisherWG := startRecordPublisher(output, logger)
+	enrichmentDestination := collector.EnrichmentDestination{
+		Results:      recordDestination,
+		WLCGExchange: config.AmqpExchangeWLCG,
+	}
+	defer func() {
+		correlator.Stop()
+		close(recordDestination)
+		publisherWG.Wait()
+	}()
 
 	// Update state size metric periodically
 	go func() {
@@ -368,15 +397,24 @@ func runCollectorModeUDP(config *shoveler.Config, output connectors.OutputConnec
 	logger.Infoln("Collector mode: Listening for UDP messages at:", net.JoinHostPort(config.ListenIp, fmt.Sprintf("%d", config.ListenPort)))
 
 	// Process packets using common logic
-	processPackets(udpListener, correlator, config, output, logger)
+	processPackets(udpListener, correlator, config, output, enrichmentDestination, logger)
 }
 
 // runCollectorModeRabbitMQ processes packets from RabbitMQ in collector mode
 func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) error {
 	// Create correlator
-	ttl := time.Duration(config.State.EntryTTL) * time.Second
-	correlator := collector.NewCorrelator(ttl, config.State.MaxEntries, config.State.DisableReverseDNS, logger)
-	defer correlator.Stop()
+	correlatorConfig := buildCorrelatorConfig(config, logger)
+	correlator := collector.NewCorrelatorWithConfig(correlatorConfig)
+	recordDestination, publisherWG := startRecordPublisher(output, logger)
+	enrichmentDestination := collector.EnrichmentDestination{
+		Results:      recordDestination,
+		WLCGExchange: config.AmqpExchangeWLCG,
+	}
+	defer func() {
+		correlator.Stop()
+		close(recordDestination)
+		publisherWG.Wait()
+	}()
 
 	// Update state size metric periodically
 	go func() {
@@ -416,7 +454,7 @@ func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputC
 	logger.Infoln("Collector mode: Reading JSON messages from RabbitMQ queue:", queueName)
 
 	// Process packets using common logic
-	processPackets(reader, correlator, config, output, logger)
+	processPackets(reader, correlator, config, output, enrichmentDestination, logger)
 	logger.Infoln("RabbitMQ reader stopped")
 	return nil
 }

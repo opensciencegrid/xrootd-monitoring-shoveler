@@ -165,75 +165,79 @@ Configure state management parameters:
 state:
   entry_ttl: 300              # Time-to-live for state entries in seconds
   max_entries: 10000          # Maximum state entries (0 for unlimited)
-  disable_reverse_dns: true   # Disable reverse DNS lookups (default: true for performance)
 ```
 
 See [config-collector.yaml](config/config-collector.yaml) for a complete example.
 
 #### Available Environment Variables
 
-**General Configuration:**
-* `SHOVELER_DEBUG` - Enable debug logging: `true` or `false`
-* `SHOVELER_VERIFY` - Verify packet format: `true` or `false` (default: `true`)
+> **Note on environment variable prefixes:** The `xrootd-monitoring-shoveler` binary uses the `SHOVELER_` prefix for all environment variables. The `xrootd-monitoring-collector` binary uses the `COLLECTOR_` prefix for all environment variables. For example, to set the input type in collector mode, use `COLLECTOR_INPUT_TYPE` instead of `SHOVELER_INPUT_TYPE`.
 
-**Input Configuration:**
-* `SHOVELER_INPUT_TYPE` - Input source: `udp`, `file`, or `rabbitmq` (default: `udp`)
-* `SHOVELER_INPUT_HOST` - Input host address
-* `SHOVELER_INPUT_PORT` - Input port number
-* `SHOVELER_INPUT_BUFFER_SIZE` - Buffer size for UDP packets (default: `65536`)
-* `SHOVELER_INPUT_BROKER_URL` - Message broker URL (for rabbitmq input)
-* `SHOVELER_INPUT_TOPIC` - Message broker topic/queue name
-* `SHOVELER_INPUT_QUEUE` - Alias for topic (RabbitMQ)
-* `SHOVELER_INPUT_SUBSCRIPTION` - Subscription name (for message bus)
-* `SHOVELER_INPUT_BASE64_ENCODED` - Packets are base64 encoded: `true` or `false` (default: `true`)
-* `SHOVELER_INPUT_PATH` - File path (for file input type)
-* `SHOVELER_INPUT_FOLLOW` - Follow file mode like tail: `true` or `false`
+**General Configuration (shoveler: `SHOVELER_`, collector: `COLLECTOR_`):**
+* `<PREFIX>_DEBUG` - Enable debug logging: `true` or `false`
+* `<PREFIX>_VERIFY` - Verify packet format: `true` or `false` (default: `true`)
 
-**State Management (Collector Mode):**
-* `SHOVELER_STATE_ENTRY_TTL` - TTL for state entries in seconds (default: `300`)
-* `SHOVELER_STATE_MAX_ENTRIES` - Maximum state entries, 0 for unlimited (default: `0`)
-* `SHOVELER_STATE_DISABLE_REVERSE_DNS` - Disable reverse DNS lookups for performance (default: `true`)
+**Input Configuration (shoveler: `SHOVELER_INPUT_*`, collector: `COLLECTOR_INPUT_*`):**
+* `<PREFIX>_INPUT_TYPE` - Input source: `udp`, `file`, or `rabbitmq` (default: `udp`)
+* `<PREFIX>_INPUT_HOST` - Input host address
+* `<PREFIX>_INPUT_PORT` - Input port number
+* `<PREFIX>_INPUT_BUFFER_SIZE` - Buffer size for UDP packets (default: `65536`)
+* `<PREFIX>_INPUT_BROKER_URL` - Message broker URL (for rabbitmq input)
+* `<PREFIX>_INPUT_TOPIC` - Message broker topic/queue name
+* `<PREFIX>_INPUT_QUEUE` - Alias for topic (RabbitMQ)
+* `<PREFIX>_INPUT_SUBSCRIPTION` - Subscription name (for message bus)
+* `<PREFIX>_INPUT_BASE64_ENCODED` - Packets are base64 encoded: `true` or `false` (default: `true`)
+* `<PREFIX>_INPUT_PATH` - File path (for file input type)
+* `<PREFIX>_INPUT_FOLLOW` - Follow file mode like tail: `true` or `false`
 
-**Output Configuration (Collector Mode):**
-* `SHOVELER_OUTPUT_TYPE` - Output destination: `mq`, `file`, or `both` (default: `mq`)
-* `SHOVELER_OUTPUT_PATH` - File path for file output
+**State Management (Collector Mode only, prefix: `COLLECTOR_`):**
+* `COLLECTOR_STATE_ENTRY_TTL` - TTL for state entries in seconds (default: `300`)
+* `COLLECTOR_STATE_MAX_ENTRIES` - Maximum state entries, 0 for unlimited (default: `0`)
+* `COLLECTOR_STATE_ENABLE_DNS_ENRICHMENT` - Enable DNS enrichment of monitoring records: `true` or `false` (default: `false`)
+* `COLLECTOR_STATE_DNS_CACHE_TTL` - DNS cache time-to-live in seconds (default: `3600`)
+* `COLLECTOR_STATE_DNS_WORKERS` - Number of concurrent DNS worker routines (default: `5`)
+* `COLLECTOR_STATE_DNS_TIMEOUT` - DNS query timeout in seconds (default: `2`)
 
-**Message Queue Configuration:**
-* `SHOVELER_MQ` - Message queue type: `amqp` or `stomp` (default: `amqp`)
+**Output Configuration (shoveler: `SHOVELER_OUTPUT_*`, collector: `COLLECTOR_OUTPUT_*`):**
+* `<PREFIX>_OUTPUT_TYPE` - Output destination: `mq`, `file`, or `both` (default: `mq`)
+* `<PREFIX>_OUTPUT_PATH` - File path for file output
 
-**AMQP Configuration:**
-* `SHOVELER_AMQP_URL` - AMQP broker URL
-* `SHOVELER_AMQP_EXCHANGE` - Main exchange name (default: `shoveled-xrd`)
-* `SHOVELER_AMQP_EXCHANGE_CACHE` - Cache events exchange (default: `xrd-cache-events`)
-* `SHOVELER_AMQP_EXCHANGE_TCP` - TCP events exchange (default: `xrd-tcp-events`)
-* `SHOVELER_AMQP_EXCHANGE_TPC` - TPC events exchange (default: `xrd-tpc-events`)
-* `SHOVELER_AMQP_EXCHANGE_WLCG` - WLCG formatted events exchange (default: `xrd-wlcg-events`)
-* `SHOVELER_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`)
-* `SHOVELER_AMQP_PUBLISH_WORKERS` - Number of concurrent publishing workers for collector mode (default: `10`, forced to `1` in shoveler mode)
+**Message Queue Configuration (shoveler: `SHOVELER_MQ`, collector: `COLLECTOR_MQ`):**
+* `<PREFIX>_MQ` - Message queue type: `amqp` or `stomp` (default: `amqp`)
 
-**STOMP Configuration:**
-* `SHOVELER_STOMP_USER` - STOMP username
-* `SHOVELER_STOMP_PASSWORD` - STOMP password
-* `SHOVELER_STOMP_URL` - STOMP broker URL
-* `SHOVELER_STOMP_TOPIC` - STOMP topic (default: `xrootd.shoveler`)
-* `SHOVELER_STOMP_CERT` - Client certificate path
-* `SHOVELER_STOMP_CERTKEY` - Client certificate key path
+**AMQP Configuration (shoveler: `SHOVELER_AMQP_*`, collector: `COLLECTOR_AMQP_*`):**
+* `<PREFIX>_AMQP_URL` - AMQP broker URL
+* `<PREFIX>_AMQP_EXCHANGE` - Main exchange name (default: `shoveled-xrd`)
+* `<PREFIX>_AMQP_EXCHANGE_CACHE` - Cache events exchange (default: `xrd-cache-events`)
+* `<PREFIX>_AMQP_EXCHANGE_TCP` - TCP events exchange (default: `xrd-tcp-events`)
+* `<PREFIX>_AMQP_EXCHANGE_TPC` - TPC events exchange (default: `xrd-tpc-events`)
+* `<PREFIX>_AMQP_EXCHANGE_WLCG` - WLCG formatted events exchange (default: `xrd-wlcg-events`)
+* `<PREFIX>_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`)
+* `<PREFIX>_AMQP_PUBLISH_WORKERS` - Number of concurrent publishing workers for collector mode (default: `10`, forced to `1` in shoveler mode)
 
-**Listening Configuration:**
+**STOMP Configuration (shoveler: `SHOVELER_STOMP_*`, collector: `COLLECTOR_STOMP_*`):**
+* `<PREFIX>_STOMP_USER` - STOMP username
+* `<PREFIX>_STOMP_PASSWORD` - STOMP password
+* `<PREFIX>_STOMP_URL` - STOMP broker URL
+* `<PREFIX>_STOMP_TOPIC` - STOMP topic (default: `xrootd.shoveler`)
+* `<PREFIX>_STOMP_CERT` - Client certificate path
+* `<PREFIX>_STOMP_CERTKEY` - Client certificate key path
+
+**Listening Configuration (Shoveler Mode only):**
 * `SHOVELER_LISTEN_PORT` - UDP listening port (default: `9993`)
 * `SHOVELER_LISTEN_IP` - UDP listening IP address
 
-**Output Destinations:**
+**Output Destinations (Shoveler Mode only):**
 * `SHOVELER_OUTPUTS_DESTINATIONS` - Additional UDP destination addresses
 
-**Metrics:**
+**Metrics (Shoveler Mode only):**
 * `SHOVELER_METRICS_ENABLE` - Enable Prometheus metrics: `true` or `false` (default: `true`)
 * `SHOVELER_METRICS_PORT` - Metrics HTTP server port (default: `8000`)
 
-**Queue:**
+**Queue (Shoveler Mode only):**
 * `SHOVELER_QUEUE_DIRECTORY` - Persistent queue directory (default: `/var/spool/xrootd-monitoring-shoveler/queue`)
 
-**IP Mapping:**
+**IP Mapping (Shoveler Mode only):**
 * `SHOVELER_MAP_ALL` - Map all IPs to a single address
 
 ### Message Bus Credentials
@@ -516,7 +520,7 @@ The collector uses a TTL-based concurrent state map (`collector/state.go`) to tr
 - Configurable max entries (prevents unbounded memory growth)
 - Thread-safe (RWMutex)
 - O(1) operations
-- Optional reverse DNS lookup (disabled by default for performance)
+- DNS enrichment for IP-to-hostname resolution
 
 **Example Usage:**
 ```go

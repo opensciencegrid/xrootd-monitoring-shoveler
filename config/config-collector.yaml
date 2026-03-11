@@ -22,9 +22,11 @@ state:
   entry_ttl: 300
   # Maximum number of state entries (0 for unlimited)
   max_entries: 10000
-  # Disable reverse DNS lookups for performance (default: true)
-  # When enabled (false), will attempt to resolve IP addresses to hostnames for user_domain field
-  disable_reverse_dns: true
+  # DNS enrichment settings (replaces reverse DNS lookup)
+  # enable_dns_enrichment: false
+  # dns_cache_ttl: 3600       # Time-to-live for DNS cache entries in seconds
+  # dns_workers: 5            # Number of worker goroutines for DNS lookups
+  # dns_timeout: 2            # DNS lookup timeout in seconds
 
 # Select which protocol to use in order to connect to the MQ
 # mq: amqp/stomp
