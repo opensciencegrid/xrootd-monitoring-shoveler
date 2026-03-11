@@ -140,7 +140,8 @@ func publishEnrichedRecord(msg collector.EnrichedRecord, output connectors.Outpu
 	// Calculate latency if we have timing info
 	if msg.Record != nil && msg.Record.StartTime > 0 && msg.Record.EndTime > 0 {
 		latency := msg.Record.EndTime - msg.Record.StartTime
-		shoveler.RequestLatencyMs.Observe(float64(latency))
+		// msg.Record timestamps are in seconds; convert to milliseconds for the RequestLatencyMs metric.
+		shoveler.RequestLatencyMs.Observe(float64(latency) * 1000.0)
 	}
 	emitEnrichedRecord(msg, output, logger)
 }
