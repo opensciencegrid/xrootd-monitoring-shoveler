@@ -48,7 +48,7 @@ type enrichmentRequest struct {
 
 // enrichmentQueueMaxSize is the maximum number of pending enrichment requests.
 // Enqueueing when the queue is full drops the request; the caller is responsible for any logging.
-const enrichmentQueueMaxSize = 100_000
+const enrichmentQueueMaxSize = 1000
 
 // enrichmentWorkQueue is a bounded, channel-backed work queue for enrichment requests.
 // The capacity is capped at enrichmentQueueMaxSize; Enqueue is non-blocking and

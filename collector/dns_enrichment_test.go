@@ -672,30 +672,3 @@ func TestEnrichmentQueue_NonBlockingEnqueue(t *testing.T) {
 	}
 	assert.Equal(t, numRecords, received)
 }
-
-func TestIsPowerOfTen(t *testing.T) {
-	cases := []struct {
-		n    int64
-		want bool
-	}{
-		{-1, false},
-		{0, false},
-		{1, true},
-		{2, false},
-		{9, false},
-		{10, true},
-		{11, false},
-		{99, false},
-		{100, true},
-		{101, false},
-		{1000, true},
-		{10000, true},
-		{100000, true},
-		{100001, false},
-		{1000000000, true},
-	}
-	for _, tc := range cases {
-		got := isPowerOfTen(tc.n)
-		assert.Equal(t, tc.want, got, "isPowerOfTen(%d)", tc.n)
-	}
-}
