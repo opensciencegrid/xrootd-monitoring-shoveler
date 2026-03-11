@@ -45,60 +45,67 @@ type enrichmentRequest struct {
 	destination EnrichmentDestination
 }
 
-// enrichmentWorkQueue is an in-memory non-blocking queue backed by a slice.
+// enrichmentQueueMaxSize is the maximum number of pending enrichment requests.
+// Enqueueing when the queue is full drops the request and logs a warning.
+const enrichmentQueueMaxSize = 100_000
+
+// enrichmentWorkQueue is a bounded, channel-backed work queue for enrichment requests.
+// The capacity is capped at enrichmentQueueMaxSize; Enqueue is non-blocking and
+// returns (false, false) when full or (false, true) when closed.
 type enrichmentWorkQueue struct {
+	ch     chan enrichmentRequest
 	mu     sync.Mutex
-	cond   *sync.Cond
-	items  []enrichmentRequest
 	closed bool
 }
 
 func newEnrichmentWorkQueue() *enrichmentWorkQueue {
-	q := &enrichmentWorkQueue{}
-	q.cond = sync.NewCond(&q.mu)
-	return q
+	return &enrichmentWorkQueue{ch: make(chan enrichmentRequest, enrichmentQueueMaxSize)}
 }
 
-func (q *enrichmentWorkQueue) Enqueue(req enrichmentRequest) bool {
+// Enqueue attempts to add a request to the queue without blocking.
+// Returns (enqueued, closed): (true, false) on success, (false, true) when the
+// queue is closed, and (false, false) when the buffer is full.
+// The mutex is held only to check the closed flag; the channel send runs without
+// the lock to allow concurrent producers to proceed in parallel.
+func (q *enrichmentWorkQueue) Enqueue(req enrichmentRequest) (enqueued bool, wasClosed bool) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	if q.closed {
-		return false
+		q.mu.Unlock()
+		return false, true
 	}
+	q.mu.Unlock()
 
-	q.items = append(q.items, req)
-	q.cond.Signal()
-	return true
+	// Non-blocking send without holding the lock. In the narrow window between
+	// releasing the lock above and the send below, Close() may close the channel;
+	// recover() catches the resulting panic and reports it as a closed queue.
+	defer func() {
+		if r := recover(); r != nil {
+			enqueued, wasClosed = false, true
+		}
+	}()
+	select {
+	case q.ch <- req:
+		return true, false
+	default:
+		return false, false
+	}
 }
 
+// Dequeue blocks until a request is available or the queue is closed and drained.
+// Returns (request, true) on success or (zero, false) when the queue is done.
 func (q *enrichmentWorkQueue) Dequeue() (enrichmentRequest, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	for len(q.items) == 0 && !q.closed {
-		q.cond.Wait()
-	}
-
-	if len(q.items) == 0 {
-		return enrichmentRequest{}, false
-	}
-
-	req := q.items[0]
-	q.items[0] = enrichmentRequest{}
-	q.items = q.items[1:]
-	return req, true
+	req, ok := <-q.ch
+	return req, ok
 }
 
+// Close signals that no more items will be enqueued and unblocks waiting Dequeue calls.
 func (q *enrichmentWorkQueue) Close() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-
-	if q.closed {
-		return
+	if !q.closed {
+		q.closed = true
+		close(q.ch)
 	}
-	q.closed = true
-	q.cond.Broadcast()
 }
 
 // NeedsEnrichment returns true when a record has pending asynchronous enrichments.
@@ -112,7 +119,9 @@ func (r *CollectorRecord) NeedsDNSEnrichment() bool {
 }
 
 // EnqueueForEnrichment always routes records through the enrichment pipeline.
-// Enqueue is non-blocking and records are stored in an in-memory queue.
+// Enqueue is non-blocking; when the queue is full the record is dropped and a
+// warning is logged. The downstream destination (confirmation queue, disk-backed)
+// should almost never be full, so the enrichment queue should rarely fill up.
 func (c *Correlator) EnqueueForEnrichment(record *CollectorRecord, destination EnrichmentDestination) {
 	if record == nil || destination.Results == nil {
 		return
@@ -124,8 +133,13 @@ func (c *Correlator) EnqueueForEnrichment(record *CollectorRecord, destination E
 		return
 	}
 
-	if ok := c.enrichmentQueue.Enqueue(req); !ok {
-		c.logger.Debug("enrichment queue closed; dropping record")
+	enqueued, wasClosed := c.enrichmentQueue.Enqueue(req)
+	if !enqueued {
+		if wasClosed {
+			c.logger.Debug("enrichment queue closed; dropping record")
+		} else {
+			c.logger.Warn("enrichment queue full (>100,000 pending); dropping record")
+		}
 	}
 }
 
