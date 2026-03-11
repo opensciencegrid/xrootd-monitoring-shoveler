@@ -948,10 +948,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 
 				if hostname != "" {
 					// Successfully resolved - extract domain from hostname
-					parts := strings.Split(hostname, ".")
-					if len(parts) >= 2 {
-						userDomain = strings.Join(parts[len(parts)-2:], ".")
-					}
+					userDomain = extractDomainFromHostname(hostname)
 				} else if needsAsync {
 					// Mark record as needing async DNS enrichment
 					needsDNSEnrichment = true
@@ -959,10 +956,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 				}
 			} else {
 				// Host is already a hostname - extract domain directly
-				parts := strings.Split(host, ".")
-				if len(parts) >= 2 {
-					userDomain = strings.Join(parts[len(parts)-2:], ".")
-				}
+				userDomain = extractDomainFromHostname(host)
 			}
 		}
 
