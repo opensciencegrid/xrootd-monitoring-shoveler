@@ -8,7 +8,7 @@ import (
 var (
 	// enrichmentQueueDropped counts records dropped because the enrichment queue was full.
 	enrichmentQueueDropped = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "shoveler_enrichment_queue_dropped_total",
+		Name: "shoveler_enrichment_queue_dropped",
 		Help: "Total number of enrichment records dropped because the bounded queue was at capacity",
 	})
 )
