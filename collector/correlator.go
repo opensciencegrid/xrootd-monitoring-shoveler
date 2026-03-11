@@ -1145,11 +1145,12 @@ func (c *Correlator) Stop() {
 	if c.enrichmentQueue != nil {
 		c.enrichmentQueue.Close()
 	}
-	c.enrichmentWG.Wait()
-	c.enrichmentQueue = nil
 	if c.cancel != nil {
+		// Cancel the context before waiting so workers can unblock on c.ctx.Done().
 		c.cancel()
 	}
+	c.enrichmentWG.Wait()
+	c.enrichmentQueue = nil
 
 	if c.stateMap != nil {
 		c.stateMap.Stop()
