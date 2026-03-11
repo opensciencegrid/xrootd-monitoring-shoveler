@@ -70,7 +70,7 @@ func TestParseEAInfo(t *testing.T) {
 func TestCorrelator_EAInfoPacket(t *testing.T) {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
-	correlator := NewCorrelator(5*time.Minute, 0, true, logger)
+	correlator := NewCorrelator(5*time.Minute, 0, logger)
 	defer correlator.Stop()
 
 	serverID := "1639505770#192.168.1.100:1094"
@@ -134,7 +134,7 @@ func TestCorrelator_EAInfoPacket(t *testing.T) {
 func TestCorrelator_EAInfoWithoutExistingUser(t *testing.T) {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
-	correlator := NewCorrelator(5*time.Minute, 0, true, logger)
+	correlator := NewCorrelator(5*time.Minute, 0, logger)
 	defer correlator.Stop()
 
 	serverID := "1639505770#192.168.1.100:1094"
@@ -174,7 +174,7 @@ func TestCorrelator_EAInfoWithoutExistingUser(t *testing.T) {
 func TestCorrelator_EAInfoInCorrelatedRecord(t *testing.T) {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
-	correlator := NewCorrelator(5*time.Minute, 0, true, logger)
+	correlator := NewCorrelator(5*time.Minute, 0, logger)
 	defer correlator.Stop()
 
 	serverStart := int32(1639505770)

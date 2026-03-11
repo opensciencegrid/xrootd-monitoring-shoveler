@@ -1,4 +1,4 @@
-FROM golang:1.20-bullseye
+FROM golang:1.25-trixie
 
 EXPOSE 9993
 EXPOSE 8000

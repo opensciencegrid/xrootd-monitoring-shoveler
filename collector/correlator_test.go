@@ -10,7 +10,7 @@ import (
 )
 
 func TestCorrelator_FileOpenClose(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create an open record
@@ -93,7 +93,7 @@ func TestCorrelator_FileOpenClose(t *testing.T) {
 }
 
 func TestCorrelator_CloseWithoutOpen(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a close record without a prior open
@@ -132,7 +132,7 @@ func TestCorrelator_CloseWithoutOpen(t *testing.T) {
 }
 
 func TestCorrelator_TimeRecord(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	timeRec := parser.FileTimeRecord{
@@ -164,7 +164,7 @@ func TestCorrelator_TimeRecord(t *testing.T) {
 }
 
 func TestCorrelator_XMLPacket(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	xmlPacket := &parser.Packet{
@@ -178,7 +178,7 @@ func TestCorrelator_XMLPacket(t *testing.T) {
 }
 
 func TestCorrelator_RecordAverages(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create open
@@ -253,7 +253,7 @@ func TestCollectorRecord_ToJSON(t *testing.T) {
 }
 
 func TestCorrelator_UserRecord(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a user record
@@ -354,7 +354,7 @@ func TestCorrelator_UserRecord(t *testing.T) {
 }
 
 func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a user record with IPv6
@@ -405,7 +405,7 @@ func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
 }
 
 func TestCorrelator_UserDomainFromIP(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Test with a well-known IP that should resolve (Google DNS)
@@ -615,7 +615,7 @@ func TestExtractDirnames(t *testing.T) {
 }
 
 func TestCorrelator_ServerInfo(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// Create a server info packet ('=' type)
@@ -726,7 +726,7 @@ func TestCorrelator_ServerInfo(t *testing.T) {
 func TestCorrelator_ServerInfoTTL(t *testing.T) {
 	// Use a very short TTL for testing
 	ttl := 200 * time.Millisecond
-	correlator := NewCorrelator(ttl, 0, false, nil)
+	correlator := NewCorrelator(ttl, 0, nil)
 	defer correlator.Stop()
 
 	serverID := "2000#192.168.1.1:1094"
@@ -773,7 +773,7 @@ func TestCorrelator_ServerInfoTTL(t *testing.T) {
 }
 
 func TestCorrelator_TokenAugmentsUser(t *testing.T) {
-	correlator := NewCorrelator(5*time.Second, 0, false, nil)
+	correlator := NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
 	// First, create a regular user record
@@ -862,4 +862,112 @@ func TestCorrelator_TokenAugmentsUser(t *testing.T) {
 	// Verify original user info wasn't changed
 	assert.Equal(t, "testuser", userState.UserInfo.Username)
 	assert.Equal(t, "ExampleOrg", userState.AuthInfo.Org)
+}
+
+func TestCorrelator_AppInfoFromInfoPacket(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	serverID := "1000#127.0.0.1:9930"
+
+	// First, create a user record so user state exists
+	userRec := &parser.UserRecord{
+		Header: parser.Header{
+			Code:        parser.PacketTypeUser,
+			ServerStart: 1000,
+		},
+		DictId: 456,
+		UserInfo: parser.UserInfo{
+			Protocol: "xrootd",
+			Username: "testuser",
+			Pid:      12345,
+			Sid:      67890,
+			Host:     "client.example.com",
+		},
+		AuthInfo: parser.AuthInfo{
+			DN:  "/DC=org/DC=example/CN=testuser",
+			Org: "ExampleOrg",
+		},
+	}
+
+	userPacket := &parser.Packet{
+		Header:     parser.Header{ServerStart: 1000},
+		UserRecord: userRec,
+		RemoteAddr: "127.0.0.1:9930",
+	}
+
+	recs, err := correlator.ProcessPacket(userPacket)
+	require.NoError(t, err)
+	assert.Nil(t, recs)
+
+	// Now send an 'i' packet (appinfo) with the same user info
+	appInfoData := []byte("xrootd/testuser.12345:67890@client.example.com\nxrdcl-pelican/1.2.1")
+	appInfoPacket := &parser.Packet{
+		Header:     parser.Header{ServerStart: 1000},
+		PacketType: parser.PacketTypeInfo,
+		MapRecord: &parser.MapRecord{
+			DictId: 456,
+			Info:   appInfoData,
+		},
+		RemoteAddr: "127.0.0.1:9930",
+	}
+
+	recs, err = correlator.ProcessPacket(appInfoPacket)
+	require.NoError(t, err)
+	assert.Nil(t, recs) // Info packets don't produce output
+
+	// Verify the user state was updated with appinfo
+	userInfoKey := BuildUserInfoKey(serverID, userRec.UserInfo)
+	val, exists := correlator.userMap.Get(userInfoKey)
+	require.True(t, exists, "User state should exist")
+	userState, ok := val.(*UserState)
+	require.True(t, ok, "Should be UserState type")
+	assert.Equal(t, "xrdcl-pelican/1.2.1", userState.AppInfo, "AppInfo should be stored in user state")
+
+	// Now create file open and close to verify appinfo is in the final record
+	openRec := parser.FileOpenRecord{
+		Header: parser.FileHeader{
+			RecType: parser.RecTypeOpen,
+			FileId:  123,
+			UserId:  456,
+		},
+		FileSize: 1024,
+		User:     456,
+		Lfn:      []byte("/store/data/file.root"),
+	}
+
+	openPacket := &parser.Packet{
+		Header:      parser.Header{ServerStart: 1000},
+		FileRecords: []interface{}{openRec},
+		RemoteAddr:  "127.0.0.1:9930",
+	}
+
+	recs, err = correlator.ProcessPacket(openPacket)
+	require.NoError(t, err)
+	assert.Nil(t, recs)
+
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{
+			RecType: parser.RecTypeClose,
+			FileId:  123,
+			UserId:  456,
+		},
+		Xfr: parser.StatXFR{Read: 2048},
+		Ops: parser.StatOPS{Read: 10},
+	}
+
+	closePacket := &parser.Packet{
+		Header:      parser.Header{ServerStart: 1000},
+		FileRecords: []interface{}{closeRec},
+		RemoteAddr:  "127.0.0.1:9930",
+	}
+
+	recs, err = correlator.ProcessPacket(closePacket)
+	require.NoError(t, err)
+	require.NotNil(t, recs)
+	require.Len(t, recs, 1)
+
+	// Verify the final record contains appinfo
+	assert.Equal(t, "xrdcl-pelican/1.2.1", recs[0].AppInfo, "AppInfo should be in the correlated record")
+	assert.Equal(t, "testuser", recs[0].User)
 }
