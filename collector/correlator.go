@@ -9,6 +9,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
@@ -116,30 +117,6 @@ type PathInfo struct {
 	UserInfo parser.UserInfo
 }
 
-// dnsEnrichmentRequest represents a request to enrich a record with DNS lookup
-type dnsEnrichmentRequest struct {
-	ip       string
-	callback func(dnsEnrichmentResult) // invoked by the worker goroutine when the lookup completes
-}
-
-// dnsEnrichmentResult contains the result of a DNS lookup
-type dnsEnrichmentResult struct {
-	ip       string
-	hostname string
-}
-
-// DNSResolver interface allows mocking DNS lookups in tests
-type DNSResolver interface {
-	LookupAddr(ctx context.Context, addr string) ([]string, error)
-}
-
-// defaultDNSResolver wraps net.DefaultResolver
-type defaultDNSResolver struct{}
-
-func (r *defaultDNSResolver) LookupAddr(ctx context.Context, addr string) ([]string, error) {
-	return net.DefaultResolver.LookupAddr(ctx, addr)
-}
-
 // Correlator correlates file open and close events
 type Correlator struct {
 	stateMap  *StateMap
@@ -149,14 +126,16 @@ type Correlator struct {
 	logger    *logrus.Logger
 
 	// DNS enrichment fields
-	enableDNSEnrichment bool
-	dnsCache            *StateMap // Maps IP -> hostname with TTL
-	dnsRequestChan      chan dnsEnrichmentRequest
-	dnsWorkerCount      int
-	dnsTimeout          time.Duration
-	dnsResolver         DNSResolver
-	ctx                 context.Context
-	cancel              context.CancelFunc
+	enableDNSEnrichment   bool
+	dnsCache              *StateMap // Maps IP -> hostname with TTL
+	dnsTimeout            time.Duration
+	dnsResolver           DNSResolver
+	enrichmentWorkerCount int
+	enrichmentQueue       *enrichmentWorkQueue
+	enrichers             []RecordEnricher
+	enrichmentWG          sync.WaitGroup
+	ctx                   context.Context
+	cancel                context.CancelFunc
 }
 
 // CorrelatorConfig holds configuration for the correlator including DNS enrichment
@@ -201,207 +180,27 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := &Correlator{
-		stateMap:            NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
-		userMap:             NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
-		dictMap:             NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
-		serverMap:           NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
-		logger:              config.Logger,
-		enableDNSEnrichment: config.EnableDNSEnrichment,
-		dnsWorkerCount:      config.DNSWorkers,
-		dnsTimeout:          config.DNSTimeout,
-		dnsResolver:         &defaultDNSResolver{},
-		ctx:                 ctx,
-		cancel:              cancel,
+		stateMap:              NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
+		userMap:               NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
+		dictMap:               NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
+		serverMap:             NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
+		logger:                config.Logger,
+		enableDNSEnrichment:   config.EnableDNSEnrichment,
+		dnsTimeout:            config.DNSTimeout,
+		dnsResolver:           &defaultDNSResolver{},
+		enrichmentWorkerCount: config.DNSWorkers,
+		ctx:                   ctx,
+		cancel:                cancel,
 	}
 
 	if config.EnableDNSEnrichment {
 		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
-		// Buffer is 2x the worker count to allow limited queuing of DNS requests, reducing producer blocking;
-		// when the buffer is full, producers block until a slot opens up or the context is cancelled.
-		c.dnsRequestChan = make(chan dnsEnrichmentRequest, config.DNSWorkers*2)
-		c.startDNSWorkers()
+		c.registerEnricher(&dnsRecordEnricher{correlator: c})
 	}
+
+	c.startEnrichmentWorkers()
 
 	return c
-}
-
-// startDNSWorkers starts the DNS worker pool
-func (c *Correlator) startDNSWorkers() {
-	for i := 0; i < c.dnsWorkerCount; i++ {
-		go c.dnsWorker()
-	}
-	c.logger.Infof("Started %d DNS enrichment workers with %s timeout", c.dnsWorkerCount, c.dnsTimeout)
-}
-
-// dnsWorker processes DNS enrichment requests
-func (c *Correlator) dnsWorker() {
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case req := <-c.dnsRequestChan:
-			c.processDNSRequest(req)
-		}
-	}
-}
-
-// processDNSRequest performs the actual DNS lookup with timeout
-func (c *Correlator) processDNSRequest(req dnsEnrichmentRequest) {
-	ctx, cancel := context.WithTimeout(c.ctx, c.dnsTimeout)
-	defer cancel()
-
-	hostname := c.performDNSLookup(ctx, req.ip)
-
-	result := dnsEnrichmentResult{
-		ip:       req.ip,
-		hostname: hostname,
-	}
-
-	// Cache the result only for successful lookups (non-empty hostname)
-	if hostname != "" {
-		c.dnsCache.Set(req.ip, hostname)
-	}
-
-	// Invoke the callback asynchronously so DNS workers are not blocked by heavy callbacks
-	// (e.g. JSON marshaling or output writes in the publish path).
-	go req.callback(result)
-}
-
-// performDNSLookup does the actual reverse DNS lookup
-func (c *Correlator) performDNSLookup(ctx context.Context, ipStr string) string {
-	// Validate IP
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return ""
-	}
-
-	// Perform reverse DNS lookup with context
-	names, err := c.dnsResolver.LookupAddr(ctx, ipStr)
-	if err != nil || len(names) == 0 {
-		c.logger.Debugf("DNS lookup failed for %s: %v", ipStr, err)
-		return ""
-	}
-
-	// Return first hostname, normalized
-	hostname := strings.TrimSuffix(names[0], ".")
-	c.logger.Debugf("DNS lookup success: %s -> %s", ipStr, hostname)
-	return hostname
-}
-
-// enrichWithDNSSync performs synchronous DNS enrichment for an IP address
-// Only returns hostname if it's already in cache (fast path)
-// Returns (hostname, needsAsync) where needsAsync=true means caller should use submitDNSCallback
-func (c *Correlator) enrichWithDNSSync(ipStr string) (string, bool) {
-	if !c.enableDNSEnrichment || ipStr == "" {
-		return "", false
-	}
-
-	// Fast path: check cache first (no goroutine needed)
-	if val, exists := c.dnsCache.Get(ipStr); exists {
-		if hostname, ok := val.(string); ok {
-			c.logger.Debugf("DNS cache hit: %s -> %s", ipStr, hostname)
-			return hostname, false
-		}
-	}
-
-	// Cache miss: caller should use async enrichment
-	c.logger.Debugf("DNS cache miss: %s, needs async lookup", ipStr)
-	return "", true
-}
-
-// submitDNSCallback submits a DNS lookup to the worker pool with a callback that is
-// invoked asynchronously when the lookup completes. If the request channel has capacity
-// the request is sent immediately; otherwise the function blocks until a slot opens up
-// or the context is cancelled. This applies backpressure to callers and caps goroutine
-// count to the DNS worker pool size.
-func (c *Correlator) submitDNSCallback(ipStr string, callback func(dnsEnrichmentResult)) {
-	req := dnsEnrichmentRequest{
-		ip:       ipStr,
-		callback: callback,
-	}
-
-	select {
-	case c.dnsRequestChan <- req:
-		// Fast path: submitted immediately
-	case <-c.ctx.Done():
-		// Context cancelled before we could enqueue; invoke callback with empty result
-		callback(dnsEnrichmentResult{ip: ipStr})
-	}
-}
-
-// enrichWithDNSBlocking sends a DNS lookup request to the worker pool and blocks until the result is ready.
-// It is implemented on top of submitDNSCallback and is used in tests and as a convenience for
-// callers that can tolerate blocking (e.g. tests in the same package).
-func (c *Correlator) enrichWithDNSBlocking(ipStr string) string {
-	if !c.enableDNSEnrichment || ipStr == "" {
-		return ""
-	}
-
-	resultChan := make(chan dnsEnrichmentResult, 1)
-	c.submitDNSCallback(ipStr, func(result dnsEnrichmentResult) {
-		resultChan <- result
-	})
-
-	// Wait for result. Use 2x the DNS timeout to account for both
-	// queuing delay and the actual DNS lookup performed by the worker.
-	resultTimer := time.NewTimer(c.dnsTimeout * 2)
-	select {
-	case result := <-resultChan:
-		resultTimer.Stop()
-		return result.hostname
-	case <-resultTimer.C:
-		c.logger.Warnf("DNS enrichment result timeout for %s", ipStr)
-		return ""
-	case <-c.ctx.Done():
-		resultTimer.Stop()
-		return ""
-	}
-}
-
-// EnrichRecordAsync enriches a record with DNS and calls the callback when complete.
-// It returns immediately without spawning a goroutine that waits for DNS results;
-// instead, callbacks are chained through the DNS worker goroutines. This keeps
-// concurrency bounded by the DNS worker pool size regardless of the number of
-// in-flight records.
-func (c *Correlator) EnrichRecordAsync(record *CollectorRecord, callback func(*CollectorRecord)) {
-	if !record.needsDNSEnrichment && !record.needsServerDNS {
-		callback(record)
-		return
-	}
-
-	// Server DNS step: submitted after user DNS completes (or directly if no user DNS needed).
-	doServerDNS := func() {
-		if record.needsServerDNS {
-			c.submitDNSCallback(record.serverEnrichmentIP, func(result dnsEnrichmentResult) {
-				if result.hostname != "" {
-					record.ServerHostname = result.hostname
-				}
-				callback(record)
-			})
-		} else {
-			callback(record)
-		}
-	}
-
-	// User DNS step: submitted first; on completion, triggers the server DNS step.
-	if record.needsDNSEnrichment {
-		c.submitDNSCallback(record.enrichmentIP, func(result dnsEnrichmentResult) {
-			if result.hostname != "" {
-				parts := strings.Split(result.hostname, ".")
-				if len(parts) >= 2 {
-					record.UserDomain = strings.Join(parts[len(parts)-2:], ".")
-				}
-			}
-			doServerDNS()
-		})
-	} else {
-		doServerDNS()
-	}
-}
-
-// NeedsDNSEnrichment returns true if the record needs async DNS enrichment
-func (r *CollectorRecord) NeedsDNSEnrichment() bool {
-	return r.needsDNSEnrichment || r.needsServerDNS
 }
 
 // ProcessPacket processes a packet and returns records for all correlated file operations
@@ -1341,7 +1140,12 @@ func (r *CollectorRecord) ToJSON() ([]byte, error) {
 
 // Stop stops the correlator
 func (c *Correlator) Stop() {
-	// Stop DNS workers first
+	// Close queue first so workers drain in-flight requests before exiting.
+	if c.enrichmentQueue != nil {
+		c.enrichmentQueue.Close()
+	}
+	c.enrichmentWG.Wait()
+	c.enrichmentQueue = nil
 	if c.cancel != nil {
 		c.cancel()
 	}

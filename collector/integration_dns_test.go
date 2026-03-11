@@ -132,22 +132,19 @@ func TestEndToEnd_DNSEnrichmentFlow(t *testing.T) {
 
 	record := records[0]
 
-	// Verify the record needs DNS enrichment
-	assert.True(t, record.NeedsDNSEnrichment(), "Record should need DNS enrichment")
+	// Verify the record needs enrichment
+	assert.True(t, record.NeedsEnrichment(), "Record should need enrichment")
 
 	// Simulate what the main.go publish loop does with a timeout to avoid hanging
-	doneCh := make(chan struct{})
-
-	var enrichedRecord *CollectorRecord
-	correlator.EnrichRecordAsync(record, func(r *CollectorRecord) {
-		enrichedRecord = r
-		close(doneCh)
-	})
+	doneCh := make(chan EnrichedRecord, 1)
+	correlator.EnqueueForEnrichment(record, EnrichmentDestination{Results: doneCh})
 
 	// Wait for enrichment to complete with timeout
+	var enrichedRecord *CollectorRecord
 	select {
-	case <-doneCh:
-		// Success
+	case enrichedMsg := <-doneCh:
+		enrichedRecord = enrichedMsg.Record
+		// success
 	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for DNS enrichment to complete")
 	}
@@ -275,8 +272,8 @@ func TestEndToEnd_DNSEnrichmentCacheHit(t *testing.T) {
 
 	record := records[0]
 
-	// Verify the record does NOT need DNS enrichment (cache hit)
-	assert.False(t, record.NeedsDNSEnrichment(), "Record should NOT need DNS enrichment (cache hit)")
+	// Verify the record does NOT need enrichment (cache hit)
+	assert.False(t, record.NeedsEnrichment(), "Record should NOT need enrichment (cache hit)")
 
 	// Verify the domain was set from cache
 	assert.Equal(t, "example.com", record.UserDomain, "UserDomain should be set from cache")

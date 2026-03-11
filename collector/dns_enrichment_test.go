@@ -412,16 +412,15 @@ func TestDNSEnrichment_Integration(t *testing.T) {
 	record := c.createCorrelatedRecord(fileState, closeRec, packet)
 
 	// Check if record needs async enrichment
-	if record.NeedsDNSEnrichment() {
+	if record.NeedsEnrichment() {
 		// Enrich asynchronously and wait for result
-		done := make(chan *CollectorRecord, 1)
-		c.EnrichRecordAsync(record, func(enrichedRecord *CollectorRecord) {
-			done <- enrichedRecord
-		})
+		done := make(chan EnrichedRecord, 1)
+		c.EnqueueForEnrichment(record, EnrichmentDestination{Results: done})
 
 		// Wait for enrichment
 		select {
-		case record = <-done:
+		case msg := <-done:
+			record = msg.Record
 		case <-time.After(5 * time.Second):
 			t.Fatal("Timeout waiting for DNS enrichment")
 		}
@@ -536,18 +535,15 @@ func TestDNSEnrichment_InvalidIP(t *testing.T) {
 	assert.Equal(t, "", result, "Invalid IP should return empty hostname")
 }
 
-// TestEnrichRecordAsync_BoundedConcurrency verifies that EnrichRecordAsync does not
-// spawn goroutines that wait for DNS results. All callbacks must be invoked even
-// when many records are submitted concurrently.
-func TestEnrichRecordAsync_BoundedConcurrency(t *testing.T) {
+// TestEnrichmentQueue_BoundedConcurrency verifies that enrichment worker concurrency
+// is capped by the worker pool size even when many records are submitted concurrently.
+func TestEnrichmentQueue_BoundedConcurrency(t *testing.T) {
 	logger := logrus.New()
 	logger.SetLevel(logrus.ErrorLevel)
 
 	const numWorkers = 3
 	const numRecords = 50
 
-	// Slow resolver so workers are occupied during the burst
-	ready := make(chan struct{})
 	config := CorrelatorConfig{
 		TTL:                 5 * time.Minute,
 		MaxEntries:          1000,
@@ -561,35 +557,44 @@ func TestEnrichRecordAsync_BoundedConcurrency(t *testing.T) {
 	c := NewCorrelatorWithConfig(config)
 	defer c.Stop()
 
+	var activeLookups atomic.Int64
+	var maxConcurrentLookups atomic.Int64
 	c.dnsResolver = &mockDNSResolver{
 		lookupFunc: func(ctx context.Context, addr string) ([]string, error) {
-			// Block until all records have been submitted so the queue is full
-			// during submission, exercising the non-blocking fallback path.
+			active := activeLookups.Add(1)
+			for {
+				currentMax := maxConcurrentLookups.Load()
+				if active <= currentMax {
+					break
+				}
+				if maxConcurrentLookups.CompareAndSwap(currentMax, active) {
+					break
+				}
+			}
+
 			select {
-			case <-ready:
+			case <-time.After(25 * time.Millisecond):
 			case <-ctx.Done():
+				activeLookups.Add(-1)
 				return nil, ctx.Err()
 			}
+
+			activeLookups.Add(-1)
 			return []string{"host.example.com."}, nil
 		},
 	}
 
-	results := make(chan *CollectorRecord, numRecords)
+	results := make(chan EnrichedRecord, numRecords)
 
 	for i := 0; i < numRecords; i++ {
 		record := &CollectorRecord{
 			needsDNSEnrichment: true,
 			enrichmentIP:       "192.0.2." + strconv.Itoa(i%200),
 		}
-		c.EnrichRecordAsync(record, func(r *CollectorRecord) {
-			results <- r
-		})
+		go c.EnqueueForEnrichment(record, EnrichmentDestination{Results: results})
 	}
 
-	// Signal the resolver to proceed
-	close(ready)
-
-	// All callbacks must be invoked within a generous timeout
+	// All records must be emitted within a generous timeout
 	received := 0
 	timeout := time.After(10 * time.Second)
 	for received < numRecords {
@@ -598,6 +603,71 @@ func TestEnrichRecordAsync_BoundedConcurrency(t *testing.T) {
 			received++
 		case <-timeout:
 			t.Fatalf("Only %d/%d callbacks received before timeout", received, numRecords)
+		}
+	}
+	assert.Equal(t, numRecords, received)
+	assert.LessOrEqual(t, maxConcurrentLookups.Load(), int64(numWorkers), "lookups should not exceed worker count")
+}
+
+// TestEnrichmentQueue_NonBlockingEnqueue verifies records can be queued quickly
+// even when workers are blocked on enrichment.
+func TestEnrichmentQueue_NonBlockingEnqueue(t *testing.T) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	const numRecords = 1000
+	config := CorrelatorConfig{
+		TTL:                 5 * time.Minute,
+		MaxEntries:          1000,
+		EnableDNSEnrichment: true,
+		DNSCacheTTL:         1 * time.Hour,
+		DNSWorkers:          1, // single worker to force backlog
+		DNSTimeout:          30 * time.Second,
+		Logger:              logger,
+	}
+
+	c := NewCorrelatorWithConfig(config)
+	defer c.Stop()
+
+	releaseLookup := make(chan struct{})
+	c.dnsResolver = &mockDNSResolver{
+		lookupFunc: func(ctx context.Context, addr string) ([]string, error) {
+			select {
+			case <-releaseLookup:
+				return []string{"queued.example.com."}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+
+	results := make(chan EnrichedRecord, numRecords)
+	destination := EnrichmentDestination{Results: results}
+
+	start := time.Now()
+	for i := 0; i < numRecords; i++ {
+		record := &CollectorRecord{
+			needsDNSEnrichment: true,
+			enrichmentIP:       "192.0.2." + strconv.Itoa(i),
+		}
+		c.EnqueueForEnrichment(record, destination)
+	}
+	enqueueDuration := time.Since(start)
+
+	// Enqueue should not stall waiting for worker completion.
+	assert.Less(t, enqueueDuration, 2*time.Second, "queue enqueue should be non-blocking")
+
+	// Allow the blocked worker to proceed and drain backlog.
+	close(releaseLookup)
+
+	received := 0
+	timeout := time.After(15 * time.Second)
+	for received < numRecords {
+		select {
+		case <-results:
+			received++
+		case <-timeout:
+			t.Fatalf("Only %d/%d records received before timeout", received, numRecords)
 		}
 	}
 	assert.Equal(t, numRecords, received)
