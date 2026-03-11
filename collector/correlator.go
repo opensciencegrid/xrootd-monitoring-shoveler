@@ -134,6 +134,7 @@ type Correlator struct {
 	enrichmentQueue       *enrichmentWorkQueue
 	enrichers             []RecordEnricher
 	enrichmentWG          sync.WaitGroup
+	enrichmentDropCount   int64 // atomic; counts records dropped due to full queue
 	ctx                   context.Context
 	cancel                context.CancelFunc
 }

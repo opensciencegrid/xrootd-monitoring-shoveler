@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // DNSResolver interface allows mocking DNS lookups in tests.
@@ -46,7 +47,7 @@ type enrichmentRequest struct {
 }
 
 // enrichmentQueueMaxSize is the maximum number of pending enrichment requests.
-// Enqueueing when the queue is full drops the request and logs a warning.
+// Enqueueing when the queue is full drops the request; the caller is responsible for any logging.
 const enrichmentQueueMaxSize = 100_000
 
 // enrichmentWorkQueue is a bounded, channel-backed work queue for enrichment requests.
@@ -65,24 +66,19 @@ func newEnrichmentWorkQueue() *enrichmentWorkQueue {
 // Enqueue attempts to add a request to the queue without blocking.
 // Returns (enqueued, closed): (true, false) on success, (false, true) when the
 // queue is closed, and (false, false) when the buffer is full.
-// The mutex is held only to check the closed flag; the channel send runs without
-// the lock to allow concurrent producers to proceed in parallel.
+// The mutex is held for both the closed check and the non-blocking send, which
+// eliminates the close/send race without needing recover().
 func (q *enrichmentWorkQueue) Enqueue(req enrichmentRequest) (enqueued bool, wasClosed bool) {
 	q.mu.Lock()
+	defer q.mu.Unlock()
+
 	if q.closed {
-		q.mu.Unlock()
 		return false, true
 	}
-	q.mu.Unlock()
 
-	// Non-blocking send without holding the lock. In the narrow window between
-	// releasing the lock above and the send below, Close() may close the channel;
-	// recover() catches the resulting panic and reports it as a closed queue.
-	defer func() {
-		if r := recover(); r != nil {
-			enqueued, wasClosed = false, true
-		}
-	}()
+	// Non-blocking send: falls through to default when the buffer is full.
+	// Holding the mutex during the send is safe because the send is non-blocking
+	// (select with default), so the critical section is always brief.
 	select {
 	case q.ch <- req:
 		return true, false
@@ -119,8 +115,10 @@ func (r *CollectorRecord) NeedsDNSEnrichment() bool {
 }
 
 // EnqueueForEnrichment always routes records through the enrichment pipeline.
-// Enqueue is non-blocking; when the queue is full the record is dropped and a
-// warning is logged. The downstream destination (confirmation queue, disk-backed)
+// Enqueue is non-blocking; when the queue is full the record is dropped, the
+// drop counter is incremented in Prometheus, and a warning is logged only at the
+// first drop and subsequent power-of-10 thresholds to avoid log flooding during
+// overload events. The downstream destination (confirmation queue, disk-backed)
 // should almost never be full, so the enrichment queue should rarely fill up.
 func (c *Correlator) EnqueueForEnrichment(record *CollectorRecord, destination EnrichmentDestination) {
 	if record == nil || destination.Results == nil {
@@ -138,7 +136,13 @@ func (c *Correlator) EnqueueForEnrichment(record *CollectorRecord, destination E
 		if wasClosed {
 			c.logger.Debug("enrichment queue closed; dropping record")
 		} else {
-			c.logger.Warn("enrichment queue full (>100,000 pending); dropping record")
+			enrichmentQueueDropped.Inc()
+			n := atomic.AddInt64(&c.enrichmentDropCount, 1)
+			// Log at Warn only on the first drop and at power-of-10 thresholds
+			// to limit log volume during sustained overload.
+			if isPowerOfTen(n) {
+				c.logger.Warnf("enrichment queue full (capacity %d); %d records dropped total", enrichmentQueueMaxSize, n)
+			}
 		}
 	}
 }
@@ -326,4 +330,20 @@ func extractDomainFromHostname(hostname string) string {
 		return ""
 	}
 	return strings.Join(parts[len(parts)-2:], ".")
+}
+
+// isPowerOfTen returns true when n is a positive power of ten (1, 10, 100, …).
+// Used to rate-limit warning logs so they are emitted at most O(log₁₀ n) times
+// across any number of drop events.
+func isPowerOfTen(n int64) bool {
+	if n <= 0 {
+		return false
+	}
+	for n > 1 {
+		if n%10 != 0 {
+			return false
+		}
+		n /= 10
+	}
+	return true
 }
