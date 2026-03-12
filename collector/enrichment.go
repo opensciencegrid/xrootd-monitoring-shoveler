@@ -76,9 +76,9 @@ func newEnrichmentWorkQueue(capacity int) *enrichmentWorkQueue {
 // The mutex is held for both the closed check and the non-blocking send, which
 // eliminates the close/send race without needing recover().
 func (q *enrichmentWorkQueue) Enqueue(req enrichmentRequest) (enqueued bool, wasClosed bool) {
+	defer enrichmentQueueSize.Set(float64(len(q.ch)))
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	defer enrichmentQueueSize.Set(float64(len(q.ch)))
 
 	if q.closed {
 		return false, true
