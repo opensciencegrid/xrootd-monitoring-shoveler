@@ -80,7 +80,7 @@ func StartMetrics(metricsPort int) {
 
 	// Listen to the metrics requests in a separate thread
 	go func() {
-		log.Infoln("Starting metrics at " + metricsURL)
+
 		log.Debugln("Starting metrics at " + metricsURL)
 		http.Handle("/metrics", promhttp.Handler())
 		err := http.ListenAndServe(listenAddress, nil)
