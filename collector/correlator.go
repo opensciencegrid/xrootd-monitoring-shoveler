@@ -146,10 +146,9 @@ type CorrelatorConfig struct {
 	MaxEntries          int
 	EnableDNSEnrichment bool
 	DNSCacheTTL         time.Duration
-	DNSWorkers          int
 	DNSTimeout          time.Duration
-	EnrichmentWorkers   int // Number of enrichment worker goroutines (default: 50)
-	EnrichmentQueueSize int // Size of the enrichment work queue (default: 100000)
+	EnrichmentWorkers   int // Number of enrichment worker goroutines (default: 5)
+	EnrichmentQueueSize int // Size of the enrichment work queue (default: 10000)
 	Logger              *logrus.Logger
 }
 
@@ -174,14 +173,11 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 	if config.DNSCacheTTL <= 0 {
 		config.DNSCacheTTL = 1 * time.Hour // Default 1 hour cache
 	}
-	if config.DNSWorkers <= 0 {
-		config.DNSWorkers = 5 // Default 5 concurrent DNS lookups
-	}
 	if config.DNSTimeout <= 0 {
 		config.DNSTimeout = 2 * time.Second // Default 2 second timeout
 	}
 	if config.EnrichmentWorkers <= 0 {
-		config.EnrichmentWorkers = 50 // Default 50 enrichment workers
+		config.EnrichmentWorkers = 5 // Default 5 enrichment workers
 	}
 	if config.EnrichmentQueueSize <= 0 {
 		config.EnrichmentQueueSize = defaultEnrichmentQueueMaxSize

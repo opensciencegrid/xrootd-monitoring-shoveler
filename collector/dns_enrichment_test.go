@@ -61,7 +61,6 @@ func TestDNSEnrichment_CacheHit(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -98,7 +97,6 @@ func TestDNSEnrichment_CacheMiss_Success(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -148,7 +146,6 @@ func TestDNSEnrichment_CacheMiss_Timeout(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          100 * time.Millisecond, // Short timeout
 		Logger:              logger,
 	}
@@ -187,7 +184,6 @@ func TestDNSEnrichment_CacheMiss_Failure(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -220,7 +216,6 @@ func TestDNSEnrichment_CacheTTL(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         500 * time.Millisecond, // Short TTL for testing
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -273,7 +268,6 @@ func TestDNSEnrichment_Concurrency(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          3, // Limited workers
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -325,7 +319,6 @@ func TestDNSEnrichment_Integration(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -454,7 +447,6 @@ func TestDNSEnrichment_ShutdownCleanup(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -491,7 +483,6 @@ func TestDNSEnrichment_EmptyIP(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -515,7 +506,6 @@ func TestDNSEnrichment_InvalidIP(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -549,7 +539,6 @@ func TestEnrichmentQueue_BoundedConcurrency(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          numWorkers,
 		DNSTimeout:          5 * time.Second,
 		EnrichmentWorkers:   numWorkers,
 		Logger:              logger,
@@ -622,7 +611,6 @@ func TestEnrichmentQueue_NonBlockingEnqueue(t *testing.T) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          1, // single worker to force backlog
 		DNSTimeout:          30 * time.Second,
 		EnrichmentWorkers:   1,
 		Logger:              logger,

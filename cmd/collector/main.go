@@ -191,7 +191,6 @@ func buildCorrelatorConfig(config *shoveler.Config, logger *logrus.Logger) colle
 		MaxEntries:          config.State.MaxEntries,
 		EnableDNSEnrichment: config.State.EnableDNSEnrichment,
 		DNSCacheTTL:         time.Duration(config.State.DNSCacheTTL) * time.Second,
-		DNSWorkers:          config.State.DNSWorkers,
 		DNSTimeout:          time.Duration(config.State.DNSTimeout) * time.Second,
 		EnrichmentWorkers:   config.State.EnrichmentWorkers,
 		EnrichmentQueueSize: config.State.EnrichmentQueueSize,
