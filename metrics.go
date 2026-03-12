@@ -75,11 +75,13 @@ var (
 )
 
 func StartMetrics(metricsPort int) {
+	listenAddress := ":" + strconv.Itoa(metricsPort)
+	metricsURL := listenAddress + "/metrics"
 
 	// Listen to the metrics requests in a separate thread
 	go func() {
-		listenAddress := ":" + strconv.Itoa(metricsPort)
-		log.Debugln("Starting metrics at " + listenAddress + "/metrics")
+
+		log.Debugln("Starting metrics at " + metricsURL)
 		http.Handle("/metrics", promhttp.Handler())
 		err := http.ListenAndServe(listenAddress, nil)
 		if err != nil {

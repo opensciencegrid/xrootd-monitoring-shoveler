@@ -46,21 +46,28 @@ type enrichmentRequest struct {
 	destination EnrichmentDestination
 }
 
-// enrichmentQueueMaxSize is the maximum number of pending enrichment requests.
+// defaultEnrichmentQueueMaxSize is the default maximum number of pending enrichment requests.
 // Enqueueing when the queue is full drops the request; the caller is responsible for any logging.
-const enrichmentQueueMaxSize = 1000
+const defaultEnrichmentQueueMaxSize = 10000
 
 // enrichmentWorkQueue is a bounded, channel-backed work queue for enrichment requests.
-// The capacity is capped at enrichmentQueueMaxSize; Enqueue is non-blocking and
-// returns (false, false) when full or (false, true) when closed.
+// Enqueue is non-blocking and returns (false, false) when full or (false, true) when closed.
 type enrichmentWorkQueue struct {
-	ch     chan enrichmentRequest
-	mu     sync.Mutex
-	closed bool
+	ch       chan enrichmentRequest
+	mu       sync.Mutex
+	closed   bool
+	capacity int
 }
 
-func newEnrichmentWorkQueue() *enrichmentWorkQueue {
-	return &enrichmentWorkQueue{ch: make(chan enrichmentRequest, enrichmentQueueMaxSize)}
+func newEnrichmentWorkQueue(capacity int) *enrichmentWorkQueue {
+	if capacity <= 0 {
+		capacity = defaultEnrichmentQueueMaxSize
+	}
+	enrichmentQueueSize.Set(0)
+	return &enrichmentWorkQueue{
+		ch:       make(chan enrichmentRequest, capacity),
+		capacity: capacity,
+	}
 }
 
 // Enqueue attempts to add a request to the queue without blocking.
@@ -69,6 +76,7 @@ func newEnrichmentWorkQueue() *enrichmentWorkQueue {
 // The mutex is held for both the closed check and the non-blocking send, which
 // eliminates the close/send race without needing recover().
 func (q *enrichmentWorkQueue) Enqueue(req enrichmentRequest) (enqueued bool, wasClosed bool) {
+	defer enrichmentQueueSize.Set(float64(len(q.ch)))
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -91,6 +99,7 @@ func (q *enrichmentWorkQueue) Enqueue(req enrichmentRequest) (enqueued bool, was
 // Returns (request, true) on success or (zero, false) when the queue is done.
 func (q *enrichmentWorkQueue) Dequeue() (enrichmentRequest, bool) {
 	req, ok := <-q.ch
+	enrichmentQueueSize.Set(float64(len(q.ch)))
 	return req, ok
 }
 
@@ -101,6 +110,7 @@ func (q *enrichmentWorkQueue) Close() {
 	if !q.closed {
 		q.closed = true
 		close(q.ch)
+		enrichmentQueueSize.Set(float64(len(q.ch)))
 	}
 }
 
@@ -141,7 +151,7 @@ func (c *Correlator) EnqueueForEnrichment(record *CollectorRecord, destination E
 			// Log at Warn only on the first drop and at power-of-10 thresholds
 			// to limit log volume during sustained overload.
 			if isPowerOfTen(n) {
-				c.logger.Warnf("enrichment queue full (capacity %d); %d records dropped total", enrichmentQueueMaxSize, n)
+				c.logger.Warnf("enrichment queue full (capacity %d); %d records dropped total", c.enrichmentQueue.capacity, n)
 			}
 		}
 	}
@@ -159,7 +169,7 @@ func (c *Correlator) startEnrichmentWorkers() {
 		c.enrichmentWorkerCount = 1
 	}
 	if c.enrichmentQueue == nil {
-		c.enrichmentQueue = newEnrichmentWorkQueue()
+		c.enrichmentQueue = newEnrichmentWorkQueue(c.enrichmentQueueSize)
 	}
 
 	for i := 0; i < c.enrichmentWorkerCount; i++ {
