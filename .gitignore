@@ -24,3 +24,20 @@ dist/
 shoveler
 bin/
 references/
+deployment/
+docs/
+
+# Local development artifacts
+.gocache/
+.idea/
+.DS_Store
+
+# Local build/profile outputs
+xrootd-monitoring-shoveler
+profile
+vendor/
+
+# Local test artifacts
+tests/venv/
+config/*.bak
+tests/*.bak

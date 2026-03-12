@@ -31,6 +31,10 @@ type StateConfig struct {
 	DNSCacheTTL         int  // DNS cache TTL in seconds (default: 3600)
 	DNSWorkers          int  // Number of DNS worker goroutines (default: 5)
 	DNSTimeout          int  // DNS lookup timeout in seconds (default: 2)
+
+	// Enrichment pipeline configuration
+	EnrichmentWorkers   int // Number of enrichment worker goroutines (default: 50)
+	EnrichmentQueueSize int // Size of the enrichment work queue (default: 100000)
 }
 
 type OutputConfig struct {
@@ -157,6 +161,18 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.State.DNSTimeout = viper.GetInt("state.dns_timeout")
 	if c.State.DNSTimeout <= 0 {
 		c.State.DNSTimeout = 2
+	}
+
+	// Enrichment pipeline configuration
+	viper.SetDefault("state.enrichment_workers", 50) // 50 enrichment workers default
+	c.State.EnrichmentWorkers = viper.GetInt("state.enrichment_workers")
+	if c.State.EnrichmentWorkers <= 0 {
+		c.State.EnrichmentWorkers = 50
+	}
+	viper.SetDefault("state.enrichment_queue_size", 100000) // 100k queue default
+	c.State.EnrichmentQueueSize = viper.GetInt("state.enrichment_queue_size")
+	if c.State.EnrichmentQueueSize <= 0 {
+		c.State.EnrichmentQueueSize = 100000
 	}
 
 	// Output configuration (for collector mode)

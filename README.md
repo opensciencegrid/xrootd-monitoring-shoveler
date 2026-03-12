@@ -434,6 +434,8 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_packets_parsed_ok` - Successfully parsed packets
 - `shoveler_parse_errors` - Parse errors by reason
 - `shoveler_state_size` - Current state map entries
+- `shoveler_enrichment_queue_size` - Current enrichment queue depth
+- `shoveler_enrichment_queue_dropped` - Enrichment records dropped when queue is full
 - `shoveler_ttl_evictions` - State entries evicted due to TTL
 - `shoveler_records_emitted` - Collector records emitted
 - `shoveler_parse_time_ms` - Packet parsing time histogram

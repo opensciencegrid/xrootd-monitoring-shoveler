@@ -551,6 +551,7 @@ func TestEnrichmentQueue_BoundedConcurrency(t *testing.T) {
 		DNSCacheTTL:         1 * time.Hour,
 		DNSWorkers:          numWorkers,
 		DNSTimeout:          5 * time.Second,
+		EnrichmentWorkers:   numWorkers,
 		Logger:              logger,
 	}
 
@@ -623,6 +624,7 @@ func TestEnrichmentQueue_NonBlockingEnqueue(t *testing.T) {
 		DNSCacheTTL:         1 * time.Hour,
 		DNSWorkers:          1, // single worker to force backlog
 		DNSTimeout:          30 * time.Second,
+		EnrichmentWorkers:   1,
 		Logger:              logger,
 	}
 

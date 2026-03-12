@@ -7,8 +7,10 @@ require (
 	github.com/golang-jwt/jwt v3.2.1+incompatible
 	github.com/golang-jwt/jwt/v4 v4.4.2
 	github.com/google/uuid v1.6.0
+	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/joncrlsn/dque v0.0.0-20211108142734-c2ef48c5192a
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.0
 	github.com/pterm/pterm v0.12.49
 	github.com/sirupsen/logrus v1.9.3
@@ -32,7 +34,6 @@ require (
 	github.com/lithammer/fuzzysearch v1.1.5 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.48.0 // indirect
@@ -46,6 +47,7 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
