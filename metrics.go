@@ -36,10 +36,10 @@ var (
 		Help: "The total number of packets parsed successfully",
 	})
 
-	ParseErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+	ParseErrors = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_parse_errors",
-		Help: "The total number of parse errors by reason",
-	}, []string{"reason"})
+		Help: "The total number of parse errors",
+	})
 
 	TTLEvictions = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_ttl_evictions",

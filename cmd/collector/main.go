@@ -301,7 +301,7 @@ func processPackets(source input.PacketSource, correlator *collector.Correlator,
 		shoveler.ParseTimeMs.Observe(float64(parseTime))
 
 		if err != nil {
-			shoveler.ParseErrors.WithLabelValues(fmt.Sprintf("%v", err)).Inc()
+			shoveler.ParseErrors.Inc()
 			logger.Debugln("Failed to parse packet:", err)
 			continue
 		}
