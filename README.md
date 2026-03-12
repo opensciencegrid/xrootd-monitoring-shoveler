@@ -432,7 +432,7 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 
 **Collector Binary (additional):**
 - `shoveler_packets_parsed_ok` - Successfully parsed packets
-- `shoveler_parse_errors` - Parse errors by reason
+- `shoveler_parse_errors` - Total parse errors
 - `shoveler_state_size` - Current state map entries
 - `shoveler_enrichment_queue_size` - Current enrichment queue depth
 - `shoveler_enrichment_queue_dropped` - Enrichment records dropped when queue is full
@@ -799,5 +799,3 @@ Distributed under the [Apache 2.0](https://choosealicense.com/licenses/apache-2.
 ## :gem: Acknowledgements
 
 This project is supported by the National Science Foundation under Cooperative Agreements [OAC-2030508](https://www.nsf.gov/awardsearch/showAward?AWD_ID=2030508) and [OAC-1836650](https://www.nsf.gov/awardsearch/showAward?AWD_ID=1836650).
-
-
