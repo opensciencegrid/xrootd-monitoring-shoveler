@@ -257,7 +257,7 @@ func GetSIDRest(info []byte) (UserId, string, error) {
 
 func ParseFileHeader(packet []byte) (XrdXrootdMonFileHdr, error) {
 	if len(packet) < 8 {
-		return XrdXrootdMonFileHdr{}, fmt.Errorf("Passed header of size %v which is below the minimum header size of 8 bytes", len(packet))
+		return XrdXrootdMonFileHdr{}, fmt.Errorf("passed header of size %v which is below the minimum header size of 8 bytes", len(packet))
 	}
 	fileHdr := XrdXrootdMonFileHdr{
 		RecType: packet[0],
@@ -316,7 +316,7 @@ func HandlePacket(packet []byte) error {
 		}
 		firstHeaderSize := binary.BigEndian.Uint16(packet[10:12])
 		if firstHeaderSize < 24 {
-			return fmt.Errorf("First entry in f-stream packet is %v bytes, smaller than the minimum XrdXrootdMonFileTOD size of 24 bytes", firstHeaderSize)
+			return fmt.Errorf("first entry in f-stream packet is %v bytes, smaller than the minimum XrdXrootdMonFileTOD size of 24 bytes", firstHeaderSize)
 		}
 		offset := uint32(firstHeaderSize + 8)
 		bytesRemain := header.Plen - uint16(offset)
