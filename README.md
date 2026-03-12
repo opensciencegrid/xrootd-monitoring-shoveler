@@ -432,7 +432,8 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 
 **Collector Binary (additional):**
 - `shoveler_packets_parsed_ok` - Successfully parsed packets
-- `shoveler_parse_errors` - Total parse errors
+- `shoveler_parse_errors` - Total parse errors  
+  **Note:** The `shoveler_parse_errors` metric no longer includes a `reason` label. Update any Prometheus queries, dashboards, or alerts that reference `shoveler_parse_errors{reason=...}` to remove or adapt the `reason` selector.
 - `shoveler_state_size` - Current state map entries
 - `shoveler_enrichment_queue_size` - Current enrichment queue depth
 - `shoveler_enrichment_queue_dropped` - Enrichment records dropped when queue is full
