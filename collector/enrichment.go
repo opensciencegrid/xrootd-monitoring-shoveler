@@ -48,7 +48,7 @@ type enrichmentRequest struct {
 
 // defaultEnrichmentQueueMaxSize is the default maximum number of pending enrichment requests.
 // Enqueueing when the queue is full drops the request; the caller is responsible for any logging.
-const defaultEnrichmentQueueMaxSize = 100000
+const defaultEnrichmentQueueMaxSize = 10000
 
 // enrichmentWorkQueue is a bounded, channel-backed work queue for enrichment requests.
 // Enqueue is non-blocking and returns (false, false) when full or (false, true) when closed.

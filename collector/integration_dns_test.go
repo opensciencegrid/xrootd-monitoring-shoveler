@@ -37,7 +37,6 @@ func TestEndToEnd_DNSEnrichmentFlow(t *testing.T) {
 		MaxEntries:          10000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -179,7 +178,6 @@ func TestEndToEnd_DNSEnrichmentCacheHit(t *testing.T) {
 		MaxEntries:          10000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}

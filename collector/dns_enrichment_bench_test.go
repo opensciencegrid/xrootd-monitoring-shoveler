@@ -19,7 +19,6 @@ func BenchmarkDNSEnrichment_CacheHit(b *testing.B) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          5,
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
@@ -46,7 +45,6 @@ func BenchmarkDNSEnrichment_CacheMiss(b *testing.B) {
 		MaxEntries:          1000,
 		EnableDNSEnrichment: true,
 		DNSCacheTTL:         1 * time.Hour,
-		DNSWorkers:          10, // More workers for benchmark
 		DNSTimeout:          2 * time.Second,
 		Logger:              logger,
 	}
