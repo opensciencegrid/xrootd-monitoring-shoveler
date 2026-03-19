@@ -148,7 +148,7 @@ type CorrelatorConfig struct {
 	DNSCacheTTL         time.Duration
 	DNSTimeout          time.Duration
 	EnrichmentWorkers   int // Number of enrichment worker goroutines (default: 5)
-	EnrichmentQueueSize int // Size of the enrichment work queue (default: 10000)
+	EnrichmentQueueSize int // Maximum number of pending enrichment requests (default: 1000000)
 	Logger              *logrus.Logger
 }
 
