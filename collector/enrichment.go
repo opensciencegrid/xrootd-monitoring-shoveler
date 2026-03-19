@@ -47,14 +47,22 @@ type enrichmentRequest struct {
 }
 
 // defaultEnrichmentQueueMaxSize is the default maximum number of pending enrichment requests.
-// Enqueueing when the queue is full drops the request; the caller is responsible for any logging.
-const defaultEnrichmentQueueMaxSize = 10000
+// The queue grows lazily up to this limit, so we can tolerate large DNS backlogs without
+// reserving the full backing store at startup.
+const defaultEnrichmentQueueMaxSize = 1_000_000
 
-// enrichmentWorkQueue is a bounded, channel-backed work queue for enrichment requests.
-// Enqueue is non-blocking and returns (false, false) when full or (false, true) when closed.
+// enrichmentQueuePageSize controls how many requests are stored in each lazily allocated page.
+// With 32-byte queue entries on 64-bit platforms, each page is about 128 KiB.
+const enrichmentQueuePageSize = 4096
+
+// enrichmentWorkQueue is a bounded FIFO queue for enrichment requests.
+// Storage is allocated in fixed-size pages so memory grows with backlog and empty
+// pages can be reclaimed after the queue drains.
 type enrichmentWorkQueue struct {
-	ch       chan enrichmentRequest
 	mu       sync.Mutex
+	notEmpty *sync.Cond
+	pages    [][]enrichmentRequest
+	size     int
 	closed   bool
 	capacity int
 }
@@ -63,44 +71,81 @@ func newEnrichmentWorkQueue(capacity int) *enrichmentWorkQueue {
 	if capacity <= 0 {
 		capacity = defaultEnrichmentQueueMaxSize
 	}
+	q := &enrichmentWorkQueue{capacity: capacity}
+	q.notEmpty = sync.NewCond(&q.mu)
 	enrichmentQueueSize.Set(0)
-	return &enrichmentWorkQueue{
-		ch:       make(chan enrichmentRequest, capacity),
-		capacity: capacity,
+	return q
+}
+
+func (q *enrichmentWorkQueue) enqueueLocked(req enrichmentRequest) {
+	if len(q.pages) == 0 || len(q.pages[len(q.pages)-1]) == cap(q.pages[len(q.pages)-1]) {
+		pageCapacity := enrichmentQueuePageSize
+		if remaining := q.capacity - q.size; remaining < pageCapacity {
+			pageCapacity = remaining
+		}
+		q.pages = append(q.pages, make([]enrichmentRequest, 0, pageCapacity))
 	}
+
+	lastPage := len(q.pages) - 1
+	q.pages[lastPage] = append(q.pages[lastPage], req)
+	q.size++
 }
 
 // Enqueue attempts to add a request to the queue without blocking.
 // Returns (enqueued, closed): (true, false) on success, (false, true) when the
 // queue is closed, and (false, false) when the buffer is full.
-// The mutex is held for both the closed check and the non-blocking send, which
-// eliminates the close/send race without needing recover().
 func (q *enrichmentWorkQueue) Enqueue(req enrichmentRequest) (enqueued bool, wasClosed bool) {
-	defer enrichmentQueueSize.Set(float64(len(q.ch)))
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	if q.closed {
+		enrichmentQueueSize.Set(float64(q.size))
 		return false, true
 	}
 
-	// Non-blocking send: falls through to default when the buffer is full.
-	// Holding the mutex during the send is safe because the send is non-blocking
-	// (select with default), so the critical section is always brief.
-	select {
-	case q.ch <- req:
-		return true, false
-	default:
+	if q.size >= q.capacity {
+		enrichmentQueueSize.Set(float64(q.size))
 		return false, false
 	}
+
+	q.enqueueLocked(req)
+	enrichmentQueueSize.Set(float64(q.size))
+	q.notEmpty.Signal()
+	return true, false
 }
 
 // Dequeue blocks until a request is available or the queue is closed and drained.
 // Returns (request, true) on success or (zero, false) when the queue is done.
 func (q *enrichmentWorkQueue) Dequeue() (enrichmentRequest, bool) {
-	req, ok := <-q.ch
-	enrichmentQueueSize.Set(float64(len(q.ch)))
-	return req, ok
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	for q.size == 0 && !q.closed {
+		q.notEmpty.Wait()
+	}
+
+	if q.size == 0 {
+		enrichmentQueueSize.Set(0)
+		return enrichmentRequest{}, false
+	}
+
+	page := q.pages[0]
+	req := page[0]
+	page[0] = enrichmentRequest{}
+
+	if len(page) == 1 {
+		q.pages[0] = nil
+		q.pages = q.pages[1:]
+		if len(q.pages) == 0 {
+			q.pages = nil
+		}
+	} else {
+		q.pages[0] = page[1:]
+	}
+
+	q.size--
+	enrichmentQueueSize.Set(float64(q.size))
+	return req, true
 }
 
 // Close signals that no more items will be enqueued and unblocks waiting Dequeue calls.
@@ -109,8 +154,8 @@ func (q *enrichmentWorkQueue) Close() {
 	defer q.mu.Unlock()
 	if !q.closed {
 		q.closed = true
-		close(q.ch)
-		enrichmentQueueSize.Set(float64(len(q.ch)))
+		q.notEmpty.Broadcast()
+		enrichmentQueueSize.Set(float64(q.size))
 	}
 }
 

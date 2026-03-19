@@ -31,7 +31,12 @@ state:
   # - Low traffic (<100 records/sec): 3-5 workers
   # - Medium traffic (100-1000/sec): 5-10 workers
   # - High traffic (>1000/sec): 10-20 workers
-  dns_workers: 10
+  enrichment_workers: 10
+
+  # Maximum number of pending enrichment requests kept in memory.
+  # Queue storage grows lazily; 1,000,000 slots are about 32 MiB for queue
+  # bookkeeping, but the queued records themselves will consume much more memory.
+  enrichment_queue_size: 1000000
   
   # DNS lookup timeout in seconds (default: 2)
   # If DNS server doesn't respond within this time, record publishes without hostname

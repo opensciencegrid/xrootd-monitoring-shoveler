@@ -195,7 +195,8 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `COLLECTOR_STATE_MAX_ENTRIES` - Maximum state entries, 0 for unlimited (default: `0`)
 * `COLLECTOR_STATE_ENABLE_DNS_ENRICHMENT` - Enable DNS enrichment of monitoring records: `true` or `false` (default: `false`)
 * `COLLECTOR_STATE_DNS_CACHE_TTL` - DNS cache time-to-live in seconds (default: `3600`)
-* `COLLECTOR_STATE_DNS_WORKERS` - Number of concurrent DNS worker routines (default: `5`)
+* `COLLECTOR_STATE_ENRICHMENT_WORKERS` - Number of concurrent DNS enrichment worker routines (default: `5`)
+* `COLLECTOR_STATE_ENRICHMENT_QUEUE_SIZE` - Maximum pending DNS enrichment requests kept in memory (default: `1000000`)
 * `COLLECTOR_STATE_DNS_TIMEOUT` - DNS query timeout in seconds (default: `2`)
 
 **Output Configuration (shoveler: `SHOVELER_OUTPUT_*`, collector: `COLLECTOR_OUTPUT_*`):**
@@ -437,6 +438,7 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_state_size` - Current state map entries
 - `shoveler_enrichment_queue_size` - Current enrichment queue depth
 - `shoveler_enrichment_queue_dropped` - Enrichment records dropped when queue is full
+- The enrichment queue grows lazily in memory up to `COLLECTOR_STATE_ENRICHMENT_QUEUE_SIZE`; `1000000` queued request descriptors are about `32 MiB`, but the retained `CollectorRecord` objects are much larger and can exceed `600 MiB` before counting string data
 - `shoveler_ttl_evictions` - State entries evicted due to TTL
 - `shoveler_records_emitted` - Collector records emitted
 - `shoveler_parse_time_ms` - Packet parsing time histogram

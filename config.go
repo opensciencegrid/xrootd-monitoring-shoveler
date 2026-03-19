@@ -33,7 +33,7 @@ type StateConfig struct {
 
 	// Enrichment pipeline configuration
 	EnrichmentWorkers   int // Number of enrichment worker goroutines (default: 5)
-	EnrichmentQueueSize int // Size of the enrichment work queue (default: 10000)
+	EnrichmentQueueSize int // Maximum number of pending enrichment requests (default: 1000000)
 }
 
 type OutputConfig struct {
@@ -163,10 +163,10 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	if c.State.EnrichmentWorkers <= 0 {
 		c.State.EnrichmentWorkers = 5
 	}
-	viper.SetDefault("state.enrichment_queue_size", 10000) // 10k queue default
+	viper.SetDefault("state.enrichment_queue_size", 1000000) // 1M queue default
 	c.State.EnrichmentQueueSize = viper.GetInt("state.enrichment_queue_size")
 	if c.State.EnrichmentQueueSize <= 0 {
-		c.State.EnrichmentQueueSize = 10000
+		c.State.EnrichmentQueueSize = 1000000
 	}
 
 	// Output configuration (for collector mode)
