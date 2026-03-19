@@ -438,7 +438,8 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_state_size` - Current state map entries
 - `shoveler_enrichment_queue_size` - Current enrichment queue depth
 - `shoveler_enrichment_queue_dropped` - Enrichment records dropped when queue is full
-- The enrichment queue grows lazily in memory up to `COLLECTOR_STATE_ENRICHMENT_QUEUE_SIZE`; `1000000` queued request descriptors are about `32 MiB`, but the retained `CollectorRecord` objects are much larger and can exceed `600 MiB` before counting string data
+
+**Note:** The enrichment queue grows lazily in memory up to `COLLECTOR_STATE_ENRICHMENT_QUEUE_SIZE`; `1000000` queued request descriptors are about `32 MiB`, but the retained `CollectorRecord` objects are much larger and can exceed `600 MiB` before counting string data.
 - `shoveler_ttl_evictions` - State entries evicted due to TTL
 - `shoveler_records_emitted` - Collector records emitted
 - `shoveler_parse_time_ms` - Packet parsing time histogram
