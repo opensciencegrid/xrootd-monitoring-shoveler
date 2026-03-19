@@ -131,6 +131,7 @@ func (q *enrichmentWorkQueue) Dequeue() (enrichmentRequest, bool) {
 
 	page := q.pages[0]
 	req := page[0]
+	page[0] = enrichmentRequest{}
 
 	if len(page) == 1 {
 		q.pages[0] = nil
