@@ -553,10 +553,17 @@ func extractIPFromHost(host string) string {
 	if host == "" {
 		return ""
 	}
-	// Remove brackets for IPv6
+	// Remove brackets for IPv6 (e.g., "[::ffff:192.168.1.1]" -> "::ffff:192.168.1.1")
 	host = strings.Trim(host, "[]")
-	// Remove leading :: if present
-	host = strings.TrimPrefix(host, "::")
+
+	// For IPv4-mapped IPv6 addresses, extract the IPv4 portion so that
+	// reverse-DNS lookups work reliably across all resolver implementations.
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String()
+		}
+	}
 	return host
 }
 
