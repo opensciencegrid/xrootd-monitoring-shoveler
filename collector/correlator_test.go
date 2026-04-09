@@ -464,12 +464,27 @@ func TestExtractIPFromHost(t *testing.T) {
 		{
 			name:     "IPv6 with brackets",
 			host:     "[::1234:5678]",
-			expected: "1234:5678",
+			expected: "::1234:5678",
 		},
 		{
-			name:     "IPv6 with brackets and colons",
+			name:     "IPv4-compatible IPv6 with brackets",
 			host:     "[::192.168.1.1]",
 			expected: "192.168.1.1",
+		},
+		{
+			name:     "IPv4-mapped IPv6",
+			host:     "::ffff:192.168.1.1",
+			expected: "192.168.1.1",
+		},
+		{
+			name:     "IPv4-mapped IPv6 with brackets",
+			host:     "[::ffff:10.0.0.1]",
+			expected: "10.0.0.1",
+		},
+		{
+			name:     "full IPv6",
+			host:     "2001:db8::1",
+			expected: "2001:db8::1",
 		},
 		{
 			name:     "IPv4",
