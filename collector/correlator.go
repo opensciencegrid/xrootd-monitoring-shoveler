@@ -556,12 +556,28 @@ func extractIPFromHost(host string) string {
 	// Remove brackets for IPv6 (e.g., "[::ffff:192.168.1.1]" -> "::ffff:192.168.1.1")
 	host = strings.Trim(host, "[]")
 
-	// For IPv4-mapped IPv6 addresses, extract the IPv4 portion so that
-	// reverse-DNS lookups work reliably across all resolver implementations.
+	// For IPv4-in-IPv6 representations – both IPv4-mapped (::ffff:a.b.c.d)
+	// and IPv4-compatible (::a.b.c.d) – extract the IPv4 portion so that
+	// reverse-DNS lookups use in-addr.arpa queries rather than ip6.arpa.
 	ip := net.ParseIP(host)
 	if ip != nil {
+		// To4 handles the ::ffff:a.b.c.d (IPv4-mapped) case.
 		if v4 := ip.To4(); v4 != nil {
 			return v4.String()
+		}
+		// Handle IPv4-compatible IPv6 written in dotted notation (::a.b.c.d).
+		// net.ParseIP converts dotted notation to pure hex bytes, losing the
+		// dot-notation hint, so we detect this case from the original string.
+		// The distinguishing sign is a "." in the host (dotted-decimal IPv4).
+		if strings.Contains(host, ".") {
+			if idx := strings.LastIndex(host, ":"); idx >= 0 {
+				ipv4Part := host[idx+1:]
+				if v4 := net.ParseIP(ipv4Part); v4 != nil {
+					if v4addr := v4.To4(); v4addr != nil {
+						return v4addr.String()
+					}
+				}
+			}
 		}
 	}
 	return host

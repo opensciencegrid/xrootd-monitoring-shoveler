@@ -469,7 +469,7 @@ func TestExtractIPFromHost(t *testing.T) {
 		{
 			name:     "IPv4-compatible IPv6 with brackets",
 			host:     "[::192.168.1.1]",
-			expected: "::192.168.1.1",
+			expected: "192.168.1.1",
 		},
 		{
 			name:     "IPv4-mapped IPv6",
