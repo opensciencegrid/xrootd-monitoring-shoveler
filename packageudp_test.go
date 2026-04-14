@@ -52,3 +52,22 @@ func TestPackageUdp_MappingMultiple(t *testing.T) {
 	assert.Equal(t, "172.0.0.10:12345", pkg.Remote, "Remote IP should be the same")
 	assert.Equal(t, "YXNkZg==", pkg.Data, "Data should be base64 encoded")
 }
+
+func TestPackageUdp_IPv6(t *testing.T) {
+	// Genuine IPv6 address must be wrapped in brackets so that
+	// net.SplitHostPort can parse the remote address on the collector side.
+	ip := net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 12345}
+	config := Config{}
+	packaged := PackageUdp([]byte("asdf"), &ip, &config)
+	assert.NotEmpty(t, packaged)
+	var pkg Message
+	err := json.Unmarshal(packaged, &pkg)
+	assert.NoError(t, err)
+	assert.Equal(t, "[2001:db8::1]:12345", pkg.Remote)
+
+	// Verify that the result can be parsed back by net.SplitHostPort
+	host, port, splitErr := net.SplitHostPort(pkg.Remote)
+	assert.NoError(t, splitErr, "net.SplitHostPort must succeed for the DNS enrichment path")
+	assert.Equal(t, "2001:db8::1", host)
+	assert.Equal(t, "12345", port)
+}
