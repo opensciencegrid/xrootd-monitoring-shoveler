@@ -42,37 +42,39 @@ type OutputConfig struct {
 }
 
 type Config struct {
-	Input              InputConfig
-	State              StateConfig
-	Output             OutputConfig
-	Mode               string   // Operating mode: "shoveler" or "collector"
-	MQ                 string   // Which technology to use for the MQ connection
-	AmqpURL            *url.URL // AMQP URL (password comes from the token)
-	AmqpExchange       string   // Exchange to shovel file-close messages
-	AmqpExchangeCache  string   // Exchange for cache gstream events
-	AmqpExchangeTCP    string   // Exchange for TCP gstream events
-	AmqpExchangeTPC    string   // Exchange for TPC gstream events
-	AmqpExchangeWLCG   string   // Exchange for WLCG formatted events
-	AmqpToken          string   // File location of the token
-	AmqpPublishWorkers int      // Number of concurrent publishing workers
-	ListenPort         int
-	ListenIp           string
-	DestUdp            []string
-	Debug              bool
-	Verify             bool
-	StompUser          string
-	StompPassword      string
-	StompURL           *url.URL
-	StompTopic         string
-	Metrics            bool
-	MetricsPort        int
-	Profile            bool
-	ProfilePort        int
-	StompCert          string
-	StompCertKey       string
-	QueueDir           string
-	IpMapAll           string
-	IpMap              map[string]string
+	Input                 InputConfig
+	State                 StateConfig
+	Output                OutputConfig
+	Mode                  string   // Operating mode: "shoveler" or "collector"
+	MQ                    string   // Which technology to use for the MQ connection
+	AmqpURL               *url.URL // AMQP URL (password comes from the token)
+	AmqpExchange          string   // Exchange to shovel file-close messages
+	AmqpExchangeCache     string   // Exchange for cache gstream events
+	AmqpExchangeTCP       string   // Exchange for TCP gstream events
+	AmqpExchangeTPC       string   // Exchange for TPC gstream events
+	AmqpExchangeWLCG      string   // Exchange for WLCG formatted events
+	AmqpExchangeWLCGCache string   // Exchange for WLCG formatted cache gstream events
+	AmqpExchangeWLCGTPC   string   // Exchange for WLCG formatted TPC events
+	AmqpToken             string   // File location of the token
+	AmqpPublishWorkers    int      // Number of concurrent publishing workers
+	ListenPort            int
+	ListenIp              string
+	DestUdp               []string
+	Debug                 bool
+	Verify                bool
+	StompUser             string
+	StompPassword         string
+	StompURL              *url.URL
+	StompTopic            string
+	Metrics               bool
+	MetricsPort           int
+	Profile               bool
+	ProfilePort           int
+	StompCert             string
+	StompCertKey          string
+	QueueDir              string
+	IpMapAll              string
+	IpMap                 map[string]string
 }
 
 func (c *Config) ReadConfig() {
@@ -208,6 +210,14 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		viper.SetDefault("amqp.exchange_wlcg", "xrd-wlcg-events")
 		c.AmqpExchangeWLCG = viper.GetString("amqp.exchange_wlcg")
 		log.Debugln("AMQP WLCG Exchange:", c.AmqpExchangeWLCG)
+
+		viper.SetDefault("amqp.exchange_wlcg_cache", "xrd-wlcg-cache-events")
+		c.AmqpExchangeWLCGCache = viper.GetString("amqp.exchange_wlcg_cache")
+		log.Debugln("AMQP WLCG Cache Exchange:", c.AmqpExchangeWLCGCache)
+
+		viper.SetDefault("amqp.exchange_wlcg_tpc", "xrd-wlcg-tpc-events")
+		c.AmqpExchangeWLCGTPC = viper.GetString("amqp.exchange_wlcg_tpc")
+		log.Debugln("AMQP WLCG TPC Exchange:", c.AmqpExchangeWLCGTPC)
 
 		// Get the Token location
 		c.AmqpToken = viper.GetString("amqp.token_location")
