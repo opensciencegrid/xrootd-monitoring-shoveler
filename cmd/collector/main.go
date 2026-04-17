@@ -162,23 +162,58 @@ func startRecordPublisher(output connectors.OutputConnector, logger *logrus.Logg
 }
 
 // emitGStreamEvent handles outputting a gstream event to the appropriate exchange
-func emitGStreamEvent(eventJSON []byte, streamType byte, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
-	// Determine exchange based on stream type
+// It checks if WLCG conversion is needed and routes to the appropriate exchange
+func emitGStreamEvent(event map[string]interface{}, streamType byte, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	var exchange string
+	var needsWLCG bool
+
 	switch streamType {
 	case 'C': // Cache events
-		exchange = config.AmqpExchangeCache
-	case 'T': // TCP events
+		event = collector.TransformCacheEvent(event)
+		if filePath, ok := event["file_path"].(string); ok && collector.CachePathCheckWLCG(filePath) {
+			exchange = config.AmqpExchangeWLCGCache
+			needsWLCG = true
+		} else {
+			exchange = config.AmqpExchangeCache
+		}
+	case 'T': // TCP events - no WLCG conversion
 		exchange = config.AmqpExchangeTCP
 	case 'P': // TPC events
-		exchange = config.AmqpExchangeTPC
+		event = collector.TransformTPCEvent(event)
+		source, _ := event["source"].(string)
+		destination, _ := event["destination"].(string)
+		if collector.TPCPathCheckWLCG(source) || collector.TPCPathCheckWLCG(destination) {
+			exchange = config.AmqpExchangeWLCGTPC
+			needsWLCG = true
+		} else {
+			exchange = config.AmqpExchangeTPC
+		}
 	default:
 		logger.Warnf("Unknown gstream type: %c (0x%02x), using default exchange", streamType, streamType)
 		exchange = config.AmqpExchange
 	}
 
-	if err := output.WriteToExchange(eventJSON, exchange); err != nil {
-		logger.Errorln("Failed to write gstream event:", err)
+	var eventJSON []byte
+	var err error
+	if needsWLCG {
+		wlcgEvent, convErr := collector.ConvertGStreamToWLCG(event, streamType == 'P')
+		if convErr != nil {
+			logger.Errorln("Failed to convert gstream event to WLCG:", convErr)
+			return
+		}
+		eventJSON, err = json.Marshal(wlcgEvent)
+	} else {
+		eventJSON, err = json.Marshal(event)
+	}
+
+	if err != nil {
+		logger.Errorln("Failed to marshal gstream event:", err)
+		return
+	}
+
+	logger.Debugln("Emitting gstream event to", exchange+":", string(eventJSON))
+	if writeErr := output.WriteToExchange(eventJSON, exchange); writeErr != nil {
+		logger.Errorln("Failed to write gstream event:", writeErr)
 	}
 }
 
@@ -264,14 +299,7 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 
 		// Emit each gstream event to the appropriate exchange
 		for _, event := range events {
-			eventJSON, err := json.Marshal(event)
-			if err != nil {
-				logger.Errorln("Failed to marshal gstream event:", err)
-				continue
-			}
-
-			logger.Debugln("Emitting gstream event:", string(eventJSON))
-			emitGStreamEvent(eventJSON, streamType, config, output, logger)
+			emitGStreamEvent(event, streamType, config, output, logger)
 		}
 		return
 	}
