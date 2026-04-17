@@ -276,6 +276,8 @@ func TransformCacheEvent(event map[string]interface{}) map[string]interface{} {
 	return out
 }
 
+// TransformTPCEvent renames raw XRootD TPC gstream fields to human-readable names.
+// Does not mutate the input map.
 func TransformTPCEvent(event map[string]interface{}) map[string]interface{} {
 	out := make(map[string]interface{}, len(event))
 	for k, v := range event {
