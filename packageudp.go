@@ -19,9 +19,9 @@ func PackageUdp(packet []byte, remote *net.UDPAddr, config *Config) []byte {
 	str := base64.StdEncoding.EncodeToString(packet)
 	msg.Data = str
 
-	// add the remote
-	msg.Remote = mapIp(remote, config)
-	msg.Remote += ":" + strconv.Itoa(remote.Port)
+	// Use net.JoinHostPort so IPv6 addresses are wrapped in brackets,
+	// producing a valid "host:port" string that net.SplitHostPort can parse.
+	msg.Remote = net.JoinHostPort(mapIp(remote, config), strconv.Itoa(remote.Port))
 
 	msg.ShovelerVersion = ShovelerVersion
 
