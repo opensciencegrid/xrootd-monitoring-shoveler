@@ -276,6 +276,38 @@ func TransformCacheEvent(event map[string]interface{}) map[string]interface{} {
 	return out
 }
 
+func TransformTPCEvent(event map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(event))
+	for k, v := range event {
+		out[k] = v
+	}
+
+	renameField(out, "TPC", "tpc_protocol")
+	renameField(out, "Client", "client")
+	renameField(out, "Src", "source")
+	renameField(out, "Dst", "destination")
+	renameField(out, "Size", "size")
+
+	if xeqRaw, ok := out["Xeq"]; ok {
+		if xeqMap, ok := xeqRaw.(map[string]interface{}); ok {
+			xeq := make(map[string]interface{}, len(xeqMap))
+			for k, v := range xeqMap {
+				xeq[k] = v
+			}
+			renameField(xeq, "Beg", "begin_transfer")
+			renameField(xeq, "End", "end_transfer")
+			renameField(xeq, "IPv", "ip_version")
+			renameField(xeq, "RC", "return_code")
+			renameField(xeq, "Strm", "used_streams")
+			renameField(xeq, "Type", "flow_direction")
+			out["xeq"] = xeq
+		}
+		delete(out, "Xeq")
+	}
+
+	return out
+}
+
 // GStreamMetadata contains metadata added to gstream events in WLCG format
 type GStreamMetadata struct {
 	Producer   string `json:"producer"`

@@ -548,6 +548,81 @@ func TestTransformCacheEvent_DerivedFields(t *testing.T) {
 	}
 }
 
+func TestTransformTPCEvent(t *testing.T) {
+	raw := map[string]interface{}{
+		"TPC":    "xroot",
+		"Client": "abh.47358:24@cent7a.slac.stanford.edu",
+		"Xeq": map[string]interface{}{
+			"Beg":  "2022-04-01T04:22:15.765838Z",
+			"End":  "2022-04-01T04:22:15.891503Z",
+			"RC":   float64(0),
+			"Strm": float64(1),
+			"Type": "pull",
+			"IPv":  float64(6),
+		},
+		"Src":  "xroot://cent7b.slac.stanford.edu:1094//store/data/file.root",
+		"Dst":  "xroot://griddev08.slac.stanford.edu:1094//store/data/file.root",
+		"Size": float64(6293536),
+	}
+
+	out := TransformTPCEvent(raw)
+
+	if out["tpc_protocol"] != "xroot" {
+		t.Errorf("tpc_protocol = %v, expected xroot", out["tpc_protocol"])
+	}
+	if out["client"] != "abh.47358:24@cent7a.slac.stanford.edu" {
+		t.Errorf("client = %v, expected abh.47358:24@cent7a.slac.stanford.edu", out["client"])
+	}
+	if out["source"] != "xroot://cent7b.slac.stanford.edu:1094//store/data/file.root" {
+		t.Errorf("source = %v, expected xroot://cent7b.slac.stanford.edu:1094//store/data/file.root", out["source"])
+	}
+	if out["destination"] != "xroot://griddev08.slac.stanford.edu:1094//store/data/file.root" {
+		t.Errorf("destination = %v, expected xroot://griddev08.slac.stanford.edu:1094//store/data/file.root", out["destination"])
+	}
+	if out["size"] != float64(6293536) {
+		t.Errorf("size = %v, expected 6293536", out["size"])
+	}
+
+	for _, old := range []string{"TPC", "Client", "Src", "Dst", "Size", "Xeq"} {
+		if _, ok := out[old]; ok {
+			t.Errorf("old top-level key %q should not be present in result", old)
+		}
+	}
+
+	xeq, ok := out["xeq"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("xeq should be map[string]interface{}, got %T", out["xeq"])
+	}
+	if xeq["begin_transfer"] != "2022-04-01T04:22:15.765838Z" {
+		t.Errorf("begin_transfer = %v, expected 2022-04-01T04:22:15.765838Z", xeq["begin_transfer"])
+	}
+	if xeq["end_transfer"] != "2022-04-01T04:22:15.891503Z" {
+		t.Errorf("end_transfer = %v, expected 2022-04-01T04:22:15.891503Z", xeq["end_transfer"])
+	}
+	if xeq["return_code"] != float64(0) {
+		t.Errorf("return_code = %v, expected 0", xeq["return_code"])
+	}
+	if xeq["used_streams"] != float64(1) {
+		t.Errorf("used_streams = %v, expected 1", xeq["used_streams"])
+	}
+	if xeq["flow_direction"] != "pull" {
+		t.Errorf("flow_direction = %v, expected pull", xeq["flow_direction"])
+	}
+	if xeq["ip_version"] != float64(6) {
+		t.Errorf("ip_version = %v, expected 6", xeq["ip_version"])
+	}
+
+	for _, old := range []string{"Beg", "End", "RC", "Strm", "Type", "IPv"} {
+		if _, ok := xeq[old]; ok {
+			t.Errorf("old xeq key %q should not be present in result", old)
+		}
+	}
+
+	if raw["TPC"] != "xroot" {
+		t.Error("original raw map should not be mutated: TPC key changed")
+	}
+}
+
 func TestConvertGStreamToWLCG_TPC(t *testing.T) {
 	event := map[string]interface{}{
 		"source":      "root://src.cern.ch//store/data/file1.root",
