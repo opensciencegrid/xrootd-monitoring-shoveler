@@ -2,6 +2,7 @@ package collector
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -205,4 +206,108 @@ func ConvertToWLCG(record *CollectorRecord) (*WLCGRecord, error) {
 // ToJSON converts a WLCG record to JSON
 func (w *WLCGRecord) ToJSON() ([]byte, error) {
 	return json.Marshal(w)
+}
+
+// TPCPathCheckWLCG checks if a TPC source/destination URL should be converted to WLCG format
+// Based on references/wlcg_converter.py::tpcPathCheckWLCG
+func TPCPathCheckWLCG(urlStr string) bool {
+	parsedURL, err := url.Parse(urlStr)
+	if err != nil {
+		return false
+	}
+	path := strings.TrimLeft(parsedURL.Path, "/")
+	return strings.HasPrefix(path, "store") || strings.HasPrefix(path, "user/dteam")
+}
+
+// CachePathCheckWLCG checks if a cache file path should be converted to WLCG format
+// Based on DetailedCollector.py::process_gstream
+func CachePathCheckWLCG(path string) bool {
+	cleanPath := strings.TrimSpace(path)
+	return strings.HasPrefix(cleanPath, "/store") || strings.HasPrefix(cleanPath, "/user/dteam")
+}
+
+func renameField(m map[string]interface{}, from, to string) {
+	if v, ok := m[from]; ok {
+		m[to] = v
+		delete(m, from)
+	}
+}
+
+func toFloat64(v interface{}) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case int64:
+		return float64(val)
+	case int:
+		return float64(val)
+	}
+	return 0
+}
+
+// TransformCacheEvent renames raw XRootD cache gstream fields to human-readable names
+// and computes derived byte-count fields. Does not mutate the input map.
+func TransformCacheEvent(event map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(event)+2)
+	for k, v := range event {
+		out[k] = v
+	}
+
+	renameField(out, "lfn", "file_path")
+	renameField(out, "blk_size", "block_size")
+	renameField(out, "n_blks", "numbers_blocks")
+	renameField(out, "n_blks_done", "numbers_blocks_done")
+	renameField(out, "access_cnt", "access_count")
+	renameField(out, "attach_t", "attach_time")
+	renameField(out, "detach_t", "detach_time")
+	renameField(out, "b_hit", "bytes_hit_cache")
+	renameField(out, "b_miss", "bytes_miss_cache")
+	renameField(out, "b_bypass", "bytes_bypass_cache")
+	renameField(out, "b_todisk", "bytes_to_disk")
+	renameField(out, "b_prefetch", "bytes_by_prefetch")
+	renameField(out, "n_cks_errs", "numbers_checksum_errors")
+
+	todisk := toFloat64(out["bytes_to_disk"])
+	bypass := toFloat64(out["bytes_bypass_cache"])
+	prefetch := toFloat64(out["bytes_by_prefetch"])
+	out["bytes_read_by_remote"] = todisk + bypass
+	out["bytes_explicit_remote_read"] = todisk + bypass - prefetch
+
+	return out
+}
+
+// GStreamMetadata contains metadata added to gstream events in WLCG format
+type GStreamMetadata struct {
+	Producer   string `json:"producer"`
+	Type       string `json:"type"`
+	Timestamp  int64  `json:"timestamp"`
+	TypePrefix string `json:"type_prefix"`
+	Host       string `json:"host"`
+	ID         string `json:"_id"`
+}
+
+// ConvertGStreamToWLCG adds WLCG metadata to a gstream event map
+// Based on references/wlcg_converter.py::ConvertGstream
+func ConvertGStreamToWLCG(event map[string]interface{}, isTPC bool) (map[string]interface{}, error) {
+	eventCopy := make(map[string]interface{})
+	for k, v := range event {
+		eventCopy[k] = v
+	}
+
+	hostname, _ := os.Hostname()
+	eventType := "metric"
+	if isTPC {
+		eventType = "tpc"
+	}
+
+	eventCopy["metadata"] = GStreamMetadata{
+		Producer:   "cms-xrootd-cache",
+		Type:       eventType,
+		Timestamp:  time.Now().UnixNano() / int64(time.Millisecond),
+		TypePrefix: "raw",
+		Host:       hostname,
+		ID:         uuid.New().String(),
+	}
+
+	return eventCopy, nil
 }

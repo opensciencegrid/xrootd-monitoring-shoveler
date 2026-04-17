@@ -328,3 +328,244 @@ func TestGenerateUUID(t *testing.T) {
 		t.Errorf("UUID format incorrect: %s", wlcg1.UniqueID)
 	}
 }
+
+func TestCachePathCheckWLCG(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		expected bool
+	}{
+		{
+			name:     "/store path should be WLCG",
+			path:     "/store/data/file.root",
+			expected: true,
+		},
+		{
+			name:     "/user/dteam path should be WLCG",
+			path:     "/user/dteam/test.dat",
+			expected: true,
+		},
+		{
+			name:     "Non-WLCG path",
+			path:     "/ospool/data/file.txt",
+			expected: false,
+		},
+		{
+			name:     "Empty path",
+			path:     "",
+			expected: false,
+		},
+		{
+			name:     "Path with whitespace",
+			path:     "  /store/data/file.root  ",
+			expected: true,
+		},
+		{
+			name:     "partial store path",
+			path:     "/some/store/data/file.root",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := CachePathCheckWLCG(tt.path)
+			if result != tt.expected {
+				t.Errorf("CachePathCheckWLCG(%q) = %v, expected %v", tt.path, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTPCPathCheckWLCG(t *testing.T) {
+	tests := []struct {
+		name     string
+		url      string
+		expected bool
+	}{
+		{
+			name:     "store path in URL",
+			url:      "root://xrootd.cern.ch//store/data/file.root",
+			expected: true,
+		},
+		{
+			name:     "user/dteam path in URL",
+			url:      "root://xrootd.cern.ch//user/dteam/test.dat",
+			expected: true,
+		},
+		{
+			name:     "Non-WLCG path",
+			url:      "root://xrootd.cern.ch//ospool/data/file.txt",
+			expected: false,
+		},
+		{
+			name:     "Invalid URL",
+			url:      "://invalid",
+			expected: false,
+		},
+		{
+			name:     "Empty URL",
+			url:      "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := TPCPathCheckWLCG(tt.url)
+			if result != tt.expected {
+				t.Errorf("TPCPathCheckWLCG(%q) = %v, expected %v", tt.url, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestConvertGStreamToWLCG(t *testing.T) {
+	event := map[string]interface{}{
+		"file_path":        "/store/data/file.root",
+		"bytes_hit_cache":  int64(1000000),
+		"bytes_miss_cache": int64(500000),
+		"server_hostname":  "xrootd.cern.ch",
+	}
+
+	wlcgEvent, err := ConvertGStreamToWLCG(event, false)
+	if err != nil {
+		t.Fatalf("ConvertGStreamToWLCG() error = %v", err)
+	}
+
+	if wlcgEvent["file_path"] != "/store/data/file.root" {
+		t.Errorf("file_path = %v, expected /store/data/file.root", wlcgEvent["file_path"])
+	}
+
+	if wlcgEvent["metadata"] == nil {
+		t.Fatal("metadata should not be nil")
+	}
+
+	metadata, ok := wlcgEvent["metadata"].(GStreamMetadata)
+	if !ok {
+		t.Fatal("metadata should be GStreamMetadata type")
+	}
+
+	if metadata.Producer != "cms-xrootd-cache" {
+		t.Errorf("Producer = %v, expected cms-xrootd-cache", metadata.Producer)
+	}
+
+	if metadata.Type != "metric" {
+		t.Errorf("Type = %v, expected metric", metadata.Type)
+	}
+}
+
+func TestTransformCacheEvent(t *testing.T) {
+	raw := map[string]interface{}{
+		"event":      "file_close",
+		"lfn":        "/store/user/matevz/file.root",
+		"size":       float64(2446541517),
+		"blk_size":   float64(131072),
+		"n_blks":     float64(18666),
+		"n_blks_done": float64(6784),
+		"access_cnt": float64(4),
+		"attach_t":   float64(1688057096),
+		"detach_t":   float64(1688057104),
+		"b_hit":      float64(865075200),
+		"b_miss":     float64(24051712),
+		"b_bypass":   float64(0),
+		"n_cks_errs": float64(0),
+		"b_todisk":   float64(0),
+		"b_prefetch": float64(0),
+	}
+
+	result := TransformCacheEvent(raw)
+
+	// Verify renamed fields are present under new names
+	newNames := []string{
+		"file_path", "block_size", "numbers_blocks", "numbers_blocks_done",
+		"access_count", "attach_time", "detach_time", "bytes_hit_cache",
+		"bytes_miss_cache", "bytes_bypass_cache", "bytes_to_disk",
+		"bytes_by_prefetch", "numbers_checksum_errors",
+	}
+	for _, name := range newNames {
+		if _, ok := result[name]; !ok {
+			t.Errorf("expected field %q to be present in result", name)
+		}
+	}
+
+	// Verify old names are absent
+	oldNames := []string{
+		"lfn", "blk_size", "n_blks", "n_blks_done", "access_cnt",
+		"attach_t", "detach_t", "b_hit", "b_miss", "b_bypass",
+		"b_todisk", "b_prefetch", "n_cks_errs",
+	}
+	for _, name := range oldNames {
+		if _, ok := result[name]; ok {
+			t.Errorf("old field %q should not be present in result", name)
+		}
+	}
+
+	// Verify specific renamed values
+	if result["file_path"] != "/store/user/matevz/file.root" {
+		t.Errorf("file_path = %v, expected /store/user/matevz/file.root", result["file_path"])
+	}
+
+	// Verify derived fields (both b_todisk and b_bypass are 0)
+	if result["bytes_read_by_remote"] != float64(0) {
+		t.Errorf("bytes_read_by_remote = %v, expected 0", result["bytes_read_by_remote"])
+	}
+	if result["bytes_explicit_remote_read"] != float64(0) {
+		t.Errorf("bytes_explicit_remote_read = %v, expected 0", result["bytes_explicit_remote_read"])
+	}
+
+	// Verify unrelated fields pass through unchanged
+	if result["size"] != float64(2446541517) {
+		t.Errorf("size = %v, expected 2446541517", result["size"])
+	}
+	if result["event"] != "file_close" {
+		t.Errorf("event = %v, expected file_close", result["event"])
+	}
+
+	// Verify original is not mutated
+	if _, ok := raw["lfn"]; !ok {
+		t.Error("original map should not be mutated: lfn key missing")
+	}
+	if _, ok := raw["file_path"]; ok {
+		t.Error("original map should not be mutated: file_path key should not be added")
+	}
+}
+
+func TestTransformCacheEvent_DerivedFields(t *testing.T) {
+	raw := map[string]interface{}{
+		"b_todisk":   float64(1000),
+		"b_bypass":   float64(500),
+		"b_prefetch": float64(200),
+	}
+
+	result := TransformCacheEvent(raw)
+
+	if result["bytes_read_by_remote"] != float64(1500) {
+		t.Errorf("bytes_read_by_remote = %v, expected 1500", result["bytes_read_by_remote"])
+	}
+	if result["bytes_explicit_remote_read"] != float64(1300) {
+		t.Errorf("bytes_explicit_remote_read = %v, expected 1300", result["bytes_explicit_remote_read"])
+	}
+}
+
+func TestConvertGStreamToWLCG_TPC(t *testing.T) {
+	event := map[string]interface{}{
+		"source":      "root://src.cern.ch//store/data/file1.root",
+		"destination": "root://dst.cern.ch//store/data/file2.root",
+		"size":        int64(1000000),
+	}
+
+	wlcgEvent, err := ConvertGStreamToWLCG(event, true)
+	if err != nil {
+		t.Fatalf("ConvertGStreamToWLCG() error = %v", err)
+	}
+
+	metadata, ok := wlcgEvent["metadata"].(GStreamMetadata)
+	if !ok {
+		t.Fatal("metadata should be GStreamMetadata type")
+	}
+
+	if metadata.Type != "tpc" {
+		t.Errorf("Type = %v, expected tpc", metadata.Type)
+	}
+}
