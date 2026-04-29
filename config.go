@@ -34,6 +34,10 @@ type StateConfig struct {
 	// Enrichment pipeline configuration
 	EnrichmentWorkers   int // Number of enrichment worker goroutines (default: 5)
 	EnrichmentQueueSize int // Maximum number of pending enrichment requests (default: 1000000)
+
+	// GStream pipeline configuration
+	GStreamWorkers   int // Number of gstream worker goroutines (default: 4)
+	GStreamQueueSize int // Maximum number of pending gstream packets (default: 20000)
 }
 
 type OutputConfig struct {
@@ -167,6 +171,18 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.State.EnrichmentQueueSize = viper.GetInt("state.enrichment_queue_size")
 	if c.State.EnrichmentQueueSize <= 0 {
 		c.State.EnrichmentQueueSize = 1000000
+	}
+
+	// GStream pipeline configuration
+	viper.SetDefault("state.gstream_workers", 4) // 4 gstream workers default
+	c.State.GStreamWorkers = viper.GetInt("state.gstream_workers")
+	if c.State.GStreamWorkers <= 0 {
+		c.State.GStreamWorkers = 4
+	}
+	viper.SetDefault("state.gstream_queue_size", 20000) // 20k queue default
+	c.State.GStreamQueueSize = viper.GetInt("state.gstream_queue_size")
+	if c.State.GStreamQueueSize <= 0 {
+		c.State.GStreamQueueSize = 20000
 	}
 
 	// Output configuration (for collector mode)

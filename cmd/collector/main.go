@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
@@ -161,6 +162,64 @@ func startRecordPublisher(output connectors.OutputConnector, logger *logrus.Logg
 	return records, &publisherWG
 }
 
+func isPowerOfTen(n int64) bool {
+	if n <= 0 {
+		return false
+	}
+	for n > 1 {
+		if n%10 != 0 {
+			return false
+		}
+		n /= 10
+	}
+	return true
+}
+
+func startGStreamWorkers(correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) (chan *parser.Packet, *sync.WaitGroup, *int64) {
+	queueSize := config.State.GStreamQueueSize
+	if queueSize <= 0 {
+		queueSize = 20000
+	}
+
+	workerCount := config.State.GStreamWorkers
+	if workerCount <= 0 {
+		workerCount = 4
+	}
+
+	gstreamPackets := make(chan *parser.Packet, queueSize)
+	var gstreamWG sync.WaitGroup
+	var gstreamDropCount int64
+
+	for i := 0; i < workerCount; i++ {
+		gstreamWG.Add(1)
+		go func(workerID int) {
+			defer gstreamWG.Done()
+			for packet := range gstreamPackets {
+				shoveler.GStreamQueueSize.Set(float64(len(gstreamPackets)))
+				events, streamType, err := correlator.ProcessGStreamPacket(packet)
+				if err != nil {
+					logger.Errorln("Failed to process gstream packet:", err)
+					continue
+				}
+
+				for _, event := range events {
+					eventJSON, err := json.Marshal(event)
+					if err != nil {
+						logger.Errorln("Failed to marshal gstream event:", err)
+						continue
+					}
+
+					logger.Debugln("Emitting gstream event:", string(eventJSON))
+					emitGStreamEvent(eventJSON, streamType, config, output, logger)
+				}
+			}
+		}(i)
+	}
+
+	logger.Infof("Started %d gstream workers with queue size %d", workerCount, queueSize)
+	return gstreamPackets, &gstreamWG, &gstreamDropCount
+}
+
 // emitGStreamEvent handles outputting a gstream event to the appropriate exchange
 func emitGStreamEvent(eventJSON []byte, streamType byte, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) {
 	// Determine exchange based on stream type
@@ -217,7 +276,7 @@ func runCollectorMode(config *shoveler.Config, output connectors.OutputConnector
 }
 
 // handleParsedPacket processes a parsed packet (gstream or regular correlation)
-func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, enrichmentDestination collector.EnrichmentDestination, logger *logrus.Logger) {
+func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator, gstreamPackets chan *parser.Packet, gstreamDropCount *int64, enrichmentDestination collector.EnrichmentDestination, logger *logrus.Logger) {
 	// Debug: Print packet details
 	if logger.Level == logrus.DebugLevel && packet != nil {
 		serverID := collector.BuildServerID(packet.Header.ServerStart, packet.RemoteAddr)
@@ -256,22 +315,21 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 
 	// Check for gstream packets first - they bypass correlation
 	if packet != nil && packet.GStreamRecord != nil {
-		events, streamType, err := correlator.ProcessGStreamPacket(packet)
-		if err != nil {
-			logger.Errorln("Failed to process gstream packet:", err)
+		if gstreamPackets == nil {
+			logger.Warnln("gstream queue is not initialized; dropping gstream packet")
 			return
 		}
 
-		// Emit each gstream event to the appropriate exchange
-		for _, event := range events {
-			eventJSON, err := json.Marshal(event)
-			if err != nil {
-				logger.Errorln("Failed to marshal gstream event:", err)
-				continue
+		select {
+		case gstreamPackets <- packet:
+			shoveler.GStreamPacketsEnqueued.Inc()
+			shoveler.GStreamQueueSize.Set(float64(len(gstreamPackets)))
+		default:
+			shoveler.GStreamQueueDropped.Inc()
+			n := atomic.AddInt64(gstreamDropCount, 1)
+			if isPowerOfTen(n) {
+				logger.Warnf("gstream queue full (capacity %d); %d packets dropped total", cap(gstreamPackets), n)
 			}
-
-			logger.Debugln("Emitting gstream event:", string(eventJSON))
-			emitGStreamEvent(eventJSON, streamType, config, output, logger)
 		}
 		return
 	}
@@ -290,7 +348,7 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 }
 
 // processPackets is the common packet processing loop for all input types
-func processPackets(source input.PacketSource, correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, enrichmentDestination collector.EnrichmentDestination, logger *logrus.Logger) {
+func processPackets(source input.PacketSource, correlator *collector.Correlator, gstreamPackets chan *parser.Packet, gstreamDropCount *int64, enrichmentDestination collector.EnrichmentDestination, logger *logrus.Logger) {
 	for pktWithAddr := range source.PacketsWithAddr() {
 		shoveler.PacketsReceived.Inc()
 
@@ -313,7 +371,7 @@ func processPackets(source input.PacketSource, correlator *collector.Correlator,
 		}
 
 		// Handle the parsed packet
-		handleParsedPacket(packet, correlator, config, output, enrichmentDestination, logger)
+		handleParsedPacket(packet, correlator, gstreamPackets, gstreamDropCount, enrichmentDestination, logger)
 	}
 }
 
@@ -323,11 +381,15 @@ func runCollectorModeFile(config *shoveler.Config, output connectors.OutputConne
 	correlatorConfig := buildCorrelatorConfig(config, logger)
 	correlator := collector.NewCorrelatorWithConfig(correlatorConfig)
 	recordDestination, publisherWG := startRecordPublisher(output, logger)
+	gstreamPackets, gstreamWG, gstreamDropCount := startGStreamWorkers(correlator, config, output, logger)
 	enrichmentDestination := collector.EnrichmentDestination{
 		Results:      recordDestination,
 		WLCGExchange: config.AmqpExchangeWLCG,
 	}
 	defer func() {
+		close(gstreamPackets)
+		gstreamWG.Wait()
+		shoveler.GStreamQueueSize.Set(0)
 		correlator.Stop()
 		close(recordDestination)
 		publisherWG.Wait()
@@ -356,7 +418,7 @@ func runCollectorModeFile(config *shoveler.Config, output connectors.OutputConne
 	logger.Infoln("Collector mode: Reading packets from file:", config.Input.Path, "Follow:", config.Input.Follow)
 
 	// Process packets using common logic
-	processPackets(fr, correlator, config, output, enrichmentDestination, logger)
+	processPackets(fr, correlator, gstreamPackets, gstreamDropCount, enrichmentDestination, logger)
 }
 
 // runCollectorModeUDP processes packets from UDP in collector mode
@@ -365,11 +427,15 @@ func runCollectorModeUDP(config *shoveler.Config, output connectors.OutputConnec
 	correlatorConfig := buildCorrelatorConfig(config, logger)
 	correlator := collector.NewCorrelatorWithConfig(correlatorConfig)
 	recordDestination, publisherWG := startRecordPublisher(output, logger)
+	gstreamPackets, gstreamWG, gstreamDropCount := startGStreamWorkers(correlator, config, output, logger)
 	enrichmentDestination := collector.EnrichmentDestination{
 		Results:      recordDestination,
 		WLCGExchange: config.AmqpExchangeWLCG,
 	}
 	defer func() {
+		close(gstreamPackets)
+		gstreamWG.Wait()
+		shoveler.GStreamQueueSize.Set(0)
 		correlator.Stop()
 		close(recordDestination)
 		publisherWG.Wait()
@@ -398,7 +464,7 @@ func runCollectorModeUDP(config *shoveler.Config, output connectors.OutputConnec
 	logger.Infoln("Collector mode: Listening for UDP messages at:", net.JoinHostPort(config.ListenIp, fmt.Sprintf("%d", config.ListenPort)))
 
 	// Process packets using common logic
-	processPackets(udpListener, correlator, config, output, enrichmentDestination, logger)
+	processPackets(udpListener, correlator, gstreamPackets, gstreamDropCount, enrichmentDestination, logger)
 }
 
 // runCollectorModeRabbitMQ processes packets from RabbitMQ in collector mode
@@ -407,11 +473,15 @@ func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputC
 	correlatorConfig := buildCorrelatorConfig(config, logger)
 	correlator := collector.NewCorrelatorWithConfig(correlatorConfig)
 	recordDestination, publisherWG := startRecordPublisher(output, logger)
+	gstreamPackets, gstreamWG, gstreamDropCount := startGStreamWorkers(correlator, config, output, logger)
 	enrichmentDestination := collector.EnrichmentDestination{
 		Results:      recordDestination,
 		WLCGExchange: config.AmqpExchangeWLCG,
 	}
 	defer func() {
+		close(gstreamPackets)
+		gstreamWG.Wait()
+		shoveler.GStreamQueueSize.Set(0)
 		correlator.Stop()
 		close(recordDestination)
 		publisherWG.Wait()
@@ -455,7 +525,7 @@ func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputC
 	logger.Infoln("Collector mode: Reading JSON messages from RabbitMQ queue:", queueName)
 
 	// Process packets using common logic
-	processPackets(reader, correlator, config, output, enrichmentDestination, logger)
+	processPackets(reader, correlator, gstreamPackets, gstreamDropCount, enrichmentDestination, logger)
 	logger.Infoln("RabbitMQ reader stopped")
 	return nil
 }
