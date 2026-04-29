@@ -156,6 +156,8 @@ The collector performs full packet parsing and correlation:
   - The VO is `cms`, OR
   - The file path starts with `/store` or `/user/dteam`
   - WLCG records are sent to a separate exchange (`amqp.exchange_wlcg`) instead of the main exchange
+  - Cache gstream events with `/store` or `/user/dteam` paths are converted and sent to `amqp.exchange_wlcg_cache`
+  - TPC gstream events with WLCG source/destination paths are converted and sent to `amqp.exchange_wlcg_tpc`
 
 Run with: `xrootd-monitoring-collector` (or `xrootd-monitoring-collector -c /path/to/config.yaml`)
 
@@ -215,6 +217,8 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_EXCHANGE_TCP` - TCP events exchange (default: `xrd-tcp-events`)
 * `<PREFIX>_AMQP_EXCHANGE_TPC` - TPC events exchange (default: `xrd-tpc-events`)
 * `<PREFIX>_AMQP_EXCHANGE_WLCG` - WLCG formatted events exchange (default: `xrd-wlcg-events`)
+* `<PREFIX>_AMQP_EXCHANGE_WLCG_CACHE` - WLCG formatted cache events exchange (default: `xrd-wlcg-cache-events`)
+* `<PREFIX>_AMQP_EXCHANGE_WLCG_TPC` - WLCG formatted TPC events exchange (default: `xrd-wlcg-tpc-events`)
 * `<PREFIX>_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`)
 * `<PREFIX>_AMQP_PUBLISH_WORKERS` - Number of concurrent publishing workers for collector mode (default: `10`, forced to `1` in shoveler mode)
 
