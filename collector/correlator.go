@@ -299,6 +299,15 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 		host = addr
 	}
 
+	// Resolve server hostname via DNS cache (mirrors Python _determineHostname)
+	serverHostname := host
+	if isIPPattern(host) {
+		ipStr := extractIPFromHost(host)
+		if resolved, _ := c.enrichWithDNSSync(ipStr); resolved != "" {
+			serverHostname = resolved
+		}
+	}
+
 	// Enrich each event with server information
 	enrichedEvents := make([]map[string]interface{}, 0, len(gstream.Events))
 	for _, event := range gstream.Events {
@@ -311,6 +320,7 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 		// Add server information
 		enrichedEvent["sid"] = serverID
 		enrichedEvent["server_ip"] = host
+		enrichedEvent["server_hostname"] = serverHostname
 		enrichedEvent["from"] = addr
 
 		enrichedEvents = append(enrichedEvents, enrichedEvent)
