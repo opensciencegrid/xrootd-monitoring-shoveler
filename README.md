@@ -62,6 +62,7 @@ graph LR
     - [Packet Verification](#packet-verification)
     - [IP Mapping](#ip-mapping)
   - [Running the Shoveler](#running-the-shoveler)
+  - [Testing Packet Flow with the Collector](#testing-packet-flow-with-the-collector)
   - [:compass: Design](#compass-design)
     - [Operating Modes](#operating-modes-1)
     - [Queue Design](#queue-design)
@@ -294,6 +295,161 @@ Start the systemd service with:
 From Docker, you can start the container from the OSG hub with the following command.
 
     docker run -v config.yaml:/etc/xrootd-monitoring-shoveler/config.yaml hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler
+
+## Testing Packet Flow with the Collector
+
+This section describes how to start the `xrootd-monitoring-collector` with a **UDP input** and a **file output** to inspect parsed packets and verify the full monitoring packet flow without requiring a message bus.
+
+### Overview
+
+Using file output writes every correlated record to a local [JSON Lines](https://jsonlines.org/) (`.jsonl`) file, making it straightforward to inspect the parsed output with standard text tools. Enabling debug logging additionally prints the raw packet fields and correlation decisions to the console, giving full visibility into the processing pipeline.
+
+### Configuration File
+
+Create a configuration file (e.g., `config-collector-test.yaml`):
+
+```yaml
+# Collector configuration for packet-flow testing
+# UDP input + file output — no message bus required
+
+# Input: listen for UDP packets from XRootD servers
+input:
+  type: udp
+  buffer_size: 65536
+
+listen:
+  port: 9993
+  ip: 0.0.0.0
+
+# Output: write correlated records to a local file (JSON Lines format)
+output:
+  type: file
+  path: /tmp/collector-output.jsonl
+
+# State management
+state:
+  entry_ttl: 300    # seconds before an unmatched open is evicted
+  max_entries: 0    # 0 = unlimited
+
+# Enable debug logging to see every packet and correlation decision
+debug: true
+
+# Disable Prometheus metrics for a lightweight test run (set to true to enable)
+metrics:
+  enable: false
+```
+
+### Running with Docker Compose
+
+The image `hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler` ships both the `xrootd-monitoring-shoveler` and `xrootd-monitoring-collector` binaries. Use the `docker-compose-collector-test.yaml` provided in `config/`, or create one with the contents below:
+
+```yaml
+services:
+  collector:
+    image: hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler:latest
+    entrypoint: ["/usr/bin/xrootd-monitoring-collector"]
+    ports:
+      - "9993:9993/udp"
+    volumes:
+      - ./output:/output
+    environment:
+      # Input: receive UDP packets on port 9993
+      - COLLECTOR_INPUT_TYPE=udp
+      # Output: write correlated records to a file
+      - COLLECTOR_OUTPUT_TYPE=file
+      - COLLECTOR_OUTPUT_PATH=/output/collector-output.jsonl
+      # Enable debug logging
+      - COLLECTOR_DEBUG=true
+```
+
+Start the collector:
+
+```bash
+# Create an output directory alongside the compose file
+mkdir -p output
+
+docker compose -f config/docker-compose-collector-test.yaml up
+```
+
+### Running Directly (Without Docker)
+
+```bash
+# Using the binary with a config file
+xrootd-monitoring-collector -c config-collector-test.yaml
+
+# Or using environment variables, without a config file
+COLLECTOR_INPUT_TYPE=udp \
+COLLECTOR_OUTPUT_TYPE=file \
+COLLECTOR_OUTPUT_PATH=/tmp/collector-output.jsonl \
+COLLECTOR_DEBUG=true \
+xrootd-monitoring-collector
+```
+
+### Enabling Debug Logging
+
+Debug logging reveals the full processing pipeline—incoming packets, parsed fields, and correlation decisions.
+
+**Via environment variable (recommended for Docker):**
+```bash
+COLLECTOR_DEBUG=true xrootd-monitoring-collector -c config.yaml
+```
+
+**Via configuration file:**
+```yaml
+debug: true
+```
+
+When debug is enabled, the collector logs details for every packet:
+
+```
+time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: =, IsXML: false, MapRecord: &{...}, UserRecord: <nil>, FileRecords: 0"
+time="..." level=debug msg="  MapRecord - DictId: 1, Info: /store/data/file.root"
+time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 1"
+time="..." level=debug msg="  FileRecord[0] - Open: FileId=42, User=1, Lfn=/store/data/file.root"
+time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 1"
+time="..." level=debug msg="  FileRecord[0] - Close: FileId=42, Read=131072, Write=0"
+```
+
+### Viewing the Output
+
+Each completed file operation (matched open + close) produces one JSON record appended to the output file. Watch it in real time:
+
+```bash
+# Tail the output file
+tail -f /tmp/collector-output.jsonl
+
+# Or, with Docker Compose (output mounted into ./output/)
+tail -f output/collector-output.jsonl
+
+# Pretty-print individual records
+cat /tmp/collector-output.jsonl | jq .
+```
+
+Example output record:
+
+```json
+{
+  "@timestamp": "2025-01-15T12:34:56Z",
+  "start_time": 1736944496,
+  "end_time": 1736944530,
+  "operation_time": 34000,
+  "read_operations": 5,
+  "read": 524288,
+  "write": 0,
+  "filename": "/store/data/file.root",
+  "HasFileCloseMsg": 1
+}
+```
+
+### Configuring XRootD to Send Monitoring Packets
+
+To generate real traffic, configure your XRootD server to forward monitoring packets to the collector's UDP port. Add the following to your XRootD configuration:
+
+```
+xrootd.monitor all flush 30s dest files stats info user <collector-host>:9993
+```
+
+Replace `<collector-host>` with the hostname or IP address where the collector is running.
 
 ## :compass: Design 
 
