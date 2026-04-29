@@ -72,6 +72,21 @@ var (
 		Help:    "Request latency in milliseconds (collector mode)",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 15),
 	})
+
+	GStreamPacketsEnqueued = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_gstream_packets_enqueued",
+		Help: "The total number of gstream packets accepted into the async worker queue",
+	})
+
+	GStreamQueueDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_gstream_queue_dropped",
+		Help: "The total number of gstream packets dropped because the bounded gstream queue was full",
+	})
+
+	GStreamQueueSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_gstream_queue_size",
+		Help: "Current number of pending gstream packets in the async worker queue",
+	})
 )
 
 func StartMetrics(metricsPort int) {

@@ -1,6 +1,8 @@
 package collector
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -985,4 +987,211 @@ func TestCorrelator_AppInfoFromInfoPacket(t *testing.T) {
 	// Verify the final record contains appinfo
 	assert.Equal(t, "xrdcl-pelican/1.2.1", recs[0].AppInfo, "AppInfo should be in the correlated record")
 	assert.Equal(t, "testuser", recs[0].User)
+}
+
+// makeGStreamPacket is a helper that builds a minimal gstream packet with one event.
+func makeGStreamPacket(remoteAddr string, streamType byte) *parser.Packet {
+	return &parser.Packet{
+		Header: parser.Header{
+			Code:        'g',
+			ServerStart: 1000,
+		},
+		RemoteAddr: remoteAddr,
+		GStreamRecord: &parser.GStreamRecord{
+			StreamType: streamType,
+			Events: []map[string]interface{}{
+				{"type": "test_event", "value": 42},
+			},
+		},
+	}
+}
+
+// TestProcessGStreamPacket_ServerHostname_DNSDisabled verifies that when DNS enrichment is
+// disabled the server_hostname field falls back to the raw server IP.
+func TestProcessGStreamPacket_ServerHostname_DNSDisabled(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	packet := makeGStreamPacket("192.0.2.1:1094", 'C')
+
+	events, streamType, err := correlator.ProcessGStreamPacket(packet)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, byte('C'), streamType)
+
+	event := events[0]
+	assert.Equal(t, "192.0.2.1", event["server_ip"])
+	// DNS disabled: server_hostname must equal the raw IP, not be empty
+	assert.Equal(t, "192.0.2.1", event["server_hostname"])
+	assert.Equal(t, "192.0.2.1:1094", event["from"])
+}
+
+// TestProcessGStreamPacket_ServerHostname_DNSCacheHit verifies that a pre-cached
+// hostname is used immediately without a new DNS lookup.
+func TestProcessGStreamPacket_ServerHostname_DNSCacheHit(t *testing.T) {
+	config := CorrelatorConfig{
+		TTL:                 5 * time.Second,
+		MaxEntries:          0,
+		EnableDNSEnrichment: true,
+		DNSCacheTTL:         time.Hour,
+		DNSTimeout:          2 * time.Second,
+	}
+	correlator := NewCorrelatorWithConfig(config)
+	defer correlator.Stop()
+
+	mock := &mockDNSResolver{
+		lookupFunc: func(_ context.Context, _ string) ([]string, error) {
+			t.Error("DNS lookup should not be called on cache hit")
+			return nil, nil
+		},
+	}
+	correlator.dnsResolver = mock
+
+	// Pre-populate the cache.
+	correlator.dnsCache.Set("192.0.2.2", "cached.example.com")
+
+	packet := makeGStreamPacket("192.0.2.2:1094", 'T')
+	events, _, err := correlator.ProcessGStreamPacket(packet)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	assert.Equal(t, "192.0.2.2", events[0]["server_ip"])
+	assert.Equal(t, "cached.example.com", events[0]["server_hostname"])
+	assert.Equal(t, int64(0), mock.lookupCount.Load(), "no DNS lookup expected on cache hit")
+}
+
+// TestProcessGStreamPacket_ServerHostname_DNSCacheMiss verifies that a DNS lookup is
+// performed when the IP is not yet in the cache, and the resolved hostname is used.
+func TestProcessGStreamPacket_ServerHostname_DNSCacheMiss(t *testing.T) {
+	config := CorrelatorConfig{
+		TTL:                 5 * time.Second,
+		MaxEntries:          0,
+		EnableDNSEnrichment: true,
+		DNSCacheTTL:         time.Hour,
+		DNSTimeout:          2 * time.Second,
+	}
+	correlator := NewCorrelatorWithConfig(config)
+	defer correlator.Stop()
+
+	correlator.dnsResolver = &mockDNSResolver{
+		lookupFunc: func(_ context.Context, addr string) ([]string, error) {
+			return []string{"resolved.example.com."}, nil
+		},
+	}
+
+	packet := makeGStreamPacket("192.0.2.3:1094", 'P')
+	events, _, err := correlator.ProcessGStreamPacket(packet)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	assert.Equal(t, "192.0.2.3", events[0]["server_ip"])
+	assert.Equal(t, "resolved.example.com", events[0]["server_hostname"])
+}
+
+// TestProcessGStreamPacket_ServerHostname_DNSFailure verifies that when DNS resolution
+// fails the server_hostname falls back to the raw IP (same as Python behaviour).
+func TestProcessGStreamPacket_ServerHostname_DNSFailure(t *testing.T) {
+	config := CorrelatorConfig{
+		TTL:                 5 * time.Second,
+		MaxEntries:          0,
+		EnableDNSEnrichment: true,
+		DNSCacheTTL:         time.Hour,
+		DNSTimeout:          2 * time.Second,
+	}
+	correlator := NewCorrelatorWithConfig(config)
+	defer correlator.Stop()
+
+	correlator.dnsResolver = &mockDNSResolver{
+		lookupFunc: func(_ context.Context, _ string) ([]string, error) {
+			return nil, errors.New("DNS lookup failed")
+		},
+	}
+
+	packet := makeGStreamPacket("192.0.2.4:1094", 'C')
+	events, _, err := correlator.ProcessGStreamPacket(packet)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	// Falls back to raw IP when DNS fails.
+	assert.Equal(t, "192.0.2.4", events[0]["server_ip"])
+	assert.Equal(t, "192.0.2.4", events[0]["server_hostname"])
+}
+
+// TestProcessGStreamPacket_ServerHostname_IPv6 verifies that bracketed IPv6 addresses
+// are correctly handled: net.SplitHostPort strips the brackets so server_ip and
+// server_hostname both contain the bare IPv6 string (or the resolved hostname).
+func TestProcessGStreamPacket_ServerHostname_IPv6(t *testing.T) {
+	config := CorrelatorConfig{
+		TTL:                 5 * time.Second,
+		MaxEntries:          0,
+		EnableDNSEnrichment: true,
+		DNSCacheTTL:         time.Hour,
+		DNSTimeout:          2 * time.Second,
+	}
+	correlator := NewCorrelatorWithConfig(config)
+	defer correlator.Stop()
+
+	correlator.dnsResolver = &mockDNSResolver{
+		lookupFunc: func(_ context.Context, addr string) ([]string, error) {
+			if addr == "2001:db8::1" {
+				return []string{"ipv6host.example.com."}, nil
+			}
+			return nil, errors.New("not found")
+		},
+	}
+
+	// net.SplitHostPort with a bracketed IPv6 address + port.
+	packet := makeGStreamPacket("[2001:db8::1]:1094", 'T')
+	events, _, err := correlator.ProcessGStreamPacket(packet)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	assert.Equal(t, "2001:db8::1", events[0]["server_ip"])
+	assert.Equal(t, "ipv6host.example.com", events[0]["server_hostname"])
+}
+
+// TestProcessGStreamPacket_NilGStreamRecord verifies that a nil GStreamRecord returns no events.
+func TestProcessGStreamPacket_NilGStreamRecord(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	packet := &parser.Packet{
+		Header:     parser.Header{ServerStart: 1000},
+		RemoteAddr: "192.0.2.1:1094",
+	}
+
+	events, streamType, err := correlator.ProcessGStreamPacket(packet)
+	require.NoError(t, err)
+	assert.Nil(t, events)
+	assert.Equal(t, byte(0), streamType)
+}
+
+// TestProcessGStreamPacket_MultipleEvents verifies that all events in a single
+// gstream packet receive the server_hostname field.
+func TestProcessGStreamPacket_MultipleEvents(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	packet := &parser.Packet{
+		Header:     parser.Header{Code: 'g', ServerStart: 1000},
+		RemoteAddr: "10.0.0.1:1094",
+		GStreamRecord: &parser.GStreamRecord{
+			StreamType: 'C',
+			Events: []map[string]interface{}{
+				{"id": "event1"},
+				{"id": "event2"},
+				{"id": "event3"},
+			},
+		},
+	}
+
+	events, _, err := correlator.ProcessGStreamPacket(packet)
+	require.NoError(t, err)
+	require.Len(t, events, 3)
+
+	for i, ev := range events {
+		assert.Equal(t, "10.0.0.1", ev["server_ip"], "event %d: server_ip", i)
+		assert.Equal(t, "10.0.0.1", ev["server_hostname"], "event %d: server_hostname (DNS disabled, falls back to IP)", i)
+		assert.Equal(t, "10.0.0.1:1094", ev["from"], "event %d: from", i)
+	}
 }

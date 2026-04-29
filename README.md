@@ -200,6 +200,8 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `COLLECTOR_STATE_DNS_CACHE_TTL` - DNS cache time-to-live in seconds (default: `3600`)
 * `COLLECTOR_STATE_ENRICHMENT_WORKERS` - Number of concurrent DNS enrichment worker routines (default: `5`)
 * `COLLECTOR_STATE_ENRICHMENT_QUEUE_SIZE` - Maximum pending DNS enrichment requests kept in memory (default: `1000000`)
+* `COLLECTOR_STATE_GSTREAM_WORKERS` - Number of concurrent gstream processing workers (default: `4`)
+* `COLLECTOR_STATE_GSTREAM_QUEUE_SIZE` - Maximum pending gstream packets kept in memory before drops (default: `20000`)
 * `COLLECTOR_STATE_DNS_TIMEOUT` - DNS query timeout in seconds (default: `2`)
 
 **Output Configuration (shoveler: `SHOVELER_OUTPUT_*`, collector: `COLLECTOR_OUTPUT_*`):**

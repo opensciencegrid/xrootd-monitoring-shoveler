@@ -299,6 +299,18 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 		host = addr
 	}
 
+	// Resolve server hostname via DNS lookup (mirrors Python _determineHostname).
+	// lookupDNSHostname checks the cache first and, on a miss, performs a bounded
+	// reverse DNS lookup and caches the result.  Falls back to the raw IP when DNS
+	// is disabled or the lookup fails.
+	serverHostname := host
+	if isIPPattern(host) {
+		ipStr := extractIPFromHost(host)
+		if resolved := c.lookupDNSHostname(c.ctx, ipStr); resolved != "" {
+			serverHostname = resolved
+		}
+	}
+
 	// Enrich each event with server information
 	enrichedEvents := make([]map[string]interface{}, 0, len(gstream.Events))
 	for _, event := range gstream.Events {
@@ -311,6 +323,7 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 		// Add server information
 		enrichedEvent["sid"] = serverID
 		enrichedEvent["server_ip"] = host
+		enrichedEvent["server_hostname"] = serverHostname
 		enrichedEvent["from"] = addr
 
 		enrichedEvents = append(enrichedEvents, enrichedEvent)
