@@ -299,11 +299,14 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 		host = addr
 	}
 
-	// Resolve server hostname via DNS cache (mirrors Python _determineHostname)
+	// Resolve server hostname via DNS lookup (mirrors Python _determineHostname).
+	// lookupDNSHostname checks the cache first and, on a miss, performs a bounded
+	// reverse DNS lookup and caches the result.  Falls back to the raw IP when DNS
+	// is disabled or the lookup fails.
 	serverHostname := host
 	if isIPPattern(host) {
 		ipStr := extractIPFromHost(host)
-		if resolved, _ := c.enrichWithDNSSync(ipStr); resolved != "" {
+		if resolved := c.lookupDNSHostname(c.ctx, ipStr); resolved != "" {
 			serverHostname = resolved
 		}
 	}
