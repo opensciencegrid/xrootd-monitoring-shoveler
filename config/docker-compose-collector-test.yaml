@@ -1,0 +1,33 @@
+# docker-compose-collector-test.yaml
+#
+# Starts the xrootd-monitoring-collector with a UDP input and a file output.
+# No message bus is required — correlated records are written to ./output/collector-output.jsonl.
+#
+# Usage:
+#   mkdir -p output
+#   docker compose -f config/docker-compose-collector-test.yaml up
+#
+# Watch results in real time:
+#   tail -f output/collector-output.jsonl
+#
+# XRootD servers should be configured to send monitoring packets to UDP port 9993:
+#   xrootd.monitor all flush 30s dest files stats info user <this-host>:9993
+
+services:
+  collector:
+    image: hub.opensciencegrid.org/opensciencegrid/xrootd-monitoring-shoveler:latest
+    entrypoint: ["/usr/bin/xrootd-monitoring-collector"]
+    ports:
+      - "9993:9993/udp"
+    volumes:
+      # Correlated records are written here; the directory is created by the
+      # "mkdir -p output" step above.
+      - ./output:/output
+    environment:
+      # Input: receive UDP packets on the default port (9993)
+      - COLLECTOR_INPUT_TYPE=udp
+      # Output: write correlated records to a local file (JSON Lines format)
+      - COLLECTOR_OUTPUT_TYPE=file
+      - COLLECTOR_OUTPUT_PATH=/output/collector-output.jsonl
+      # Enable debug logging to see parsed packet details and correlation logic
+      - COLLECTOR_DEBUG=true
