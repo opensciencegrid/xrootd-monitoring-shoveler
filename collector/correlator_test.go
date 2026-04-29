@@ -1118,8 +1118,8 @@ func TestProcessGStreamPacket_ServerHostname_DNSFailure(t *testing.T) {
 }
 
 // TestProcessGStreamPacket_ServerHostname_IPv6 verifies that bracketed IPv6 addresses
-// are correctly handled: server_ip holds the bracketed form and server_hostname is the
-// resolved hostname (or raw IPv6 on failure).
+// are correctly handled: net.SplitHostPort strips the brackets so server_ip and
+// server_hostname both contain the bare IPv6 string (or the resolved hostname).
 func TestProcessGStreamPacket_ServerHostname_IPv6(t *testing.T) {
 	config := CorrelatorConfig{
 		TTL:                 5 * time.Second,

@@ -162,19 +162,6 @@ func startRecordPublisher(output connectors.OutputConnector, logger *logrus.Logg
 	return records, &publisherWG
 }
 
-func isPowerOfTen(n int64) bool {
-	if n <= 0 {
-		return false
-	}
-	for n > 1 {
-		if n%10 != 0 {
-			return false
-		}
-		n /= 10
-	}
-	return true
-}
-
 func startGStreamWorkers(correlator *collector.Correlator, config *shoveler.Config, output connectors.OutputConnector, logger *logrus.Logger) (chan *parser.Packet, *sync.WaitGroup, *int64) {
 	queueSize := config.State.GStreamQueueSize
 	if queueSize <= 0 {
@@ -355,7 +342,7 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 		default:
 			shoveler.GStreamQueueDropped.Inc()
 			n := atomic.AddInt64(gstreamDropCount, 1)
-			if isPowerOfTen(n) {
+			if collector.IsPowerOfTen(n) {
 				logger.Warnf("gstream queue full (capacity %d); %d packets dropped total", cap(gstreamPackets), n)
 			}
 		}

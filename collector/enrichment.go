@@ -195,7 +195,7 @@ func (c *Correlator) EnqueueForEnrichment(record *CollectorRecord, destination E
 			n := atomic.AddInt64(&c.enrichmentDropCount, 1)
 			// Log at Warn only on the first drop and at power-of-10 thresholds
 			// to limit log volume during sustained overload.
-			if isPowerOfTen(n) {
+			if IsPowerOfTen(n) {
 				c.logger.Warnf("enrichment queue full (capacity %d); %d records dropped total", c.enrichmentQueue.capacity, n)
 			}
 		}
@@ -387,10 +387,10 @@ func extractDomainFromHostname(hostname string) string {
 	return strings.Join(parts[len(parts)-2:], ".")
 }
 
-// isPowerOfTen returns true when n is a positive power of ten (1, 10, 100, …).
+// IsPowerOfTen returns true when n is a positive power of ten (1, 10, 100, …).
 // Used to rate-limit warning logs so they are emitted at most O(log₁₀ n) times
 // across any number of drop events.
-func isPowerOfTen(n int64) bool {
+func IsPowerOfTen(n int64) bool {
 	if n <= 0 {
 		return false
 	}
