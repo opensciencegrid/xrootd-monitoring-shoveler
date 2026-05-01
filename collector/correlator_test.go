@@ -1150,6 +1150,38 @@ func TestProcessGStreamPacket_ServerHostname_IPv6(t *testing.T) {
 	assert.Equal(t, "ipv6host.example.com", events[0]["server_hostname"])
 }
 
+// TestProcessGStreamPacket_ServerHostname_IPv6_UnbracketedWithPort verifies that
+// legacy unbracketed IPv6:port values are parsed correctly and still DNS-resolved.
+func TestProcessGStreamPacket_ServerHostname_IPv6_UnbracketedWithPort(t *testing.T) {
+	config := CorrelatorConfig{
+		TTL:                 5 * time.Second,
+		MaxEntries:          0,
+		EnableDNSEnrichment: true,
+		DNSCacheTTL:         time.Hour,
+		DNSTimeout:          2 * time.Second,
+	}
+	correlator := NewCorrelatorWithConfig(config)
+	defer correlator.Stop()
+
+	correlator.dnsResolver = &mockDNSResolver{
+		lookupFunc: func(_ context.Context, addr string) ([]string, error) {
+			if addr == "2607:f388:101c:1000::88" {
+				return []string{"resolved-v6.example.org."}, nil
+			}
+			return nil, errors.New("not found")
+		},
+	}
+
+	packet := makeGStreamPacket("2607:f388:101c:1000::88:51158", 'C')
+	events, _, err := correlator.ProcessGStreamPacket(packet)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	assert.Equal(t, "2607:f388:101c:1000::88", events[0]["server_ip"])
+	assert.Equal(t, "resolved-v6.example.org", events[0]["server_hostname"])
+	assert.Equal(t, "2607:f388:101c:1000::88:51158", events[0]["from"])
+}
+
 // TestProcessGStreamPacket_NilGStreamRecord verifies that a nil GStreamRecord returns no events.
 func TestProcessGStreamPacket_NilGStreamRecord(t *testing.T) {
 	correlator := NewCorrelator(5*time.Second, 0, nil)

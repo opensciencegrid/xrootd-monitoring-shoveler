@@ -292,12 +292,7 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 
 	// Extract address from packet
 	addr := packet.RemoteAddr
-	// Remove port for IP address
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		// If split fails, use the whole address
-		host = addr
-	}
+	host := extractHostFromRemoteAddr(addr)
 
 	// Resolve server hostname via DNS lookup (mirrors Python _determineHostname).
 	// lookupDNSHostname checks the cache first and, on a miss, performs a bounded
@@ -568,6 +563,10 @@ func extractIPFromHost(host string) string {
 	}
 	// Remove brackets for IPv6 (e.g., "[::ffff:192.168.1.1]" -> "::ffff:192.168.1.1")
 	host = strings.Trim(host, "[]")
+	// Remove zone suffix for scoped IPv6 literals (e.g., "fe80::1%en0").
+	if zoneIdx := strings.LastIndex(host, "%"); zoneIdx >= 0 {
+		host = host[:zoneIdx]
+	}
 
 	// For IPv4-in-IPv6 representations – both IPv4-mapped (::ffff:a.b.c.d)
 	// and IPv4-compatible (::a.b.c.d) – extract the IPv4 portion so that
@@ -594,6 +593,40 @@ func extractIPFromHost(host string) string {
 		}
 	}
 	return host
+}
+
+// extractHostFromRemoteAddr extracts a host from remote address strings.
+// Handles the normal forms "host:port" and "[ipv6]:port", plus legacy
+// unbracketed "ipv6:port" values observed in some message payloads.
+func extractHostFromRemoteAddr(remoteAddr string) string {
+	if remoteAddr == "" {
+		return ""
+	}
+
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return host
+	}
+
+	// Try legacy unbracketed IPv6-with-port. We only split on the final colon
+	// when the suffix is a valid port and the prefix parses as an IP literal.
+	if strings.Count(remoteAddr, ":") > 1 {
+		idx := strings.LastIndex(remoteAddr, ":")
+		if idx > 0 && idx < len(remoteAddr)-1 {
+			hostCandidate := remoteAddr[:idx]
+			portCandidate := remoteAddr[idx+1:]
+			if port, err := strconv.Atoi(portCandidate); err == nil && port >= 0 && port <= 65535 {
+				testHost := strings.Trim(hostCandidate, "[]")
+				if zoneIdx := strings.LastIndex(testHost, "%"); zoneIdx >= 0 {
+					testHost = testHost[:zoneIdx]
+				}
+				if net.ParseIP(testHost) != nil {
+					return hostCandidate
+				}
+			}
+		}
+	}
+
+	return remoteAddr
 }
 
 // handleFileOpen handles a file open event
@@ -1058,16 +1091,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	var needsServerDNS bool
 	var serverEnrichmentIP string
 	if packet.RemoteAddr != "" {
-		// RemoteAddr is in format "host:port" or "[ipv6]:port"
-		host, _, err := net.SplitHostPort(packet.RemoteAddr)
-		if err == nil {
-			serverIP = host
-			serverHostname = host
-		} else {
-			// If SplitHostPort fails, use the whole RemoteAddr
-			serverIP = packet.RemoteAddr
-			serverHostname = packet.RemoteAddr
-		}
+		serverIP = extractHostFromRemoteAddr(packet.RemoteAddr)
+		serverHostname = serverIP
 
 		// Try DNS enrichment for server hostname
 		if isIPPattern(serverIP) {
