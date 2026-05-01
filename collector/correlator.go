@@ -596,8 +596,8 @@ func extractIPFromHost(host string) string {
 }
 
 // extractHostFromRemoteAddr extracts a host from remote address strings.
-// Handles the normal forms "host:port" and "[ipv6]:port", plus legacy
-// unbracketed "ipv6:port" values observed in some message payloads.
+// Handles the normal forms "host:port" and "[ipv6]:port", plus unambiguous
+// legacy unbracketed "ipv6:port" values observed in some message payloads.
 func extractHostFromRemoteAddr(remoteAddr string) string {
 	if remoteAddr == "" {
 		return ""
@@ -605,6 +605,17 @@ func extractHostFromRemoteAddr(remoteAddr string) string {
 
 	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
 		return host
+	}
+
+	trimmed := strings.Trim(remoteAddr, "[]")
+	if zoneIdx := strings.LastIndex(trimmed, "%"); zoneIdx >= 0 {
+		trimmed = trimmed[:zoneIdx]
+	}
+
+	// If this is already a bare IP literal (with optional brackets/zone),
+	// keep it unchanged and do not attempt legacy host:port splitting.
+	if net.ParseIP(trimmed) != nil {
+		return remoteAddr
 	}
 
 	// Try legacy unbracketed IPv6-with-port. We only split on the final colon
@@ -624,16 +635,6 @@ func extractHostFromRemoteAddr(remoteAddr string) string {
 				}
 			}
 		}
-	}
-
-	// If this is already a bare IP literal (with optional brackets/zone),
-	// keep it unchanged.
-	trimmed := strings.Trim(remoteAddr, "[]")
-	if zoneIdx := strings.LastIndex(trimmed, "%"); zoneIdx >= 0 {
-		trimmed = trimmed[:zoneIdx]
-	}
-	if net.ParseIP(trimmed) != nil {
-		return remoteAddr
 	}
 
 	return remoteAddr

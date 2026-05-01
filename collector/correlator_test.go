@@ -1286,6 +1286,11 @@ func TestExtractHostFromRemoteAddr_BareIPv6NotTruncated(t *testing.T) {
 	assert.Equal(t, addr, extractHostFromRemoteAddr(addr))
 }
 
+func TestExtractHostFromRemoteAddr_BareIPv6NumericTailNotSplit(t *testing.T) {
+	addr := "2001:db8::1:80"
+	assert.Equal(t, addr, extractHostFromRemoteAddr(addr))
+}
+
 func TestExtractHostFromRemoteAddr_UnbracketedIPv6WithPort(t *testing.T) {
 	addr := "2607:f388:101c:1000::88:51158"
 	assert.Equal(t, "2607:f388:101c:1000::88", extractHostFromRemoteAddr(addr))
@@ -1293,5 +1298,7 @@ func TestExtractHostFromRemoteAddr_UnbracketedIPv6WithPort(t *testing.T) {
 
 func TestExtractHostFromRemoteAddr_UnbracketedIPv6WithShortPort(t *testing.T) {
 	addr := "2607:f388:101c:1000::88:1094"
-	assert.Equal(t, "2607:f388:101c:1000::88", extractHostFromRemoteAddr(addr))
+	// Ambiguous case: full string is also a syntactically valid IPv6 literal,
+	// so parser should preserve it as-is rather than truncate.
+	assert.Equal(t, addr, extractHostFromRemoteAddr(addr))
 }
