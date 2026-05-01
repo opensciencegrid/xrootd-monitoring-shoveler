@@ -1150,6 +1150,38 @@ func TestProcessGStreamPacket_ServerHostname_IPv6(t *testing.T) {
 	assert.Equal(t, "ipv6host.example.com", events[0]["server_hostname"])
 }
 
+// TestProcessGStreamPacket_ServerHostname_IPv6_UnbracketedWithPort verifies that
+// legacy unbracketed IPv6:port values are parsed correctly and still DNS-resolved.
+func TestProcessGStreamPacket_ServerHostname_IPv6_UnbracketedWithPort(t *testing.T) {
+	config := CorrelatorConfig{
+		TTL:                 5 * time.Second,
+		MaxEntries:          0,
+		EnableDNSEnrichment: true,
+		DNSCacheTTL:         time.Hour,
+		DNSTimeout:          2 * time.Second,
+	}
+	correlator := NewCorrelatorWithConfig(config)
+	defer correlator.Stop()
+
+	correlator.dnsResolver = &mockDNSResolver{
+		lookupFunc: func(_ context.Context, addr string) ([]string, error) {
+			if addr == "2607:f388:101c:1000::88" {
+				return []string{"resolved-v6.example.org."}, nil
+			}
+			return nil, errors.New("not found")
+		},
+	}
+
+	packet := makeGStreamPacket("2607:f388:101c:1000::88:51158", 'C')
+	events, _, err := correlator.ProcessGStreamPacket(packet)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+
+	assert.Equal(t, "2607:f388:101c:1000::88", events[0]["server_ip"])
+	assert.Equal(t, "resolved-v6.example.org", events[0]["server_hostname"])
+	assert.Equal(t, "2607:f388:101c:1000::88:51158", events[0]["from"])
+}
+
 // TestProcessGStreamPacket_NilGStreamRecord verifies that a nil GStreamRecord returns no events.
 func TestProcessGStreamPacket_NilGStreamRecord(t *testing.T) {
 	correlator := NewCorrelator(5*time.Second, 0, nil)
@@ -1194,4 +1226,79 @@ func TestProcessGStreamPacket_MultipleEvents(t *testing.T) {
 		assert.Equal(t, "10.0.0.1", ev["server_hostname"], "event %d: server_hostname (DNS disabled, falls back to IP)", i)
 		assert.Equal(t, "10.0.0.1:1094", ev["from"], "event %d: from", i)
 	}
+}
+
+func TestNormalizeVO(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "empty", input: "", expected: ""},
+		{name: "single", input: "cms", expected: "cms"},
+		{name: "duplicate repeated", input: "cms cms cms", expected: "cms"},
+		{name: "duplicate mixed case", input: "CMS cms CmS", expected: "CMS"},
+		{name: "multiple unique", input: "cms atlas cms osg", expected: "cms atlas osg"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, normalizeVO(tt.input))
+		})
+	}
+}
+
+func TestCreateCorrelatedRecord_NormalizesVO(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 100, nil)
+	defer correlator.Stop()
+
+	serverID := BuildServerID(1000, "192.0.2.10:1094")
+	userInfo := parser.UserInfo{Username: "alice", Host: "client.example.org", Protocol: "root"}
+	userState := &UserState{
+		UserID:    42,
+		UserInfo:  userInfo,
+		AuthInfo:  parser.AuthInfo{Org: "cms cms cms"},
+		CreatedAt: time.Now(),
+	}
+	correlator.userMap.Set(BuildUserInfoKey(serverID, userInfo), userState)
+	correlator.dictMap.Set(BuildDictIDKey(serverID, 42), userInfo)
+
+	state := &FileState{
+		FileID:    1,
+		UserID:    42,
+		OpenTime:  1000,
+		FileSize:  123,
+		Filename:  "/store/test.root",
+		ServerID:  serverID,
+		CreatedAt: time.Now(),
+	}
+
+	packet := &parser.Packet{Header: parser.Header{ServerStart: 1000}, RemoteAddr: "192.0.2.10:1094"}
+	closeRec := parser.FileCloseRecord{Header: parser.FileHeader{FileId: 1, UserId: 42}}
+
+	record := correlator.createCorrelatedRecord(state, closeRec, packet)
+	require.NotNil(t, record)
+	assert.Equal(t, "cms", record.VO)
+}
+
+func TestExtractHostFromRemoteAddr_BareIPv6NotTruncated(t *testing.T) {
+	addr := "2001:db8::1:beef"
+	assert.Equal(t, addr, extractHostFromRemoteAddr(addr))
+}
+
+func TestExtractHostFromRemoteAddr_BareIPv6NumericTailNotSplit(t *testing.T) {
+	addr := "2001:db8::1:80"
+	assert.Equal(t, addr, extractHostFromRemoteAddr(addr))
+}
+
+func TestExtractHostFromRemoteAddr_UnbracketedIPv6WithPort(t *testing.T) {
+	addr := "2607:f388:101c:1000::88:51158"
+	assert.Equal(t, "2607:f388:101c:1000::88", extractHostFromRemoteAddr(addr))
+}
+
+func TestExtractHostFromRemoteAddr_UnbracketedIPv6WithShortPort(t *testing.T) {
+	addr := "2607:f388:101c:1000::88:1094"
+	// Ambiguous case: full string is also a syntactically valid IPv6 literal,
+	// so parser should preserve it as-is rather than truncate.
+	assert.Equal(t, addr, extractHostFromRemoteAddr(addr))
 }
