@@ -607,16 +607,6 @@ func extractHostFromRemoteAddr(remoteAddr string) string {
 		return host
 	}
 
-	// If this is already a bare IP literal (with optional brackets/zone),
-	// return it unchanged so a numeric trailing hextet is not mistaken for a port.
-	trimmed := strings.Trim(remoteAddr, "[]")
-	if zoneIdx := strings.LastIndex(trimmed, "%"); zoneIdx >= 0 {
-		trimmed = trimmed[:zoneIdx]
-	}
-	if net.ParseIP(trimmed) != nil {
-		return remoteAddr
-	}
-
 	// Try legacy unbracketed IPv6-with-port. We only split on the final colon
 	// when the suffix is a valid port and the prefix parses as an IP literal.
 	if strings.Count(remoteAddr, ":") > 1 {
@@ -634,6 +624,16 @@ func extractHostFromRemoteAddr(remoteAddr string) string {
 				}
 			}
 		}
+	}
+
+	// If this is already a bare IP literal (with optional brackets/zone),
+	// keep it unchanged.
+	trimmed := strings.Trim(remoteAddr, "[]")
+	if zoneIdx := strings.LastIndex(trimmed, "%"); zoneIdx >= 0 {
+		trimmed = trimmed[:zoneIdx]
+	}
+	if net.ParseIP(trimmed) != nil {
+		return remoteAddr
 	}
 
 	return remoteAddr
