@@ -1227,3 +1227,56 @@ func TestProcessGStreamPacket_MultipleEvents(t *testing.T) {
 		assert.Equal(t, "10.0.0.1:1094", ev["from"], "event %d: from", i)
 	}
 }
+
+func TestNormalizeVO(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "empty", input: "", expected: ""},
+		{name: "single", input: "cms", expected: "cms"},
+		{name: "duplicate repeated", input: "cms cms cms", expected: "cms"},
+		{name: "duplicate mixed case", input: "CMS cms CmS", expected: "CMS"},
+		{name: "multiple unique", input: "cms atlas cms osg", expected: "cms atlas osg"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, normalizeVO(tt.input))
+		})
+	}
+}
+
+func TestCreateCorrelatedRecord_NormalizesVO(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 100, nil)
+	defer correlator.Stop()
+
+	serverID := BuildServerID(1000, "192.0.2.10:1094")
+	userInfo := parser.UserInfo{Username: "alice", Host: "client.example.org", Protocol: "root"}
+	userState := &UserState{
+		UserID:    42,
+		UserInfo:  userInfo,
+		AuthInfo:  parser.AuthInfo{Org: "cms cms cms"},
+		CreatedAt: time.Now(),
+	}
+	correlator.userMap.Set(BuildUserInfoKey(serverID, userInfo), userState)
+	correlator.dictMap.Set(BuildDictIDKey(serverID, 42), userInfo)
+
+	state := &FileState{
+		FileID:    1,
+		UserID:    42,
+		OpenTime:  1000,
+		FileSize:  123,
+		Filename:  "/store/test.root",
+		ServerID:  serverID,
+		CreatedAt: time.Now(),
+	}
+
+	packet := &parser.Packet{Header: parser.Header{ServerStart: 1000}, RemoteAddr: "192.0.2.10:1094"}
+	closeRec := parser.FileCloseRecord{Header: parser.FileHeader{FileId: 1, UserId: 42}}
+
+	record := correlator.createCorrelatedRecord(state, closeRec, packet)
+	require.NotNil(t, record)
+	assert.Equal(t, "cms", record.VO)
+}

@@ -629,6 +629,32 @@ func extractHostFromRemoteAddr(remoteAddr string) string {
 	return remoteAddr
 }
 
+// normalizeVO collapses duplicate whitespace-separated VO tokens while preserving
+// first-seen token order. This protects downstream output from repeated values
+// such as "cms cms cms" emitted by some upstream auth records.
+func normalizeVO(raw string) string {
+	tokens := strings.Fields(raw)
+	if len(tokens) == 0 {
+		return ""
+	}
+
+	seen := make(map[string]struct{}, len(tokens))
+	unique := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
+		k := strings.ToLower(token)
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		unique = append(unique, token)
+	}
+
+	return strings.Join(unique, " ")
+}
+
 // handleFileOpen handles a file open event
 func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Packet, serverID string) (*CollectorRecord, error) {
 	// Filename may come from Lfn field OR from dictid lookup
@@ -1043,7 +1069,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 
 		// Extract VO from authInfo.Org field
 		if userInfo.AuthInfo.Org != "" {
-			vo = userInfo.AuthInfo.Org
+			vo = normalizeVO(userInfo.AuthInfo.Org)
 		}
 
 		// Use appInfo if available
