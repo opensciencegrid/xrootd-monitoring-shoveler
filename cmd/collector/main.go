@@ -362,6 +362,43 @@ func handleParsedPacket(packet *parser.Packet, correlator *collector.Correlator,
 	}
 }
 
+// packetTypeLabel returns the shoveler_packets_by_type label value for a parsed packet.
+// XML summary packets (byte '<') are labelled "xml". All other types use the human-readable
+// name that corresponds to the XRootD frame code byte stored in packet.PacketType.
+func packetTypeLabel(packet *parser.Packet) string {
+	if packet.IsXML {
+		return "xml"
+	}
+	switch packet.PacketType {
+	case parser.PacketTypeFStat:
+		return "fstat"
+	case parser.PacketTypeDictID:
+		return "dict"
+	case parser.PacketTypeUser:
+		return "user"
+	case parser.PacketTypeEAInfo:
+		return "eainfo"
+	case parser.PacketTypeMap:
+		return "map"
+	case parser.PacketTypeGStream:
+		return "gstream"
+	case parser.PacketTypeInfo:
+		return "info"
+	case parser.PacketTypeTrace:
+		return "trace"
+	case parser.PacketTypeToken:
+		return "token"
+	case parser.PacketTypePurg:
+		return "purge"
+	case parser.PacketTypeRedir:
+		return "redir"
+	case parser.PacketTypeXFR:
+		return "xfr"
+	default:
+		return "unknown"
+	}
+}
+
 // processPackets is the common packet processing loop for all input types
 func processPackets(source input.PacketSource, correlator *collector.Correlator, gstreamPackets chan *parser.Packet, gstreamDropCount *int64, enrichmentDestination collector.EnrichmentDestination, logger *logrus.Logger) {
 	for pktWithAddr := range source.PacketsWithAddr() {
@@ -379,6 +416,9 @@ func processPackets(source input.PacketSource, correlator *collector.Correlator,
 			continue
 		}
 		shoveler.PacketsParsedOK.Inc()
+		if packet != nil {
+			shoveler.PacketsByType.WithLabelValues(packetTypeLabel(packet)).Inc()
+		}
 
 		// Set remote address for server ID calculation
 		if packet != nil {

@@ -87,6 +87,18 @@ var (
 		Name: "shoveler_gstream_queue_size",
 		Help: "Current number of pending gstream packets in the async worker queue",
 	})
+
+	// PacketsByType counts successfully parsed packets broken down by XRootD frame type.
+	// Label values: "fstat" (f), "dict" (d), "user" (u), "eainfo" (U), "map" (=),
+	// "gstream" (g), "info" (i), "trace" (t), "token" (T), "purge" (p), "redir" (r),
+	// "xfr" (x), and "xml" (XML summary packets).
+	// Use this alongside shoveler_records_emitted: when records_emitted is low relative
+	// to packets_received but "fstat" counts are also low, the traffic is dominated by
+	// context packets (dict/user/eainfo/map) rather than missing close events.
+	PacketsByType = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "shoveler_packets_by_type",
+		Help: "Total number of successfully parsed packets, partitioned by XRootD packet type",
+	}, []string{"packet_type"})
 )
 
 func StartMetrics(metricsPort int) {
