@@ -1,0 +1,15 @@
+[Unit]
+Description=XRootD Monitoring Collector - parses UDP monitoring packets and ships them to a message bus
+Requires=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/xrootd-monitoring-collector
+EnvironmentFile=-/etc/sysconfig/xrootd-monitoring-collector
+User=xrootd-monitoring-shoveler
+Group=xrootd-monitoring-shoveler
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
