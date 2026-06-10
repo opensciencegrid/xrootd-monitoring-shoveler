@@ -119,6 +119,8 @@ nfpms:
         type: "config|noreplace"
       - src: config/xrootd-monitoring-shoveler.service
         dst: /usr/lib/systemd/system/xrootd-monitoring-shoveler.service
+      - src: config/xrootd-monitoring-collector.service
+        dst: /usr/lib/systemd/system/xrootd-monitoring-collector.service
       - dst: /var/spool/xrootd-monitoring-shoveler
         type: dir
         file_info:
