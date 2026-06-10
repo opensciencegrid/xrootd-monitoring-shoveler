@@ -2,6 +2,7 @@ package shoveler
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -125,7 +126,7 @@ func GetStompConnection(session *StompSession) (*stomp.Conn, error) {
 	if session.cert != nil {
 		netConn, err := tls.Dial("tcp", session.stompUrl.String(), &tls.Config{Certificates: session.cert})
 		if err != nil {
-			log.Errorln("Failed to connect using TLS:", err.Error())
+			return nil, fmt.Errorf("failed to connect using TLS: %w", err)
 		}
 		return stomp.Connect(netConn)
 	}
