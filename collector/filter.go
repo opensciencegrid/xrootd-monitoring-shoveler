@@ -16,8 +16,8 @@ var (
 // recordsDropped counts records silently dropped by the filter before publishing.
 // The "reason" label is either "vo" or "path_prefix".
 var recordsDropped = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "shoveler_records_dropped_total",
-	Help: "Total number of records dropped by the filter before publishing, labeled by reason (vo or path_prefix)",
+	Name: "shoveler_records_dropped",
+	Help: "The total number of records dropped by the filter before publishing, labeled by reason (vo or path_prefix)",
 }, []string{"reason"})
 
 // matchesWLCG returns true when the record should be routed to the WLCG exchange.
