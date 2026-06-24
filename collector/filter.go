@@ -23,9 +23,13 @@ var recordsDropped = promauto.NewCounterVec(prometheus.CounterOpts{
 // matchesWLCG returns true when the record should be routed to the WLCG exchange.
 // It checks c.wlcgVOs (case-insensitive exact match) and c.wlcgPathPrefixes (HasPrefix).
 func (c *Correlator) matchesWLCG(record *CollectorRecord) bool {
+	return matchesWLCGWithRules(record, c.wlcgVOs, c.wlcgPathPrefixes)
+}
+
+func matchesWLCGWithRules(record *CollectorRecord, wlcgVOs, wlcgPathPrefixes []string) bool {
 	recordVO := strings.ToLower(strings.TrimSpace(record.VO))
 	if recordVO != "" {
-		for _, vo := range c.wlcgVOs {
+		for _, vo := range wlcgVOs {
 			if strings.ToLower(strings.TrimSpace(vo)) == recordVO {
 				return true
 			}
@@ -33,7 +37,7 @@ func (c *Correlator) matchesWLCG(record *CollectorRecord) bool {
 	}
 
 	filename := strings.TrimSpace(record.Filename)
-	for _, prefix := range c.wlcgPathPrefixes {
+	for _, prefix := range wlcgPathPrefixes {
 		prefix = strings.TrimSpace(prefix)
 		if prefix != "" && strings.HasPrefix(filename, prefix) {
 			return true

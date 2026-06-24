@@ -207,11 +207,11 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 
 	wlcgVOs := config.WLCGVOs
 	if wlcgVOs == nil {
-		wlcgVOs = defaultWLCGVOs
+		wlcgVOs = append([]string(nil), defaultWLCGVOs...)
 	}
 	wlcgPathPrefixes := config.WLCGPathPrefixes
 	if wlcgPathPrefixes == nil {
-		wlcgPathPrefixes = defaultWLCGPathPrefixes
+		wlcgPathPrefixes = append([]string(nil), defaultWLCGPathPrefixes...)
 	}
 
 	c := &Correlator{

@@ -71,6 +71,23 @@ func TestMatchesWLCG_DefaultConfig(t *testing.T) {
 	}
 }
 
+func TestMatchesWLCG_DefaultConfigCopiesDefaultSlices(t *testing.T) {
+	c := newTestCorrelator(CorrelatorConfig{
+		TTL: time.Minute,
+	})
+	defer c.Stop()
+
+	c.wlcgVOs[0] = "atlas"
+	c.wlcgPathPrefixes[0] = "/eos/atlas"
+
+	if defaultWLCGVOs[0] != "cms" {
+		t.Fatalf("defaultWLCGVOs was mutated: got %q, want %q", defaultWLCGVOs[0], "cms")
+	}
+	if defaultWLCGPathPrefixes[0] != "/store" {
+		t.Fatalf("defaultWLCGPathPrefixes was mutated: got %q, want %q", defaultWLCGPathPrefixes[0], "/store")
+	}
+}
+
 func TestMatchesWLCG_ExplicitEmptyConfigDisablesDefaults(t *testing.T) {
 	c := newTestCorrelator(CorrelatorConfig{
 		TTL:              time.Minute,
