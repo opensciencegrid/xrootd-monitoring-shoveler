@@ -8,6 +8,16 @@ import (
 	"github.com/spf13/viper"
 )
 
+type WLCGConfig struct {
+	VOs          []string // case-insensitive exact match; defaults to ["cms"]
+	PathPrefixes []string // HasPrefix match; defaults to ["/store", "/user/dteam"]
+}
+
+type FilterConfig struct {
+	DropPathPrefixes []string // records whose path matches any prefix are dropped entirely
+	DropVOs          []string // records whose VO matches (case-insensitive) are dropped entirely
+}
+
 type InputConfig struct {
 	Type          string // "udp", "file", or "rabbitmq"
 	Host          string
@@ -79,6 +89,8 @@ type Config struct {
 	QueueDir              string
 	IpMapAll              string
 	IpMap                 map[string]string
+	WLCG                  WLCGConfig
+	Filter                FilterConfig
 }
 
 func (c *Config) ReadConfig() {
@@ -303,4 +315,15 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 
 	// If the map is not set
 	c.IpMap = viper.GetStringMapString("map")
+
+	// WLCG routing configuration (collector mode only)
+	// Defaults preserve current behavior: CMS VO and /store, /user/dteam paths.
+	viper.SetDefault("wlcg.vos", []string{"cms"})
+	viper.SetDefault("wlcg.path_prefixes", []string{"/store", "/user/dteam"})
+	c.WLCG.VOs = viper.GetStringSlice("wlcg.vos")
+	c.WLCG.PathPrefixes = viper.GetStringSlice("wlcg.path_prefixes")
+
+	// Record drop filter (collector mode only); defaults to drop nothing.
+	c.Filter.DropPathPrefixes = viper.GetStringSlice("filter.drop_path_prefixes")
+	c.Filter.DropVOs = viper.GetStringSlice("filter.drop_vos")
 }

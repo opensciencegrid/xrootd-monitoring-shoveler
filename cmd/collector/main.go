@@ -269,6 +269,10 @@ func buildCorrelatorConfig(config *shoveler.Config, logger *logrus.Logger) colle
 		EnrichmentWorkers:   config.State.EnrichmentWorkers,
 		EnrichmentQueueSize: config.State.EnrichmentQueueSize,
 		Logger:              logger,
+		WLCGVOs:             config.WLCG.VOs,
+		WLCGPathPrefixes:    config.WLCG.PathPrefixes,
+		DropPathPrefixes:    config.Filter.DropPathPrefixes,
+		DropVOs:             config.Filter.DropVOs,
 	}
 
 	return correlatorConfig
