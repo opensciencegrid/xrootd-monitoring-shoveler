@@ -34,6 +34,7 @@ func (c *Correlator) matchesWLCG(record *CollectorRecord) bool {
 
 	filename := strings.TrimSpace(record.Filename)
 	for _, prefix := range c.wlcgPathPrefixes {
+		prefix = strings.TrimSpace(prefix)
 		if prefix != "" && strings.HasPrefix(filename, prefix) {
 			return true
 		}
@@ -57,6 +58,7 @@ func (c *Correlator) shouldDrop(record *CollectorRecord) (bool, string) {
 
 	filename := strings.TrimSpace(record.Filename)
 	for _, prefix := range c.dropPathPrefixes {
+		prefix = strings.TrimSpace(prefix)
 		if prefix != "" && strings.HasPrefix(filename, prefix) {
 			return true, "path_prefix"
 		}

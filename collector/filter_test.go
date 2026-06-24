@@ -8,12 +8,8 @@ import (
 )
 
 // newTestCorrelator creates a minimal correlator suitable for filter tests.
-// It starts no enrichment workers so processEnrichmentRequest can be called
-// synchronously via a direct call.
 func newTestCorrelator(cfg CorrelatorConfig) *Correlator {
-	// Ensure logger is set
-	c := NewCorrelatorWithConfig(cfg)
-	return c
+	return NewCorrelatorWithConfig(cfg)
 }
 
 // ---- WLCG match tests -------------------------------------------------------
@@ -24,7 +20,7 @@ func TestMatchesWLCG_DefaultConfig(t *testing.T) {
 	c := newTestCorrelator(CorrelatorConfig{
 		TTL:    time.Minute,
 		Logger: nil,
-		// WLCGVOs and WLCGPathPrefixes intentionally left empty → defaults apply
+		// WLCGVOs and WLCGPathPrefixes intentionally left unset → defaults apply
 	})
 	defer c.Stop()
 
@@ -75,11 +71,42 @@ func TestMatchesWLCG_DefaultConfig(t *testing.T) {
 	}
 }
 
+func TestMatchesWLCG_ExplicitEmptyConfigDisablesDefaults(t *testing.T) {
+	c := newTestCorrelator(CorrelatorConfig{
+		TTL:              time.Minute,
+		WLCGVOs:          []string{},
+		WLCGPathPrefixes: []string{},
+	})
+	defer c.Stop()
+
+	tests := []struct {
+		name   string
+		record *CollectorRecord
+	}{
+		{
+			name:   "default VO cms no longer matches",
+			record: &CollectorRecord{VO: "cms", Filename: "/other/path"},
+		},
+		{
+			name:   "default path /store no longer matches",
+			record: &CollectorRecord{VO: "osg", Filename: "/store/data/file.root"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if c.matchesWLCG(tt.record) {
+				t.Errorf("matchesWLCG() = true, want false")
+			}
+		})
+	}
+}
+
 func TestMatchesWLCG_CustomConfig(t *testing.T) {
 	c := newTestCorrelator(CorrelatorConfig{
 		TTL:              time.Minute,
 		WLCGVOs:          []string{"atlas", "lhcb"},
-		WLCGPathPrefixes: []string{"/eos/atlas"},
+		WLCGPathPrefixes: []string{"/eos/atlas "},
 	})
 	defer c.Stop()
 
@@ -212,7 +239,7 @@ func TestShouldDrop_ByVO(t *testing.T) {
 func TestShouldDrop_ByPathPrefix(t *testing.T) {
 	c := newTestCorrelator(CorrelatorConfig{
 		TTL:              time.Minute,
-		DropPathPrefixes: []string{"/eos"},
+		DropPathPrefixes: []string{"/eos "},
 	})
 	defer c.Stop()
 

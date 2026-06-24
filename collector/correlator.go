@@ -161,7 +161,7 @@ type CorrelatorConfig struct {
 
 	// WLCG routing: records matching any VO (case-insensitive) or path prefix are
 	// converted and routed to the WLCG exchange. Defaults to ["cms"] and
-	// ["/store", "/user/dteam"] when left empty.
+	// ["/store", "/user/dteam"] when left unset.
 	WLCGVOs          []string
 	WLCGPathPrefixes []string
 
@@ -205,11 +205,11 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	wlcgVOs := config.WLCGVOs
-	if len(wlcgVOs) == 0 {
+	if wlcgVOs == nil {
 		wlcgVOs = defaultWLCGVOs
 	}
 	wlcgPathPrefixes := config.WLCGPathPrefixes
-	if len(wlcgPathPrefixes) == 0 {
+	if wlcgPathPrefixes == nil {
 		wlcgPathPrefixes = defaultWLCGPathPrefixes
 	}
 
