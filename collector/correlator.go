@@ -138,6 +138,14 @@ type Correlator struct {
 	enrichmentDropCount   int64 // atomic; counts records dropped due to full queue
 	ctx                   context.Context
 	cancel                context.CancelFunc
+
+	// WLCG routing configuration
+	wlcgVOs          []string
+	wlcgPathPrefixes []string
+
+	// Record drop filter
+	dropPathPrefixes []string
+	dropVOs          []string
 }
 
 // CorrelatorConfig holds configuration for the correlator including DNS enrichment
@@ -150,6 +158,18 @@ type CorrelatorConfig struct {
 	EnrichmentWorkers   int // Number of enrichment worker goroutines (default: 5)
 	EnrichmentQueueSize int // Maximum number of pending enrichment requests (default: 1000000)
 	Logger              *logrus.Logger
+
+	// WLCG routing: records matching any VO (case-insensitive) or path prefix are
+	// converted and routed to the WLCG exchange.
+	// If WLCGVOs/WLCGPathPrefixes are nil, defaults apply (["cms"], ["/store", "/user/dteam"]).
+	// If they are non-nil but empty, WLCG routing is effectively disabled.
+	WLCGVOs          []string
+	WLCGPathPrefixes []string
+
+	// Drop filter: records matching any VO (case-insensitive) or path prefix are
+	// silently dropped before any publish. Defaults to empty (drop nothing).
+	DropPathPrefixes []string
+	DropVOs          []string
 }
 
 // NewCorrelator creates a new correlator
@@ -185,6 +205,15 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	wlcgVOs := config.WLCGVOs
+	if wlcgVOs == nil {
+		wlcgVOs = append([]string(nil), defaultWLCGVOs...)
+	}
+	wlcgPathPrefixes := config.WLCGPathPrefixes
+	if wlcgPathPrefixes == nil {
+		wlcgPathPrefixes = append([]string(nil), defaultWLCGPathPrefixes...)
+	}
+
 	c := &Correlator{
 		stateMap:              NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
 		userMap:               NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
@@ -198,6 +227,10 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		enrichmentQueueSize:   config.EnrichmentQueueSize,
 		ctx:                   ctx,
 		cancel:                cancel,
+		wlcgVOs:               wlcgVOs,
+		wlcgPathPrefixes:      wlcgPathPrefixes,
+		dropPathPrefixes:      config.DropPathPrefixes,
+		dropVOs:               config.DropVOs,
 	}
 
 	if config.EnableDNSEnrichment {

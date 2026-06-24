@@ -72,22 +72,12 @@ type WLCGRecord struct {
 }
 
 // IsWLCGPacket determines if a record should be converted to WLCG format
-// Based on reference implementation:
-// - Path starts with /store or /user/dteam
-// - VO is "cms"
+// using the default routing rules from the reference implementation.
+//
+// Deprecated: runtime routing uses CorrelatorConfig (WLCGVOs/WLCGPathPrefixes)
+// and may differ when those values are overridden.
 func IsWLCGPacket(record *CollectorRecord) bool {
-	// Check if VO is cms
-	if strings.EqualFold(record.VO, "cms") {
-		return true
-	}
-
-	// Check if path starts with /store or /user/dteam
-	filename := strings.TrimSpace(record.Filename)
-	if strings.HasPrefix(filename, "/store") || strings.HasPrefix(filename, "/user/dteam") {
-		return true
-	}
-
-	return false
+	return matchesWLCGWithRules(record, defaultWLCGVOs, defaultWLCGPathPrefixes)
 }
 
 // ConvertToWLCG converts a CollectorRecord to WLCG format

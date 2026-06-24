@@ -31,6 +31,24 @@ state:
   # gstream_queue_size: 20000 # Max pending gstream packets kept in memory
   # dns_timeout: 2            # DNS lookup timeout in seconds
 
+# WLCG routing configuration (collector mode only)
+# Records matching any VO (case-insensitive) OR any path prefix are converted to
+# WLCG format and published to the WLCG exchange instead of the main exchange.
+# Omitting this block preserves the current default behavior.
+# wlcg:
+#   vos: ["cms"]                              # default
+#   path_prefixes: ["/store", "/user/dteam"]  # default
+
+# Record drop filter (collector mode only)
+# Records matching any VO (case-insensitive) OR any path prefix are dropped
+# entirely — published to neither the main exchange nor the WLCG exchange.
+# The drop filter is evaluated before WLCG routing.
+# A Prometheus counter (shoveler_records_dropped{reason="vo|path_prefix"})
+# Default is to drop nothing (empty lists).
+# filter:
+#   drop_vos: []
+#   drop_path_prefixes: []
+
 # Select which protocol to use in order to connect to the MQ
 # mq: amqp/stomp
 

@@ -237,6 +237,12 @@ func (c *Correlator) enrichmentWorker() {
 }
 
 func (c *Correlator) processEnrichmentRequest(req enrichmentRequest) {
+	// Drop filter runs first — a matching record is published to neither exchange.
+	if drop, reason := c.shouldDrop(req.record); drop {
+		recordsDropped.WithLabelValues(reason).Inc()
+		return
+	}
+
 	for _, enricher := range c.enrichers {
 		enricher.Enrich(c.ctx, req.record)
 	}
@@ -254,7 +260,7 @@ func (c *Correlator) processEnrichmentRequest(req enrichmentRequest) {
 }
 
 func (c *Correlator) buildEnrichedRecord(record *CollectorRecord, wlcgExchange string) (EnrichedRecord, error) {
-	if IsWLCGPacket(record) {
+	if c.matchesWLCG(record) {
 		wlcgRecord, err := ConvertToWLCG(record)
 		if err != nil {
 			return EnrichedRecord{}, err
