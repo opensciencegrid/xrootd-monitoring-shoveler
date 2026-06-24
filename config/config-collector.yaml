@@ -43,8 +43,7 @@ state:
 # Records matching any VO (case-insensitive) OR any path prefix are dropped
 # entirely — published to neither the main exchange nor the WLCG exchange.
 # The drop filter is evaluated before WLCG routing.
-# A Prometheus counter (shoveler_records_dropped_total{reason="vo|path_prefix"})
-# tracks dropped records.
+# A Prometheus counter (shoveler_records_dropped{reason="vo|path_prefix"})
 # Default is to drop nothing (empty lists).
 # filter:
 #   drop_vos: []
