@@ -160,8 +160,9 @@ type CorrelatorConfig struct {
 	Logger              *logrus.Logger
 
 	// WLCG routing: records matching any VO (case-insensitive) or path prefix are
-	// converted and routed to the WLCG exchange. Defaults to ["cms"] and
-	// ["/store", "/user/dteam"] when left unset.
+	// converted and routed to the WLCG exchange.
+	// If WLCGVOs/WLCGPathPrefixes are nil, defaults apply (["cms"], ["/store", "/user/dteam"]).
+	// If they are non-nil but empty, WLCG routing is effectively disabled.
 	WLCGVOs          []string
 	WLCGPathPrefixes []string
 
