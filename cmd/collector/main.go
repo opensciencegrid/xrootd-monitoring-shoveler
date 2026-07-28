@@ -428,6 +428,25 @@ func buildCRICHTTPClient(config *shoveler.Config, logger *logrus.Logger) *http.C
 	return client
 }
 
+// buildScitagsRegistry constructs the SciTags registry from config. It always
+// starts from the embedded snapshot; when a source is configured it attempts to
+// load it, and on failure keeps the embedded data (fail-open). URL sources are
+// refreshed in the background for the life of the process.
+func buildScitagsRegistry(ctx context.Context, config *shoveler.Config, logger *logrus.Logger) *collector.ScitagsRegistry {
+	registry := collector.NewScitagsRegistry(logger)
+
+	src := config.Scitags.Source
+	if src == "" {
+		return registry
+	}
+
+	if err := registry.LoadSource(ctx, src); err != nil {
+		logger.Warnf("Failed to load SciTags source %q, using embedded snapshot: %v", src, err)
+	}
+	registry.StartRefresh(ctx, src, time.Duration(config.Scitags.RefreshInterval)*time.Second)
+	return registry
+}
+
 // buildCorrelatorConfig creates a correlator config from the main config
 func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger *logrus.Logger) collector.CorrelatorConfig {
 	ttl := time.Duration(config.State.EntryTTL) * time.Second
@@ -448,6 +467,7 @@ func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger 
 		SiteOverrides:       buildSiteOverrides(config, logger),
 		SiteHostRegistry:    buildHostSiteRegistry(ctx, config, cricClient, logger),
 		SiteIPRegistry:      buildIPSiteRegistry(ctx, config, cricClient, logger),
+		Scitags:             buildScitagsRegistry(ctx, config, logger),
 		Logger:              logger,
 
 		SiteLocalSite:           config.Site.LocalSite,

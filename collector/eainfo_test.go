@@ -10,58 +10,67 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestParseEAInfo tests the parseEAInfo function
+// TestParseEAInfo tests the parseEAInfo function. The 'U' (MAPUEAC) stream
+// carries numeric SciTags ids in Ec/Ac (not names), so parseEAInfo returns ints
+// and treats empty/non-numeric values as 0 ("unset").
 func TestParseEAInfo(t *testing.T) {
 	tests := []struct {
-		name             string
-		eaInfo           string
-		expectedUdid     uint32
-		expectedExpr     string
-		expectedActivity string
+		name         string
+		eaInfo       string
+		expectedUdid uint32
+		expectedExp  int
+		expectedAct  int
 	}{
 		{
-			name:             "Complete eainfo",
-			eaInfo:           "&Uc=1234&Ec=ATLAS&Ac=production",
-			expectedUdid:     1234,
-			expectedExpr:     "ATLAS",
-			expectedActivity: "production",
+			name:         "Complete eainfo",
+			eaInfo:       "&Uc=1234&Ec=2&Ac=15",
+			expectedUdid: 1234,
+			expectedExp:  2,
+			expectedAct:  15,
 		},
 		{
-			name:             "Missing activity",
-			eaInfo:           "&Uc=5678&Ec=CMS",
-			expectedUdid:     5678,
-			expectedExpr:     "CMS",
-			expectedActivity: "",
+			name:         "Missing activity",
+			eaInfo:       "&Uc=5678&Ec=3",
+			expectedUdid: 5678,
+			expectedExp:  3,
+			expectedAct:  0,
 		},
 		{
-			name:             "Empty values",
-			eaInfo:           "&Uc=9999&Ec=&Ac=",
-			expectedUdid:     9999,
-			expectedExpr:     "",
-			expectedActivity: "",
+			name:         "Empty values",
+			eaInfo:       "&Uc=9999&Ec=&Ac=",
+			expectedUdid: 9999,
+			expectedExp:  0,
+			expectedAct:  0,
 		},
 		{
-			name:             "No leading ampersand",
-			eaInfo:           "Uc=111&Ec=ALICE&Ac=test",
-			expectedUdid:     111,
-			expectedExpr:     "ALICE",
-			expectedActivity: "test",
+			name:         "No leading ampersand",
+			eaInfo:       "Uc=111&Ec=5&Ac=4",
+			expectedUdid: 111,
+			expectedExp:  5,
+			expectedAct:  4,
 		},
 		{
-			name:             "Invalid format",
-			eaInfo:           "invalid",
-			expectedUdid:     0,
-			expectedExpr:     "",
-			expectedActivity: "",
+			name:         "Non-numeric ids resolve to zero",
+			eaInfo:       "&Uc=222&Ec=ATLAS&Ac=production",
+			expectedUdid: 222,
+			expectedExp:  0,
+			expectedAct:  0,
+		},
+		{
+			name:         "Invalid format",
+			eaInfo:       "invalid",
+			expectedUdid: 0,
+			expectedExp:  0,
+			expectedAct:  0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			udid, expr, activity := parseEAInfo(tt.eaInfo)
+			udid, exp, act := parseEAInfo(tt.eaInfo)
 			assert.Equal(t, tt.expectedUdid, udid, "udid mismatch")
-			assert.Equal(t, tt.expectedExpr, expr, "experiment code mismatch")
-			assert.Equal(t, tt.expectedActivity, activity, "activity code mismatch")
+			assert.Equal(t, tt.expectedExp, exp, "experiment id mismatch")
+			assert.Equal(t, tt.expectedAct, act, "activity id mismatch")
 		})
 	}
 }
@@ -104,12 +113,12 @@ func TestCorrelator_EAInfoPacket(t *testing.T) {
 	require.True(t, exists, "User should be stored")
 	userState := val.(*UserState)
 	assert.Equal(t, "testuser", userState.UserInfo.Username)
-	assert.Empty(t, userState.ExperimentCode, "Experiment code should be empty initially")
-	assert.Empty(t, userState.ActivityCode, "Activity code should be empty initially")
+	assert.Zero(t, userState.ExperimentID, "Experiment id should be zero initially")
+	assert.Zero(t, userState.ActivityID, "Activity id should be zero initially")
 
 	// Now send an eainfo packet (type 'U')
-	// Format: userid\neainfo
-	eaInfoBytes := []byte("root/testuser.1234:5678@client.example.com\n&Uc=100&Ec=ATLAS&Ac=production")
+	// Format: userid\neainfo. Ec=2 (atlas), Ac=15 (Production Input).
+	eaInfoBytes := []byte("root/testuser.1234:5678@client.example.com\n&Uc=100&Ec=2&Ac=15")
 	mapRec := &parser.MapRecord{
 		Header: parser.Header{
 			Code:        parser.PacketTypeEAInfo,
@@ -122,12 +131,12 @@ func TestCorrelator_EAInfoPacket(t *testing.T) {
 	// Process eainfo record
 	correlator.handleDictIDRecord(mapRec, serverID, parser.PacketTypeEAInfo)
 
-	// Verify the user state was updated with experiment and activity codes
+	// Verify the user state was updated with experiment and activity ids
 	val, exists = correlator.userMap.Get(userKey)
 	require.True(t, exists, "User should still exist")
 	updatedUserState := val.(*UserState)
-	assert.Equal(t, "ATLAS", updatedUserState.ExperimentCode, "Experiment code should be set")
-	assert.Equal(t, "production", updatedUserState.ActivityCode, "Activity code should be set")
+	assert.Equal(t, 2, updatedUserState.ExperimentID, "Experiment id should be set")
+	assert.Equal(t, 15, updatedUserState.ActivityID, "Activity id should be set")
 }
 
 // TestCorrelator_EAInfoWithoutExistingUser tests eainfo packet when user doesn't exist yet
@@ -139,8 +148,8 @@ func TestCorrelator_EAInfoWithoutExistingUser(t *testing.T) {
 
 	serverID := "1639505770#192.168.1.100:1094"
 
-	// Send eainfo packet without prior user record
-	eaInfoBytes := []byte("root/newuser.9999:8888@newclient.example.com\n&Uc=200&Ec=CMS&Ac=analysis")
+	// Send eainfo packet without prior user record. Ec=3 (cms), Ac=14 (Analysis Input).
+	eaInfoBytes := []byte("root/newuser.9999:8888@newclient.example.com\n&Uc=200&Ec=3&Ac=14")
 	mapRec := &parser.MapRecord{
 		Header: parser.Header{
 			Code:        parser.PacketTypeEAInfo,
@@ -165,12 +174,13 @@ func TestCorrelator_EAInfoWithoutExistingUser(t *testing.T) {
 	val, exists = correlator.userMap.Get(userKey)
 	require.True(t, exists, "User state should be created")
 	userState := val.(*UserState)
-	assert.Equal(t, "CMS", userState.ExperimentCode)
-	assert.Equal(t, "analysis", userState.ActivityCode)
+	assert.Equal(t, 3, userState.ExperimentID)
+	assert.Equal(t, 14, userState.ActivityID)
 	assert.Equal(t, uint32(200), userState.UserID)
 }
 
-// TestCorrelator_EAInfoInCorrelatedRecord tests that experiment and activity appear in final record
+// TestCorrelator_EAInfoInCorrelatedRecord tests that the resolved experiment and
+// activity names (plus their numeric ids) appear in the final record.
 func TestCorrelator_EAInfoInCorrelatedRecord(t *testing.T) {
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
@@ -202,8 +212,8 @@ func TestCorrelator_EAInfoInCorrelatedRecord(t *testing.T) {
 	}
 	correlator.handleUserRecord(userRec, serverID)
 
-	// Add eainfo
-	eaInfoBytes := []byte("root/testuser.1234:5678@client.example.com\n&Uc=100&Ec=LHCb&Ac=simulation")
+	// Add eainfo. Ec=4 (lhcb), Ac=3 (Cache) per the embedded SciTags registry.
+	eaInfoBytes := []byte("root/testuser.1234:5678@client.example.com\n&Uc=100&Ec=4&Ac=3")
 	mapRec := &parser.MapRecord{
 		Header: parser.Header{
 			Code:        parser.PacketTypeEAInfo,
@@ -261,9 +271,15 @@ func TestCorrelator_EAInfoInCorrelatedRecord(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, record)
 
-	// Verify experiment and activity are in the record
-	assert.Equal(t, "LHCb", record.Experiment, "Experiment code should be in record")
-	assert.Equal(t, "simulation", record.Activity, "Activity code should be in record")
+	// Verify resolved names and raw ids are in the record.
+	assert.Equal(t, "lhcb", record.Experiment, "Experiment name should be resolved")
+	assert.Equal(t, "Cache", record.Activity, "Activity name should be resolved")
+	assert.Equal(t, 4, record.ExperimentID, "Experiment id should be in record")
+	assert.Equal(t, 3, record.ActivityID, "Activity id should be in record")
+	// The SciTags-derived VO mirrors the experiment name and must not clobber
+	// the auth-derived VO (Org "cms" on the user record above).
+	assert.Equal(t, "lhcb", record.ScitagsVO, "SciTags VO should be the experiment name")
+	assert.Equal(t, "cms", record.VO, "Auth-derived VO should be untouched")
 	assert.Equal(t, "testuser", record.User)
 	assert.Equal(t, int64(1000), record.Read)
 }
