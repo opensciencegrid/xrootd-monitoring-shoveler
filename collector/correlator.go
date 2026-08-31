@@ -1281,15 +1281,19 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		if experimentID != 0 {
 			experiment = c.scitags.ExperimentName(experimentID)
 			if experiment == "" {
+				// The experiment id is unknown to the registry. Activity ids are
+				// namespaced per experiment, so the activity lookup cannot succeed
+				// either; skip it rather than counting the same unknown experiment
+				// a second time under kind="activity".
 				scitagsUnmappedIDsTotal.WithLabelValues("experiment").Inc()
 			} else {
 				// The SciTags experiment name is the VO the flow belongs to.
 				scitagsVO = experiment
-			}
-			if activityID != 0 {
-				activity = c.scitags.ActivityName(experimentID, activityID)
-				if activity == "" {
-					scitagsUnmappedIDsTotal.WithLabelValues("activity").Inc()
+				if activityID != 0 {
+					activity = c.scitags.ActivityName(experimentID, activityID)
+					if activity == "" {
+						scitagsUnmappedIDsTotal.WithLabelValues("activity").Inc()
+					}
 				}
 			}
 		}

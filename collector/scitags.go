@@ -170,7 +170,7 @@ func fetchScitagsSource(ctx context.Context, src string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch scitags url %q: %w", src, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch scitags url %q: unexpected status %s", src, resp.Status)
 	}
