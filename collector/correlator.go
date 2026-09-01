@@ -37,19 +37,18 @@ type CollectorRecord struct {
 	TokenOrg       string    `json:"token_org,omitempty"`
 	TokenRole      string    `json:"token_role,omitempty"`
 	TokenGroups    string    `json:"token_groups,omitempty"`
-	// Experiment and Activity are the human-readable SciTags names resolved from
-	// the numeric ids below via the SciTags registry (empty when the ids are
-	// absent or unknown to the registry). ExperimentID/ActivityID are the raw
-	// numeric flow-label ids carried on the 'U' (MAPUEAC) stream. Activity ids
-	// are namespaced per experiment, so ActivityID is only meaningful alongside
-	// ExperimentID. ScitagsVO is the VO name implied by the SciTags experiment
-	// (the experiment name as published by the registry). It is kept in its own
-	// field so it never overwrites VO, which might come from the auth/token streams.
-	Experiment             string  `json:"experiment,omitempty"`
-	Activity               string  `json:"activity,omitempty"`
-	ExperimentID           int     `json:"experiment_id,omitempty"`
-	ActivityID             int     `json:"activity_id,omitempty"`
-	ScitagsVO              string  `json:"scitags_vo,omitempty"`
+	// ExperimentID and ActivityID are the raw numeric SciTags flow-label ids
+	// carried on the 'U' (MAPUEAC) stream, 0 when unset. Activity ids are
+	// namespaced per experiment, so ActivityID is only meaningful alongside
+	// ExperimentID.
+	//
+	// SciTags is a WLCG concern end to end: ConvertToWLCG resolves these to
+	// names and emits both the ids and the names on the WLCG record. They carry
+	// json:"-" so they never reach the plain collector record, which is not a
+	// WLCG record and must not carry SciTags data. The fields stay exported
+	// because they are still the in-memory carrier the converter reads.
+	ExperimentID           int     `json:"-"`
+	ActivityID             int     `json:"-"`
 	Filename               string  `json:"filename"`
 	Dirname1               string  `json:"dirname1"`
 	Dirname2               string  `json:"dirname2"`
@@ -1264,39 +1263,14 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		}
 	}
 
-	// Resolve SciTags experiment/activity. The 'U' stream carries numeric ids
-	// (namespaced per experiment); resolve them to names via the registry while
-	// keeping the raw ids on the record. The resolved experiment name is also
-	// exposed as the SciTags-derived VO in its own field; the authoritative VO
-	// field is intentionally left untouched, since it comes from the auth/token
-	// streams and downstream consumers already depend on it.
+	// Carry the raw SciTags ids from the 'U' stream. They are parsed packet data,
+	// so they are stamped here unconditionally; turning them into names happens
+	// in ConvertToWLCG, for WLCG-bound records only.
 	experimentID := 0
 	activityID := 0
-	experiment := ""
-	activity := ""
-	scitagsVO := ""
 	if userInfo != nil {
 		experimentID = userInfo.ExperimentID
 		activityID = userInfo.ActivityID
-		if experimentID != 0 {
-			experiment = c.scitags.ExperimentName(experimentID)
-			if experiment == "" {
-				// The experiment id is unknown to the registry. Activity ids are
-				// namespaced per experiment, so the activity lookup cannot succeed
-				// either; skip it rather than counting the same unknown experiment
-				// a second time under kind="activity".
-				scitagsUnmappedIDsTotal.WithLabelValues("experiment").Inc()
-			} else {
-				// The SciTags experiment name is the VO the flow belongs to.
-				scitagsVO = experiment
-				if activityID != 0 {
-					activity = c.scitags.ActivityName(experimentID, activityID)
-					if activity == "" {
-						scitagsUnmappedIDsTotal.WithLabelValues("activity").Inc()
-					}
-				}
-			}
-		}
 	}
 
 	// Extract directory names from filename
@@ -1354,11 +1328,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		TokenOrg:               tokenOrg,
 		TokenRole:              tokenRole,
 		TokenGroups:            tokenGroups,
-		Experiment:             experiment,
-		Activity:               activity,
 		ExperimentID:           experimentID,
 		ActivityID:             activityID,
-		ScitagsVO:              scitagsVO,
 		Filename:               state.Filename,
 		Dirname1:               dirname1,
 		Dirname2:               dirname2,

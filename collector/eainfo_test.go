@@ -271,15 +271,20 @@ func TestCorrelator_EAInfoInCorrelatedRecord(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, record)
 
-	// Verify resolved names and raw ids are in the record.
-	assert.Equal(t, "lhcb", record.Experiment, "Experiment name should be resolved")
-	assert.Equal(t, "Cache", record.Activity, "Activity name should be resolved")
+	// The collector record carries the raw ids; the names are resolved during
+	// WLCG conversion, so they are not on this record at all.
 	assert.Equal(t, 4, record.ExperimentID, "Experiment id should be in record")
 	assert.Equal(t, 3, record.ActivityID, "Activity id should be in record")
-	// The SciTags-derived VO mirrors the experiment name and must not clobber
-	// the auth-derived VO (Org "cms" on the user record above).
-	assert.Equal(t, "lhcb", record.ScitagsVO, "SciTags VO should be the experiment name")
 	assert.Equal(t, "cms", record.VO, "Auth-derived VO should be untouched")
 	assert.Equal(t, "testuser", record.User)
 	assert.Equal(t, int64(1000), record.Read)
+
+	wlcg, err := ConvertToWLCG(record, testWLCGMetadata(), NewScitagsRegistry(logger))
+	require.NoError(t, err)
+	assert.Equal(t, "lhcb", wlcg.Experiment, "Experiment name should be resolved")
+	assert.Equal(t, "Cache", wlcg.Activity, "Activity name should be resolved")
+	// The SciTags-derived VO mirrors the experiment name and must not clobber
+	// the auth-derived VO (Org "cms" on the user record above).
+	assert.Equal(t, "lhcb", wlcg.ScitagsVO, "SciTags VO should be the experiment name")
+	assert.Equal(t, "cms", wlcg.VO, "Auth-derived VO should be untouched")
 }

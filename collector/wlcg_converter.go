@@ -117,9 +117,40 @@ func deriveOperation(record *CollectorRecord) string {
 
 // ConvertToWLCG converts a CollectorRecord to WLCG format
 // Based on references/wlcg_converter.py
-func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, error) {
+func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsRegistry) (*WLCGRecord, error) {
 	// Generate unique ID
 	uniqueID := uuid.New().String()
+
+	// Resolve the numeric SciTags ids from the 'U' stream to the names published
+	// by the registry. This happens here rather than at record creation because
+	// the names belong to the WLCG record: ConvertToWLCG is only ever reached
+	// through the WLCG routing predicate, so a record that is not WLCG-bound
+	// never pays for the lookups and never carries the fields. A nil registry
+	// disables resolution and leaves the ids unaccompanied.
+	experiment := ""
+	activity := ""
+	scitagsVO := ""
+	if scitags != nil && record.ExperimentID != 0 {
+		experiment = scitags.ExperimentName(record.ExperimentID)
+		if experiment == "" {
+			// The experiment id is unknown to the registry. Activity ids are
+			// namespaced per experiment, so the activity lookup cannot succeed
+			// either; skip it rather than counting the same unknown experiment a
+			// second time under kind="activity".
+			scitagsUnmappedIDsTotal.WithLabelValues("experiment").Inc()
+		} else {
+			// The SciTags experiment name is the VO the flow belongs to. It is kept
+			// in its own field so it never overwrites VO, which comes from the
+			// auth/token streams and downstream consumers already depend on it.
+			scitagsVO = experiment
+			if record.ActivityID != 0 {
+				activity = scitags.ActivityName(record.ExperimentID, record.ActivityID)
+				if activity == "" {
+					scitagsUnmappedIDsTotal.WithLabelValues("activity").Inc()
+				}
+			}
+		}
+	}
 
 	// Extract server domain from server hostname
 	serverDomain := ""
@@ -192,11 +223,11 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, err
 		WriteMax:               record.WriteMax,
 		WriteMin:               record.WriteMin,
 		WriteOperations:        record.WriteOperations,
-		Experiment:             record.Experiment,
-		Activity:               record.Activity,
+		Experiment:             experiment,
+		Activity:               activity,
 		ExperimentID:           record.ExperimentID,
 		ActivityID:             record.ActivityID,
-		ScitagsVO:              record.ScitagsVO,
+		ScitagsVO:              scitagsVO,
 	}
 
 	// Parse appinfo for CRAB information if present

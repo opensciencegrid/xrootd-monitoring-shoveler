@@ -133,7 +133,7 @@ func TestConvertToWLCG(t *testing.T) {
 		HasFileCloseMsg:        1,
 	}
 
-	wlcg, err := ConvertToWLCG(record, testWLCGMetadata())
+	wlcg, err := ConvertToWLCG(record, testWLCGMetadata(), nil)
 	if err != nil {
 		t.Fatalf("ConvertToWLCG() error = %v", err)
 	}
@@ -269,7 +269,7 @@ func TestConvertToWLCG_WriteOperation(t *testing.T) {
 		Write:         5000000,
 	}
 
-	wlcg, err := ConvertToWLCG(record, testWLCGMetadata())
+	wlcg, err := ConvertToWLCG(record, testWLCGMetadata(), nil)
 	if err != nil {
 		t.Fatalf("ConvertToWLCG() error = %v", err)
 	}
@@ -298,7 +298,7 @@ func TestConvertToWLCG_UnknownOperation(t *testing.T) {
 		Write:         0,
 	}
 
-	wlcg, err := ConvertToWLCG(record, testWLCGMetadata())
+	wlcg, err := ConvertToWLCG(record, testWLCGMetadata(), nil)
 	if err != nil {
 		t.Fatalf("ConvertToWLCG() error = %v", err)
 	}
@@ -320,8 +320,8 @@ func TestGenerateUUID(t *testing.T) {
 		VO:        "cms",
 	}
 
-	wlcg1, _ := ConvertToWLCG(record, testWLCGMetadata())
-	wlcg2, _ := ConvertToWLCG(record, testWLCGMetadata())
+	wlcg1, _ := ConvertToWLCG(record, testWLCGMetadata(), nil)
+	wlcg2, _ := ConvertToWLCG(record, testWLCGMetadata(), nil)
 
 	// Check basic format (8-4-4-4-12 hex characters)
 	if len(wlcg1.UniqueID) != 36 {
@@ -664,7 +664,7 @@ func TestConvertToWLCG_CustomMetadata(t *testing.T) {
 	}
 
 	meta := WLCGMetadata{Producer: "osg", Type: "transfer"}
-	wlcg, err := ConvertToWLCG(record, meta)
+	wlcg, err := ConvertToWLCG(record, meta, nil)
 	if err != nil {
 		t.Fatalf("ConvertToWLCG() error = %v", err)
 	}
