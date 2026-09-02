@@ -241,6 +241,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 **Metrics (Shoveler Mode only):**
 * `SHOVELER_METRICS_ENABLE` - Enable Prometheus metrics: `true` or `false` (default: `true`)
 * `SHOVELER_METRICS_PORT` - Metrics HTTP server port (default: `8000`)
+* `SHOVELER_METRICS_PER_SERVER` - Enable the opt-in `server_ip`-labelled metrics: `true` or `false` (default: `false`)
 
 **Queue (Shoveler Mode only):**
 * `SHOVELER_QUEUE_DIRECTORY` - Persistent queue directory (default: `/var/spool/xrootd-monitoring-shoveler/queue`)
@@ -608,6 +609,25 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_request_latency_ms` - Request latency histogram
 
 Metrics are available at `http://localhost:8000/metrics` by default (configurable via `metrics.port`).
+
+#### Per-server metrics (opt-in)
+
+Setting `metrics.per_server: true` (or `SHOVELER_METRICS_PER_SERVER=true`) additionally exports these
+families, each labelled by the upstream XRootD server's IP:
+
+- `shoveler_packets_by_server_total` - Parsed packets per server and XRootD stream type
+- `shoveler_file_open_records_total` - File open records per server
+- `shoveler_file_close_records_total` - File close records per server
+- `shoveler_file_time_records_total` - File time (TOD) records per server
+- `shoveler_records_emitted_by_server_total` - Collector records emitted per server
+
+All five derive `server_ip` identically, so they can be joined and aggregated together - for example,
+records emitted versus packets received for one server.
+
+They are **off by default** because their cardinality is set by the number of XRootD servers reporting
+to this collector, which the collector cannot bound: each new server adds a series to every family
+above, and series for servers that stop reporting are never reclaimed. Enable it when you want the
+per-server breakdown and have a rough idea of how many servers report to this collector.
 
 ### Profiling
 

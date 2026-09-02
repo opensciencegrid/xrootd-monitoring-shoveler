@@ -93,6 +93,7 @@ type Config struct {
 	StompTopic            string
 	Metrics               bool
 	MetricsPort           int
+	MetricsPerServer      bool
 	Profile               bool
 	ProfilePort           int
 	StompCert             string
@@ -309,6 +310,12 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.Metrics = viper.GetBool("metrics.enable")
 	viper.SetDefault("metrics.port", 8000)
 	c.MetricsPort = viper.GetInt("metrics.port")
+	// Per-server metrics are opt-in: the server_ip label makes the affected
+	// metric families scale with the number of XRootD servers reporting to this
+	// collector, which is unbounded from the collector's point of view. Sites
+	// that want the per-server breakdown enable it explicitly.
+	viper.SetDefault("metrics.per_server", false)
+	c.MetricsPerServer = viper.GetBool("metrics.per_server")
 
 	// Profile defaults
 	viper.SetDefault("profile.enable", false)

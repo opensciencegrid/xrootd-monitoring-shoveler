@@ -104,6 +104,21 @@ verify: true
 metrics:
   enable: true
   port: 8000
+  # Per-server metrics (opt-in, default false).
+  #
+  # Adds a server_ip label to:
+  #   shoveler_packets_by_server_total
+  #   shoveler_file_open_records_total
+  #   shoveler_file_close_records_total
+  #   shoveler_file_time_records_total
+  #   shoveler_records_emitted_by_server_total
+  #
+  # Off by default because the cardinality is driven by the number of XRootD
+  # servers reporting to this collector, which the collector cannot bound: each
+  # new server adds a series to every family above, and series for servers that
+  # stop reporting are never reclaimed. Enable it when you want the per-server
+  # breakdown and know roughly how many servers report here.
+  per_server: false
 
 # Enable pprof profiling (for troubleshooting/debugging)
 # Access at http://host:port/debug/pprof/

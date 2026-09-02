@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1350,4 +1351,369 @@ func TestExtractHostFromRemoteAddr_UnbracketedIPv6WithShortPort(t *testing.T) {
 	// Ambiguous case: full string is also a syntactically valid IPv6 literal,
 	// so parser should preserve it as-is rather than truncate.
 	assert.Equal(t, addr, extractHostFromRemoteAddr(addr))
+}
+
+// TestStandaloneCloseRecordsTotal verifies that the shoveler_standalone_close_records_total
+// counter increments exactly once for each file close that has no matching open in stateMap.
+func TestStandaloneCloseRecordsTotal(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	before := testutil.ToFloat64(standaloneCloseRecordsTotal)
+
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{
+			RecType: parser.RecTypeClose,
+			FileId:  42,
+			UserId:  7,
+		},
+		Xfr: parser.StatXFR{Read: 512},
+	}
+	closePacket := &parser.Packet{
+		Header:      parser.Header{Code: parser.PacketTypeFStat, ServerStart: 9000},
+		FileRecords: []interface{}{closeRec},
+	}
+
+	recs, err := correlator.ProcessPacket(closePacket)
+	require.NoError(t, err)
+	require.Len(t, recs, 1, "standalone close should still produce a record")
+	assert.Equal(t, "unknown", recs[0].Filename, "standalone close should have unknown filename")
+
+	after := testutil.ToFloat64(standaloneCloseRecordsTotal)
+	assert.Equal(t, float64(1), after-before, "counter should increment by 1 for each unmatched close")
+
+	// A second unmatched close for the same fileID should increment again.
+	recs, err = correlator.ProcessPacket(closePacket)
+	require.NoError(t, err)
+	require.Len(t, recs, 1)
+
+	assert.Equal(t, float64(2), testutil.ToFloat64(standaloneCloseRecordsTotal)-before,
+		"counter should reflect all unmatched closes, not just the first")
+}
+
+// TestStandaloneCloseCounterNotIncrementedOnCorrelatedClose verifies that a
+// file close that successfully correlates with an open does NOT increment the counter.
+func TestStandaloneCloseCounterNotIncrementedOnCorrelatedClose(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	before := testutil.ToFloat64(standaloneCloseRecordsTotal)
+
+	openRec := parser.FileOpenRecord{
+		Header:   parser.FileHeader{RecType: parser.RecTypeOpen, FileId: 55, UserId: 1},
+		FileSize: 2048,
+		Lfn:      []byte("/data/correlated.root"),
+	}
+	openPacket := &parser.Packet{
+		Header:      parser.Header{ServerStart: 5000},
+		FileRecords: []interface{}{openRec},
+	}
+	_, err := correlator.ProcessPacket(openPacket)
+	require.NoError(t, err)
+
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeClose, FileId: 55, UserId: 1},
+		Xfr:    parser.StatXFR{Read: 1024},
+	}
+	closePacket := &parser.Packet{
+		Header:      parser.Header{ServerStart: 5000},
+		FileRecords: []interface{}{closeRec},
+	}
+	recs, err := correlator.ProcessPacket(closePacket)
+	require.NoError(t, err)
+	require.Len(t, recs, 1)
+	assert.Equal(t, "/data/correlated.root", recs[0].Filename, "correlated close should have correct filename")
+
+	assert.Equal(t, before, testutil.ToFloat64(standaloneCloseRecordsTotal),
+		"correlated close must not increment the standalone counter")
+}
+
+// newPerServerMetricsCorrelator builds a correlator with the opt-in server_ip
+// metrics turned on. They are off by default (see Correlator.countByServer), so
+// any test that asserts on a server_ip-labelled counter must enable them.
+func newPerServerMetricsCorrelator() *Correlator {
+	return NewCorrelatorWithConfig(CorrelatorConfig{
+		TTL:              5 * time.Second,
+		MaxEntries:       0,
+		PerServerMetrics: true,
+	})
+}
+
+// TestFStreamFileOpenRecordsTotal verifies the fstream_file_open_records_total counter
+// increments once per FileOpen record seen in a packet's FileRecords.
+func TestFStreamFileOpenRecordsTotal(t *testing.T) {
+	correlator := newPerServerMetricsCorrelator()
+	defer correlator.Stop()
+
+	serverIP := "127.0.0.1"
+	before := testutil.ToFloat64(fileOpenRecordsTotal.WithLabelValues(serverIP))
+
+	openRec := parser.FileOpenRecord{
+		Header:   parser.FileHeader{RecType: parser.RecTypeOpen, FileId: 10, UserId: 1},
+		FileSize: 1024,
+		Lfn:      []byte("/data/file.root"),
+	}
+	packet := &parser.Packet{
+		Header:      parser.Header{Code: parser.PacketTypeFStat, ServerStart: 1000},
+		PacketType:  parser.PacketTypeFStat,
+		FileRecords: []interface{}{openRec},
+		RemoteAddr:  serverIP + ":1094",
+	}
+
+	_, err := correlator.ProcessPacket(packet)
+	require.NoError(t, err)
+
+	after := testutil.ToFloat64(fileOpenRecordsTotal.WithLabelValues(serverIP))
+	assert.Equal(t, float64(1), after-before, "counter should increment by 1 per file open record")
+}
+
+// TestFStreamFileCloseRecordsTotal verifies the fstream_file_close_records_total counter
+// increments once per FileClose record seen in a packet's FileRecords.
+func TestFStreamFileCloseRecordsTotal(t *testing.T) {
+	correlator := newPerServerMetricsCorrelator()
+	defer correlator.Stop()
+
+	serverIP := "127.0.0.2"
+	before := testutil.ToFloat64(fileCloseRecordsTotal.WithLabelValues(serverIP))
+
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeClose, FileId: 20, UserId: 1},
+		Xfr:    parser.StatXFR{Read: 512},
+	}
+	packet := &parser.Packet{
+		Header:      parser.Header{Code: parser.PacketTypeFStat, ServerStart: 2000},
+		PacketType:  parser.PacketTypeFStat,
+		FileRecords: []interface{}{closeRec},
+		RemoteAddr:  serverIP + ":1094",
+	}
+
+	_, err := correlator.ProcessPacket(packet)
+	require.NoError(t, err)
+
+	after := testutil.ToFloat64(fileCloseRecordsTotal.WithLabelValues(serverIP))
+	assert.Equal(t, float64(1), after-before, "counter should increment by 1 per file close record")
+}
+
+// TestFStreamFileTimeRecordsTotal verifies the fstream_file_time_records_total counter
+// increments once per FileTime (TOD) record seen in a packet's FileRecords.
+func TestFStreamFileTimeRecordsTotal(t *testing.T) {
+	correlator := newPerServerMetricsCorrelator()
+	defer correlator.Stop()
+
+	serverIP := "127.0.0.3"
+	before := testutil.ToFloat64(fileTimeRecordsTotal.WithLabelValues(serverIP))
+
+	timeRec := parser.FileTimeRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeTime, FileId: 30},
+		TBeg:   3000,
+		TEnd:   4000,
+		SID:    99,
+	}
+	packet := &parser.Packet{
+		Header:      parser.Header{Code: parser.PacketTypeFStat, ServerStart: 3000},
+		PacketType:  parser.PacketTypeFStat,
+		FileRecords: []interface{}{timeRec},
+		RemoteAddr:  serverIP + ":1094",
+	}
+
+	_, err := correlator.ProcessPacket(packet)
+	require.NoError(t, err)
+
+	after := testutil.ToFloat64(fileTimeRecordsTotal.WithLabelValues(serverIP))
+	assert.Equal(t, float64(1), after-before, "counter should increment by 1 per file time record")
+}
+
+// TestFStreamMixedRecordsCountedIndependently verifies that a packet containing
+// multiple record types increments each counter independently.
+func TestFStreamMixedRecordsCountedIndependently(t *testing.T) {
+	correlator := newPerServerMetricsCorrelator()
+	defer correlator.Stop()
+
+	serverIP := "127.0.0.4"
+	beforeOpen := testutil.ToFloat64(fileOpenRecordsTotal.WithLabelValues(serverIP))
+	beforeClose := testutil.ToFloat64(fileCloseRecordsTotal.WithLabelValues(serverIP))
+	beforeTime := testutil.ToFloat64(fileTimeRecordsTotal.WithLabelValues(serverIP))
+
+	openRec := parser.FileOpenRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeOpen, FileId: 50, UserId: 1},
+		Lfn:    []byte("/data/mixed.root"),
+	}
+	timeRec := parser.FileTimeRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeTime, FileId: 51},
+		TBeg:   5000,
+		TEnd:   6000,
+		SID:    77,
+	}
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeClose, FileId: 52},
+		Xfr:    parser.StatXFR{Read: 256},
+	}
+	packet := &parser.Packet{
+		Header:      parser.Header{Code: parser.PacketTypeFStat, ServerStart: 5000},
+		PacketType:  parser.PacketTypeFStat,
+		FileRecords: []interface{}{openRec, timeRec, closeRec},
+		RemoteAddr:  serverIP + ":1094",
+	}
+
+	_, err := correlator.ProcessPacket(packet)
+	require.NoError(t, err)
+
+	assert.Equal(t, float64(1), testutil.ToFloat64(fileOpenRecordsTotal.WithLabelValues(serverIP))-beforeOpen)
+	assert.Equal(t, float64(1), testutil.ToFloat64(fileCloseRecordsTotal.WithLabelValues(serverIP))-beforeClose)
+	assert.Equal(t, float64(1), testutil.ToFloat64(fileTimeRecordsTotal.WithLabelValues(serverIP))-beforeTime)
+}
+
+// TestPacketTypeName verifies that XRootD monitoring packet types are correctly mapped
+// to their corresponding string representations, including the fallback for unknown types.
+// It helps in finding missed case or typos, as the labels are hardcoded.
+func TestPacketTypeName(t *testing.T) {
+	tests := []struct {
+		code     byte
+		expected string
+	}{
+		{parser.PacketTypeMap, "map"},
+		{parser.PacketTypeDictID, "dict"},
+		{parser.PacketTypeFStat, "fstat"},
+		{parser.PacketTypeGStream, "gstream"},
+		{parser.PacketTypeInfo, "info"},
+		{parser.PacketTypePurg, "purge"},
+		{parser.PacketTypeRedir, "redir"},
+		{parser.PacketTypeTrace, "trace"},
+		{parser.PacketTypeToken, "token"},
+		{parser.PacketTypeUser, "user"},
+		{parser.PacketTypeEAInfo, "eainfo"},
+		{parser.PacketTypeXFR, "xfr"},
+		{0xFF, "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			assert.Equal(t, tt.expected, PacketTypeName(tt.code))
+		})
+	}
+}
+
+// TestServerIPLabelConsistency verifies that every server_ip value the collector
+// produces for one server is byte-identical, regardless of the wire form of the
+// address. An IPv4-mapped IPv6 peer such as "[::ffff:198.51.100.7]:1094" must not
+// show up as "198.51.100.7" on one metric and "::ffff:198.51.100.7" on another
+// that would break PromQL joins and aggregations by server_ip, and would stop the
+// emitted records from lining up with the metrics that count them.
+func TestServerIPLabelConsistency(t *testing.T) {
+	// All of these describe the same server and must canonicalize identically.
+	forms := []string{
+		"198.51.100.7:1094",
+		"[::ffff:198.51.100.7]:1094",
+		"::ffff:198.51.100.7",
+	}
+	const want = "198.51.100.7"
+
+	for _, form := range forms {
+		assert.Equal(t, want, canonicalServerIP(form), "canonicalServerIP(%q)", form)
+	}
+
+	// An absent address must not produce an empty label.
+	assert.Equal(t, "unknown", canonicalServerIP(""))
+
+	correlator := newPerServerMetricsCorrelator()
+	defer correlator.Stop()
+
+	const remoteAddr = "[::ffff:198.51.100.7]:1094"
+
+	beforePackets := testutil.ToFloat64(packetsPerServerTotal.WithLabelValues(want, "fstat"))
+	beforeOpen := testutil.ToFloat64(fileOpenRecordsTotal.WithLabelValues(want))
+	beforeClose := testutil.ToFloat64(fileCloseRecordsTotal.WithLabelValues(want))
+
+	openRec := parser.FileOpenRecord{
+		Header:   parser.FileHeader{RecType: parser.RecTypeOpen, FileId: 70, UserId: 1},
+		FileSize: 2048,
+		Lfn:      []byte("/data/consistency.root"),
+	}
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeClose, FileId: 70, UserId: 1},
+		Xfr:    parser.StatXFR{Read: 2048},
+	}
+	packet := &parser.Packet{
+		Header:      parser.Header{Code: parser.PacketTypeFStat, ServerStart: 7000},
+		PacketType:  parser.PacketTypeFStat,
+		FileRecords: []interface{}{openRec, closeRec},
+		RemoteAddr:  remoteAddr,
+	}
+
+	records, err := correlator.ProcessPacket(packet)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+
+	// The metric labels use the canonical form ...
+	assert.Equal(t, float64(1), testutil.ToFloat64(packetsPerServerTotal.WithLabelValues(want, "fstat"))-beforePackets)
+	assert.Equal(t, float64(1), testutil.ToFloat64(fileOpenRecordsTotal.WithLabelValues(want))-beforeOpen)
+	assert.Equal(t, float64(1), testutil.ToFloat64(fileCloseRecordsTotal.WithLabelValues(want))-beforeClose)
+
+	// ... and so does the emitted record, which is what
+	// shoveler_records_emitted_by_server_total is labelled from.
+	assert.Equal(t, want, records[0].ServerIP, "record server_ip must match the metric label")
+
+	// gstream events carry the same canonical server_ip.
+	events, _, err := correlator.ProcessGStreamPacket(makeGStreamPacket(remoteAddr, 'C'))
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, want, events[0]["server_ip"], "gstream server_ip must match the metric label")
+}
+
+// TestPerServerMetricsDisabledByDefault verifies that the server_ip-labelled
+// metrics are opt-in: a correlator built without PerServerMetrics must not
+// create any series in those families, no matter how much traffic it sees.
+// This is what bounds their cardinality; see Correlator.countByServer.
+func TestPerServerMetricsDisabledByDefault(t *testing.T) {
+	// Default construction: PerServerMetrics is left unset.
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	const serverIP = "203.0.113.9"
+
+	beforePackets := testutil.ToFloat64(packetsPerServerTotal.WithLabelValues(serverIP, "fstat"))
+	beforeOpen := testutil.ToFloat64(fileOpenRecordsTotal.WithLabelValues(serverIP))
+	beforeClose := testutil.ToFloat64(fileCloseRecordsTotal.WithLabelValues(serverIP))
+	beforeTime := testutil.ToFloat64(fileTimeRecordsTotal.WithLabelValues(serverIP))
+
+	openRec := parser.FileOpenRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeOpen, FileId: 80, UserId: 1},
+		Lfn:    []byte("/data/optout.root"),
+	}
+	timeRec := parser.FileTimeRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeTime, FileId: 81},
+		TBeg:   8000,
+		TEnd:   9000,
+		SID:    11,
+	}
+	closeRec := parser.FileCloseRecord{
+		Header: parser.FileHeader{RecType: parser.RecTypeClose, FileId: 80, UserId: 1},
+		Xfr:    parser.StatXFR{Read: 128},
+	}
+	packet := &parser.Packet{
+		Header:      parser.Header{Code: parser.PacketTypeFStat, ServerStart: 8000},
+		PacketType:  parser.PacketTypeFStat,
+		FileRecords: []interface{}{openRec, timeRec, closeRec},
+		RemoteAddr:  serverIP + ":1094",
+	}
+
+	_, err := correlator.ProcessPacket(packet)
+	require.NoError(t, err)
+
+	assert.Equal(t, beforePackets, testutil.ToFloat64(packetsPerServerTotal.WithLabelValues(serverIP, "fstat")),
+		"packets_by_server must not be observed when per-server metrics are off")
+	assert.Equal(t, beforeOpen, testutil.ToFloat64(fileOpenRecordsTotal.WithLabelValues(serverIP)))
+	assert.Equal(t, beforeClose, testutil.ToFloat64(fileCloseRecordsTotal.WithLabelValues(serverIP)))
+	assert.Equal(t, beforeTime, testutil.ToFloat64(fileTimeRecordsTotal.WithLabelValues(serverIP)))
+
+	// gstream shares the same gate on the metric ...
+	beforeGStream := testutil.ToFloat64(packetsPerServerTotal.WithLabelValues(serverIP, "gstream"))
+	events, _, err := correlator.ProcessGStreamPacket(makeGStreamPacket(serverIP+":1094", 'C'))
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, beforeGStream, testutil.ToFloat64(packetsPerServerTotal.WithLabelValues(serverIP, "gstream")))
+
+	// ... but the emitted event still carries server_ip: turning the metric off
+	// must not strip data from the records the collector ships.
+	assert.Equal(t, serverIP, events[0]["server_ip"],
+		"event server_ip is data, not a metric label, and must survive the opt-out")
 }
