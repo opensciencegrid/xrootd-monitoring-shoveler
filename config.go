@@ -38,6 +38,26 @@ type WLCGConfig struct {
 	// Defaults to ["record", "scitags", "config"]. Enabled only.
 	VOOrder []string
 
+	// Traffic classification: traffic_scope, site_internal_traffic and
+	// xrootd_internal_traffic on the WLCG record. Enabled only.
+	//
+	// TrafficEnabled defaults to true, so a WLCG-mode collector gets the fields
+	// without extra configuration; set it false to leave them off the records.
+	//
+	// The rest are the rules, with defaults matching the MonALISA xrootd
+	// collector: accounts "root", job-agent ids 1-8, and paths or protocols
+	// naming a "replicate" operation. They are deployment values rather than
+	// business logic, so a site that names its system accounts differently sets
+	// them here instead of patching the classifier. Each is left unset here when
+	// the operator says nothing and the collector package supplies the default,
+	// so each default lives in one place.
+	TrafficEnabled             bool
+	TrafficInternalUsers       []string // system accounts, exact match (default ["root"])
+	TrafficJobAgentMin         int      // first numeric job-agent account (default 1)
+	TrafficJobAgentMax         int      // last numeric job-agent account (default 8; set below min to disable)
+	TrafficReplicationPrefixes []string // replication markers (default ["replicate"])
+	TrafficCaseSensitive       bool     // match accounts and prefixes case-sensitively (default false)
+
 	// Metadata: producer/type values written into WLCG-formatted records.
 	Producer        string // metadata.producer for file-transfer (file-close) records
 	Type            string // metadata.type for file-transfer records
@@ -728,6 +748,22 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	// No viper default here: an empty order is turned into the default inside the
 	// collector package, so it lives in one place.
 	c.WLCG.VOOrder = viper.GetStringSlice("wlcg.vo_order")
+
+	// Traffic classification (collector mode, WLCG mode only). On by default once
+	// wlcg.enabled is set, since the three fields are what a WLCG site wants from
+	// the src/dst sites it already resolves. The rules below have defaults taken
+	// from the MonALISA xrootd collector - verified by the XRootD team, only need changing at a site whose
+	// system accounts or replication paths are named differently, and carry no
+	// viper defaults: an unset rule is turned into its default inside the
+	// collector package, the same arrangement as wlcg.vo_order.
+	viper.SetDefault("wlcg.traffic_enabled", true)
+	c.WLCG.TrafficEnabled = viper.GetBool("wlcg.traffic_enabled")
+	c.WLCG.TrafficInternalUsers = viper.GetStringSlice("wlcg.traffic_internal_users")
+	c.WLCG.TrafficJobAgentMin = viper.GetInt("wlcg.traffic_job_agent_min")
+	c.WLCG.TrafficJobAgentMax = viper.GetInt("wlcg.traffic_job_agent_max")
+	c.WLCG.TrafficReplicationPrefixes = viper.GetStringSlice("wlcg.traffic_replication_prefixes")
+	viper.SetDefault("wlcg.traffic_case_sensitive", false)
+	c.WLCG.TrafficCaseSensitive = viper.GetBool("wlcg.traffic_case_sensitive")
 
 	// Record drop filter (collector mode only); defaults to drop nothing.
 	c.Filter.DropPathPrefixes = viper.GetStringSlice("filter.drop_path_prefixes")
