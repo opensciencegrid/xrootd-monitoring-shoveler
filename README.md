@@ -61,6 +61,7 @@ graph LR
     - [Message Bus Credentials](#message-bus-credentials)
     - [Packet Verification](#packet-verification)
     - [IP Mapping](#ip-mapping)
+    - [Src/Dst Site Resolution](#srcdst-site-resolution)
   - [Running the Shoveler](#running-the-shoveler)
   - [Testing Packet Flow with the Collector](#testing-packet-flow-with-the-collector)
   - [:compass: Design](#compass-design)
@@ -283,6 +284,244 @@ map:
    <ip address>: <ip address>
    
 ```
+
+### Src/Dst Site Resolution
+
+**Collector mode only, WLCG records only.** The collector resolves each end of a
+transfer to its WLCG **RCSite** (`CERN-PROD`, `AGLT2`, …) and stamps four fields
+on the WLCG-formatted record — `src_site`, `dst_site`, and a `src_site_status` /
+`dst_site_status` saying how (or whether) each end resolved. The fields are
+ordered by data-flow direction: on a read the server is the source and the client
+the destination; on a write they are inverted.
+
+Records that are not routed to the WLCG exchange are left exactly as they are
+today — the plain collector record gains no new fields, and resolution is skipped
+for those records entirely rather than computed and discarded.
+
+Resolution uses snapshots of the [CRIC](https://wlcg-cric.cern.ch/) domain map
+and network routes that are **embedded in the binary**, so it works out of the
+box with no network access and no per-record lookups. It is on by default.
+
+Each endpoint is resolved by trying identifiers in the configured order and
+taking the first hit:
+
+| method | matches on | CRIC source |
+|---|---|---|
+| `config` | `site.local_site`, the site this collector runs at | declared, no lookup |
+| `hostname` | exact host of a CRIC **SE protocol endpoint** | service API `query/?json&type=SE` |
+| `ip` | longest-prefix **CIDR containment** | netroutes `rcsite/query` |
+| `domain` | longest matching **domain suffix** | domains preset `besttier=1` |
+
+The default order is `["config", "hostname", "ip", "domain"]`: the operator's own
+declaration first (nothing inferred beats it, and it needs no DNS), then the
+identifiers from most to least specific. Leaving a method out of the list turns
+it off. `site.overrides` is not one of these — it is consulted before the order
+runs and wins outright (see below).
+
+> **`hostname` and `domain` need a name, and the server end only has one with DNS
+> enrichment on.** The client name arrives in the xrootd user record and is used
+> as-is, but the server end is derived from the packet's source address and is
+> always an IP literal, which the domain map deliberately refuses to match. Since
+> `state.enable_dns_enrichment` defaults to `false`, both name-based methods are
+> inert for *every server endpoint* under the shipped defaults, leaving `config`
+> and `ip` to resolve that end. The collector warns at startup when the order
+> asks for a name-based method that DNS has made inert, and stays quiet once
+> either of those is in place.
+>
+> What DNS actually buys is narrower than it looks: it only changes the outcome
+> when an endpoint is an address, **no** CRIC netroute CIDR covers it, and the
+> domain map does know its domain. A server on `203.0.113.9` with no CIDR match
+> is `no_host` with DNS off and `resolved` via `cern.ch` with it on; the same
+> server inside a declared CIDR resolves either way, since `ip` precedes `domain`.
+>
+> `site.local_site` covers the *server* end only, in both directions — it provides
+> where the reporting server sits, so it lands on `src` for a read and `dst` for
+> a write. A **remote client** on an address CRIC declares no range for still has
+> no name-based path with DNS off, and `config` does not apply to it (that extends
+> only to private/loopback clients, via `site.local_site_lan_clients`). Whether
+> that bites depends on what your servers report, so it shows up in
+> `shoveler_site_unresolved` rather than in the startup warning. Roles alternate
+> there too: an unresolved client is `role="dst"` on reads and `role="src"` on
+> writes, so check both before concluding one direction is worse.
+
+**If your collector serves a single site, set `site.local_site`.** It is the one
+thing you know for certain — every server reporting to that collector is at that
+site — and it resolves the server end with no DNS and no CRIC coverage
+dependency. It also covers clients on private addresses (your own worker nodes),
+which CRIC declares no ranges for.
+
+```yaml
+site:
+  enabled: true                 # false disables src_site/dst_site entirely
+  local_site: CERN-PROD         # leave empty on a collector aggregating several sites
+  local_site_lan_clients: true  # also apply local_site to private/loopback clients
+  resolution_order: ["config", "hostname", "ip", "domain"]
+
+  # Off by default. When enabled, a pin is consulted before any CRIC lookup and
+  # wins outright. A key is an exact host, a domain suffix, an address, or a CIDR.
+  overrides_enabled: true
+  overrides:
+    scotgrid.ac.uk: UKI-SCOTGRID-GLASGOW
+    159.93.39.0/24: JINR-T1
+
+  # All three maps default to the embedded snapshots. Point these at a file path
+  # or an http(s):// URL to follow CRIC live; a URL is re-fetched on the interval
+  # and a failed refresh keeps the previous data.
+  source: ""                    # domains map, backing "domain"
+  refresh_interval: 86400
+  hostname_enabled: true        # SE endpoints, backing "hostname"
+  hostname_source: ""
+  hostname_refresh_interval: 86400
+  ip_enabled: true              # netroutes, backing "ip"
+  ip_source: ""
+  ip_refresh_interval: 86400
+```
+
+Equivalent environment variables use the collector prefix, e.g.
+`COLLECTOR_SITE_LOCAL_SITE`, `COLLECTOR_SITE_ENABLED`, `COLLECTOR_SITE_SOURCE`.
+
+#### Reading the emitted fields
+
+`src_site` / `dst_site` are empty unless the matching status is one of the
+resolved ones, and all four are omitted from the JSON when empty. The two
+endpoints behind them:
+
+- **server** — the monitored XRootD server. **Its IP is always known** (it is the
+  UDP packet's source address). On a read it is the source; on a write the
+  destination.
+- **client** — the peer that connected (a grid job / worker node, or a TPC peer).
+  On a read it is the destination; on a write the source.
+
+| status | the end was resolved… |
+|---|---|
+| `resolved_override` | pinned by the sites in `site.overrides` |
+| `resolved_config` | from `site.local_site` — the operator's declaration, no lookup |
+| `resolved_hostname` | by an **exact CRIC SE endpoint** host (`xrootd.aglt2.org` → `AGLT2`) |
+| `resolved` | by **domain suffix** against the CRIC domain map (`x.cern.ch` → `CERN-PROD`) |
+| `resolved_ip` | by **address**, inside a CRIC-declared CIDR block |
+| `unknown_domain` | not resolved — we had a host name, but it is no SE endpoint and no domain suffix matched |
+| `ambiguous` | **a guess** — the domain or range maps to more than one site; the first is reported |
+| `no_host` | not resolved — **no usable host name** (bare IP / `unknown` / DNS off) **and** no matching CIDR block |
+
+A domain shared by several RCSites (`desy.de`, `scotgrid.ac.uk`) yields the
+first site CRIC lists for it, under the `ambiguous` status — so a consumer that
+needs certainty can filter on the status, and one that just wants a usable label
+has one. Treat `ambiguous` as unresolved when computing a resolution rate.
+
+**Settling an ambiguous host.** `shoveler_site_unresolved{reason="ambiguous"}`
+counts these but cannot name them — a host name in a metric label would be
+unbounded cardinality — so the collector logs each ambiguous host once, with its
+candidates and the line that fixes it:
+
+```
+WARN site: "host.scotgrid.ac.uk" is ambiguous between UKI-SCOTGRID-DURHAM,
+     UKI-SCOTGRID-GLASGOW; using "UKI-SCOTGRID-DURHAM" as a guess.
+     Pin it with site.overrides: {"host.scotgrid.ac.uk": "UKI-SCOTGRID-DURHAM"}
+```
+
+Put that key in `site.overrides`, turn the option on, and the host resolves
+definitively from then on with status `resolved_override`:
+
+```yaml
+site:
+  overrides_enabled: true
+  overrides:
+    host.scotgrid.ac.uk: UKI-SCOTGRID-GLASGOW
+```
+
+Both lines are needed: the keys alone do nothing until the option is on.
+
+**Overriding is off by default.** `site.overrides_enabled` defaults to `false`,
+unlike the other `site.*_enabled` flags, and while it is off the pins are ignored
+entirely: every endpoint resolves from CRIC alone, and a host CRIC cannot settle
+keeps reporting `ambiguous`. A pin beats everything CRIC says, so switching it on
+is a deliberate act — this is the escape hatch for a CRIC entry you know is wrong
+or that CRIC cannot disambiguate, not routine configuration. Leaving keys in
+`site.overrides` with the option off is a no-op, and the collector says so at
+startup rather than letting you debug a pin that was never applied.
+
+**With the option on, a pin is the site's own answer and is used.** It is
+consulted before any CRIC lookup, so it corrects a CRIC answer as well as settling
+one CRIC reports ambiguously. It is **not** a `resolution_order` method and cannot
+be scheduled, reordered or left out there.
+
+A key is matched by what it parses as:
+
+| key | matches |
+|---|---|
+| `xrootd.example.org` | that exact host |
+| `example.org` | every host under the suffix |
+| `192.0.2.7` | that one address |
+| `192.0.2.0/24` | every address in the range (IPv6 CIDRs too) |
+
+Host keys use the domains-map walk (full host first, then broader suffixes,
+longest key wins); address keys use longest-prefix containment, so a single
+address beats a range containing it. Host keys are tried before address keys, so
+a host pinned by name beats a range that merely covers its address.
+
+Address keys matter because the `ip` method reports `ambiguous` when two sites
+declare equally specific CIDRs, and an endpoint reported as a bare address has no
+name to key on.
+
+Name matching takes the **longest** matching suffix and stops there, so
+`n01.gla.scotgrid.ac.uk` resolves via `gla.scotgrid.ac.uk` and never falls
+through to the broad `ac.uk`.
+
+The `hostname` method matches the host of a CRIC **storage-element** protocol
+endpoint, with scheme and port stripped — `root://xrootd.aglt2.org:1094` makes
+`xrootd.aglt2.org` an exact key for `AGLT2`. That is why it sits above `ip` and
+`domain`: a storage host CRIC names outright is not a guess, where a suffix match
+can over-reach. The embedded snapshot holds 567 hosts across 168 RCSites.
+
+**Expect the client side to resolve less often than the server side.** Clients
+are often bare IPs with no PTR record, they are not storage elements so the
+`hostname` method cannot name them, and CRIC's ranges cover
+storage/LHCOPN/LHCONE networks, not the worker-node subnets clients connect from.
+In the embedded snapshot only 143 of 392 sites declare any CIDR range at all.
+`site.local_site` removes the server side of that problem outright, and
+`site.local_site_lan_clients` covers local worker nodes, which CRIC cannot.
+
+Both count WLCG-bound records only, since those are the only
+ones resolved.
+
+#### Refreshing the embedded CRIC snapshots
+
+The snapshots live in `collector/cric_domains.json`, `collector/cric_se.json`
+and `collector/cric_netroutes.json`. Point `site.source` / `site.hostname_source`
+/ `site.ip_source` at the CRIC URLs to follow them live instead, or regenerate
+the committed files with:
+
+```bash
+# Domain map. besttier=1 collapses noisy low-tier/test entries
+# (cern.ch: [BOINC, CERN-PROD] -> CERN-PROD). Served on the dev instance.
+curl -s 'https://wlcg-cric.cern.ch/api/core/rcsite/query/?json&preset=domains&besttier=1' \
+  -o collector/cric_domains.json
+
+# Storage-element endpoints, backing the "hostname" method. Reduced to the rcsite
+# and protocol endpoints the collector reads; an unreduced response parses
+# identically if you drop the jq. "aprotocols" is not kept: it indexes protocol
+# names by access pattern rather than carrying endpoints of its own. Nor are the
+# lifecycle fields ("state", "status"), which are irrelevant to a host -> site
+# mapping - a machine does not change site because one of its doors is retired.
+curl -s 'https://wlcg-cric.cern.ch/api/core/service/query/?json&type=SE' \
+  | jq -S 'map_values({rcsite, protocols: ((.protocols // {}) | map_values({endpoint}))})
+           | with_entries(select(.value.rcsite != null and .value.rcsite != ""
+                                 and (.value.protocols | length) > 0))' \
+  > collector/cric_se.json
+
+# Network routes. The full rcsite/query response is ~1.1 MB and mostly fields the
+# collector ignores, so the committed snapshot is reduced to the netroutes it
+# actually reads; an unreduced response parses identically if you drop the jq.
+curl -s 'https://wlcg-cric.cern.ch/api/core/rcsite/query/?json' \
+  | jq -S 'map_values({netroutes: (.netroutes // {} | map_values({networks: (.networks | {ipv4, ipv6} | with_entries(select(.value != null and (.value | length) > 0)))}) | with_entries(select(.value.networks | length > 0)))})
+           | with_entries(select(.value.netroutes | length > 0))' \
+  > collector/cric_netroutes.json
+```
+
+Address matching is longest-prefix containment over the declared blocks, which is
+exactly what CRIC does server-side — replicated locally so no record ever waits on
+a network call. The server's self-reported `site` field (from the `=` map packet)
+is left untouched; `src_site`/`dst_site` are new fields alongside it.
 
 ## Running the Shoveler
 
@@ -604,6 +843,11 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 **Note:** The enrichment queue grows lazily in memory up to `COLLECTOR_STATE_ENRICHMENT_QUEUE_SIZE`; `1000000` queued request descriptors are about `32 MiB`, but the retained `CollectorRecord` objects are much larger and can exceed `600 MiB` before counting string data.
 - `shoveler_ttl_evictions` - State entries evicted due to TTL
 - `shoveler_records_emitted` - Collector records emitted
+- `shoveler_site_resolved_by_method{role,method}` - Transfer endpoints resolved to an RCSite, by which resolution method produced it
+- `shoveler_site_unresolved{role,reason}` - Transfer endpoints no method could resolve, by reason
+- `shoveler_site_resolved_by_ip{role}` - Endpoints resolved via CRIC netroutes CIDR containment
+- `shoveler_site_registry_domains` / `shoveler_site_registry_hosts` / `shoveler_site_ip_routes` - Size of the currently loaded CRIC domain map / SE endpoint map / route table
+- `shoveler_site_registry_reload_failures` / `shoveler_site_hostname_reload_failures` / `shoveler_site_ip_reload_failures` - Failed background refreshes (previous data retained)
 - `shoveler_parse_time_ms` - Packet parsing time histogram
 - `shoveler_request_latency_ms` - Request latency histogram
 

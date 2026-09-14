@@ -23,6 +23,65 @@ type WLCGConfig struct {
 	GStreamProducer string // metadata.producer for gstream cache & TPC records
 }
 
+// SiteConfig configures the CRIC-backed src/dst site resolver (collector mode).
+// The resolved sites are emitted on WLCG-formatted records only, so only those
+// records are resolved. When Source is empty the embedded CRIC domains snapshot
+// (preset=domains&besttier=1) is used; set it to a file path or http(s):// URL
+// to override it, re-fetched every RefreshInterval seconds. Enabled=false
+// disables src_site/dst_site resolution entirely.
+type SiteConfig struct {
+	Enabled         bool   // resolve src_site/dst_site on WLCG records (default true)
+	Source          string // domains map: file path or http(s):// URL; empty = embedded snapshot
+	RefreshInterval int    // seconds between re-fetches of the domains URL source (default 86400; 0 disables)
+
+	// IP/CIDR resolution: matches an endpoint address against the CRIC netroutes
+	// CIDR blocks. IPSource expects CRIC's rcsite/query/?json structure
+	// (netroutes per site); empty uses the embedded snapshot.
+	IPEnabled         bool   // enable the IP/CIDR method (default true)
+	IPSource          string // netroutes: file path or http(s):// URL; empty = embedded snapshot
+	IPRefreshInterval int    // seconds between re-fetches of the netroutes URL source (default 86400; 0 disables)
+
+	// Hostname resolution: exact match against CRIC storage-element protocol
+	// endpoints (scheme and port stripped). HostnameSource expects CRIC's
+	// service/query/?json&type=SE structure; empty uses the embedded snapshot.
+	HostnameEnabled         bool   // enable the hostname method (default true)
+	HostnameSource          string // SE endpoints: file path or http(s):// URL; empty = embedded snapshot
+	HostnameRefreshInterval int    // seconds between re-fetches of the SE URL source (default 86400; 0 disables)
+
+	// OverridesEnabled gates Overrides. It defaults to FALSE, unlike the other
+	// site.*_enabled flags: a pin outrules everything CRIC says, so it is an
+	// escape hatch for a site that is wrong or ambiguous, not something a
+	// collector should be doing by accident. With it off the pins are ignored
+	// entirely and every endpoint resolves from CRIC alone.
+	OverridesEnabled bool
+
+	// Overrides is the operator's own answer for an endpoint, applied only when
+	// OverridesEnabled: site.overrides: {"ccsrm.in2p3.fr": "IN2P3-CC"}. A key is
+	// an exact host, a domain suffix, an address, or a CIDR. Host keys are matched
+	// like the domains map (full host first, then suffixes, longest key wins);
+	// address keys by longest-prefix containment.
+	Overrides map[string]string
+
+	// LocalSite is the RCSite this collector runs at, e.g. "CERN-PROD". Every
+	// server reporting to this collector sits at that site by definition, so when
+	// LocalSite is set the "config" method resolves the server end outright, with
+	// no DNS or CRIC lookup. Leave it empty on a collector that aggregates
+	// several sites, since there is then no single answer.
+	LocalSite string
+	// LocalSiteLANClients also applies LocalSite to clients on a private,
+	// loopback or link-local address (default true). Those clients are at the
+	// reporting server's site by definition, and CRIC declares no worker-node
+	// ranges, so otherwise they stay unresolved. Set false to leave them
+	// unresolved instead of assumed local.
+	LocalSiteLANClients bool
+	// ResolutionOrder is the order the per-endpoint methods are tried in, first
+	// hit wins: "override" (Overrides), "config" (LocalSite), "hostname" (exact CRIC SE endpoint host),
+	// "ip" (netroutes CIDR containment), "domain" (longest domain-suffix match).
+	// Unknown or repeated names are dropped, and an empty list falls back to the
+	// default order.
+	ResolutionOrder []string
+}
+
 type FilterConfig struct {
 	DropPathPrefixes []string // records whose path matches any prefix are dropped entirely
 	DropVOs          []string // records whose VO matches (case-insensitive) are dropped entirely
@@ -70,6 +129,7 @@ type Config struct {
 	State                 StateConfig
 	Output                OutputConfig
 	WLCG                  WLCGConfig
+	Site                  SiteConfig
 	Mode                  string   // Operating mode: "shoveler" or "collector"
 	MQ                    string   // Which technology to use for the MQ connection
 	AmqpURL               *url.URL // AMQP URL (password comes from the token)
@@ -326,6 +386,57 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.WLCG.Type = viper.GetString("wlcg.type")
 	viper.SetDefault("wlcg.gstream_producer", "cms-xrootd-cache")
 	c.WLCG.GStreamProducer = viper.GetString("wlcg.gstream_producer")
+
+	// Src/dst site resolver configuration (collector mode). By default the
+	// embedded CRIC domains snapshot (preset=domains&besttier=1) is used; set
+	// site.source to a file path or an http(s):// URL (e.g. the CRIC domains
+	// endpoint) to override it. A URL source is re-fetched every
+	// site.refresh_interval seconds (0 disables refreshing). Set site.enabled to
+	// false to skip src_site/dst_site resolution entirely.
+	viper.SetDefault("site.enabled", true)
+	c.Site.Enabled = viper.GetBool("site.enabled")
+	c.Site.Source = viper.GetString("site.source")
+	viper.SetDefault("site.refresh_interval", 86400)
+	c.Site.RefreshInterval = viper.GetInt("site.refresh_interval")
+
+	// IP/CIDR resolution. By default the embedded CRIC netroutes snapshot is used;
+	// set site.ip_source to a file path or an http(s):// URL serving CRIC's
+	// rcsite/query/?json (netroutes per site) for current coverage, re-fetched
+	// every site.ip_refresh_interval seconds.
+	viper.SetDefault("site.ip_enabled", true)
+	c.Site.IPEnabled = viper.GetBool("site.ip_enabled")
+	c.Site.IPSource = viper.GetString("site.ip_source")
+	viper.SetDefault("site.ip_refresh_interval", 86400)
+	c.Site.IPRefreshInterval = viper.GetInt("site.ip_refresh_interval")
+
+	// Hostname resolution. By default the embedded CRIC SE snapshot is used; set
+	// site.hostname_source to a file path or an http(s):// URL serving CRIC's
+	// service/query/?json&type=SE for current coverage, re-fetched every
+	// site.hostname_refresh_interval seconds.
+	// Site pins for endpoints CRIC reports ambiguously (or gets wrong).
+	// Off by default: a pin beats every CRIC answer, so it must be switched on
+	// deliberately rather than taking effect just because a key was left in a
+	// config file.
+	viper.SetDefault("site.overrides_enabled", false)
+	c.Site.OverridesEnabled = viper.GetBool("site.overrides_enabled")
+	c.Site.Overrides = viper.GetStringMapString("site.overrides")
+
+	viper.SetDefault("site.hostname_enabled", true)
+	c.Site.HostnameEnabled = viper.GetBool("site.hostname_enabled")
+	c.Site.HostnameSource = viper.GetString("site.hostname_source")
+	viper.SetDefault("site.hostname_refresh_interval", 86400)
+	c.Site.HostnameRefreshInterval = viper.GetInt("site.hostname_refresh_interval")
+
+	// The site this collector runs at (e.g. site.local_site: CERN-PROD). Setting
+	// it lets the resolver label the reporting server from the config instead of
+	// inferring it, which is both certain and free; it also covers LAN clients
+	// unless site.local_site_lan_clients is false. site.resolution_order sets
+	// which methods are tried and in what order (first hit wins).
+	c.Site.LocalSite = viper.GetString("site.local_site")
+	viper.SetDefault("site.local_site_lan_clients", true)
+	c.Site.LocalSiteLANClients = viper.GetBool("site.local_site_lan_clients")
+	viper.SetDefault("site.resolution_order", []string{"config", "hostname", "ip", "domain"})
+	c.Site.ResolutionOrder = viper.GetStringSlice("site.resolution_order")
 
 	viper.SetDefault("queue_directory", "/var/spool/xrootd-monitoring-shoveler/queue")
 	c.QueueDir = viper.GetString("queue_directory")
