@@ -57,6 +57,19 @@ state:
 #   exclude_path_prefixes: ["/pnfs/dune"]       # These path prefixes are excluded from the WLCG feed
 #   vo: cms                                   # VO set for collector running at a specific VO. If not set, the VO is determined by the record, scitags, and config in the order of vo_order.
 #   vo_order: ["record", "scitags", "config"]   # VO order to determine the resolution of the VO.
+#
+# Internal traffic flags. With wlcg.enabled on, every WLCG record also carries
+# traffic_scope (LAN/WAN/UNKNOWN), site_internal_traffic (absent when the
+# topology is unknown) and xrootd_internal_traffic. The rules below have general
+# WLCG/XRootD defaults and only need setting at a site that names its system
+# accounts or replication paths differently.
+#
+#   traffic_enabled: true                        # emit the three fields (default true)
+#   traffic_internal_users: ["root"]             # accounts XRootD uses for its own work
+#   traffic_job_agent_min: 1                     # numeric job-agent accounts...
+#   traffic_job_agent_max: 8                     # ...set max below min to turn the rule off
+#   traffic_replication_prefixes: ["replicate"]  # replication markers in the protocol, appinfo or path
+#   traffic_case_sensitive: false                # match accounts and markers exactly as written
 
 # Record drop filter (collector mode only)
 # Records matching any VO (case-insensitive) OR any path prefix are dropped
