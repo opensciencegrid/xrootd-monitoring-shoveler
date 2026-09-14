@@ -18,67 +18,153 @@ import (
 
 // CollectorRecord represents a correlated file access record
 type CollectorRecord struct {
-	Timestamp              time.Time `json:"@timestamp"`
-	StartTime              int64     `json:"start_time"`
-	EndTime                int64     `json:"end_time"`
-	OperationTime          int64     `json:"operation_time"`
-	ServerID               string    `json:"serverID"`
-	ServerHostname         string    `json:"server_hostname"`
-	Server                 string    `json:"server"`
-	ServerIP               string    `json:"server_ip"`
-	Site                   string    `json:"site"`
-	User                   string    `json:"user"`
-	UserDN                 string    `json:"user_dn"`
-	UserDomain             string    `json:"user_domain,omitempty"`
-	VO                     string    `json:"vo,omitempty"`
-	Host                   string    `json:"host"`
-	TokenSubject           string    `json:"token_subject,omitempty"`
-	TokenUsername          string    `json:"token_username,omitempty"`
-	TokenOrg               string    `json:"token_org,omitempty"`
-	TokenRole              string    `json:"token_role,omitempty"`
-	TokenGroups            string    `json:"token_groups,omitempty"`
-	Experiment             string    `json:"experiment,omitempty"`
-	Activity               string    `json:"activity,omitempty"`
-	Filename               string    `json:"filename"`
-	Dirname1               string    `json:"dirname1"`
-	Dirname2               string    `json:"dirname2"`
-	LogicalDirname         string    `json:"logical_dirname"`
-	Protocol               string    `json:"protocol"`
-	AppInfo                string    `json:"appinfo"`
-	IPv6                   bool      `json:"ipv6"`
-	Filesize               int64     `json:"filesize"`
-	ReadOperations         int32     `json:"read_operations"`
-	ReadSingleOperations   int32     `json:"read_single_operations"`
-	ReadVectorOperations   int32     `json:"read_vector_operations"`
-	WriteOperations        int32     `json:"write_operations"`
-	Read                   int64     `json:"read"`
-	ReadSingleBytes        int64     `json:"read_single_bytes"`
-	Readv                  int64     `json:"readv"`
-	Write                  int64     `json:"write"`
-	ReadMin                int32     `json:"read_min"`
-	ReadMax                int32     `json:"read_max"`
-	ReadAverage            int64     `json:"read_average"`
-	ReadSingleMin          int32     `json:"read_single_min"`
-	ReadSingleMax          int32     `json:"read_single_max"`
-	ReadSingleAverage      int64     `json:"read_single_average"`
-	ReadVectorMin          int32     `json:"read_vector_min"`
-	ReadVectorMax          int32     `json:"read_vector_max"`
-	ReadVectorAverage      int64     `json:"read_vector_average"`
-	WriteMin               int32     `json:"write_min"`
-	WriteMax               int32     `json:"write_max"`
-	WriteAverage           int64     `json:"write_average"`
-	ReadVectorCountMin     int16     `json:"read_vector_count_min"`
-	ReadVectorCountMax     int16     `json:"read_vector_count_max"`
-	ReadVectorCountAverage float64   `json:"read_vector_count_average"`
-	ReadBytesAtClose       int64     `json:"read_bytes_at_close"`
-	WriteBytesAtClose      int64     `json:"write_bytes_at_close"`
-	HasFileCloseMsg        int       `json:"HasFileCloseMsg"`
+	Timestamp      time.Time `json:"@timestamp"`
+	StartTime      int64     `json:"start_time"`
+	EndTime        int64     `json:"end_time"`
+	OperationTime  int64     `json:"operation_time"`
+	ServerID       string    `json:"serverID"`
+	ServerHostname string    `json:"server_hostname"`
+	Server         string    `json:"server"`
+	ServerIP       string    `json:"server_ip"`
+	Site           string    `json:"site"`
+	User           string    `json:"user"`
+	UserDN         string    `json:"user_dn"`
+	UserDomain     string    `json:"user_domain,omitempty"`
+	VO             string    `json:"vo,omitempty"`
+	Host           string    `json:"host"`
+	TokenSubject   string    `json:"token_subject,omitempty"`
+	TokenUsername  string    `json:"token_username,omitempty"`
+	TokenOrg       string    `json:"token_org,omitempty"`
+	TokenRole      string    `json:"token_role,omitempty"`
+	TokenGroups    string    `json:"token_groups,omitempty"`
+	// ExperimentID and ActivityID are the raw numeric SciTags flow-label ids
+	// carried on the 'U' (MAPUEAC) stream, 0 when unset. Activity ids are
+	// namespaced per experiment, so ActivityID is only meaningful alongside
+	// ExperimentID.
+	//
+	// SciTags is a WLCG concern end to end: ConvertToWLCG resolves these to
+	// names and emits both the ids and the names on the WLCG record. They carry
+	// json:"-" so they never reach the plain collector record, which is not a
+	// WLCG record and must not carry SciTags data. The fields stay exported
+	// because they are still the in-memory carrier the converter reads.
+	ExperimentID           int     `json:"-"`
+	ActivityID             int     `json:"-"`
+	Filename               string  `json:"filename"`
+	Dirname1               string  `json:"dirname1"`
+	Dirname2               string  `json:"dirname2"`
+	LogicalDirname         string  `json:"logical_dirname"`
+	Protocol               string  `json:"protocol"`
+	AppInfo                string  `json:"appinfo"`
+	IPv6                   bool    `json:"ipv6"`
+	Filesize               int64   `json:"filesize"`
+	ReadOperations         int32   `json:"read_operations"`
+	ReadSingleOperations   int32   `json:"read_single_operations"`
+	ReadVectorOperations   int32   `json:"read_vector_operations"`
+	WriteOperations        int32   `json:"write_operations"`
+	Read                   int64   `json:"read"`
+	ReadSingleBytes        int64   `json:"read_single_bytes"`
+	Readv                  int64   `json:"readv"`
+	Write                  int64   `json:"write"`
+	ReadMin                int32   `json:"read_min"`
+	ReadMax                int32   `json:"read_max"`
+	ReadAverage            int64   `json:"read_average"`
+	ReadSingleMin          int32   `json:"read_single_min"`
+	ReadSingleMax          int32   `json:"read_single_max"`
+	ReadSingleAverage      int64   `json:"read_single_average"`
+	ReadVectorMin          int32   `json:"read_vector_min"`
+	ReadVectorMax          int32   `json:"read_vector_max"`
+	ReadVectorAverage      int64   `json:"read_vector_average"`
+	WriteMin               int32   `json:"write_min"`
+	WriteMax               int32   `json:"write_max"`
+	WriteAverage           int64   `json:"write_average"`
+	ReadVectorCountMin     int16   `json:"read_vector_count_min"`
+	ReadVectorCountMax     int16   `json:"read_vector_count_max"`
+	ReadVectorCountAverage float64 `json:"read_vector_count_average"`
+	ReadBytesAtClose       int64   `json:"read_bytes_at_close"`
+	WriteBytesAtClose      int64   `json:"write_bytes_at_close"`
+	HasFileCloseMsg        int     `json:"HasFileCloseMsg"`
 
 	// Internal fields for DNS enrichment (not serialized to JSON)
 	needsDNSEnrichment bool   `json:"-"` // True if record needs async DNS enrichment for user domain
 	enrichmentIP       string `json:"-"` // User IP address that needs enrichment
 	needsServerDNS     bool   `json:"-"` // True if server hostname needs async DNS enrichment
 	serverEnrichmentIP string `json:"-"` // Server IP address that needs enrichment
+	clientHostname     string `json:"-"` // Full resolved client hostname for site matching (UserDomain keeps only the 2-label domain, which is too coarse for longest-suffix CRIC matching)
+
+	// Src/dst site resolution results. These are carriers for the WLCG converter
+	// and are deliberately NOT serialized: the site fields are emitted on the WLCG
+	// record only, so the plain collector record keeps its existing shape.
+	//
+	// srcSite/dstSite are the WLCG RCSite names of the transfer's source and
+	// destination endpoints, resolved from the configured local site, the CRIC SE
+	// endpoints, the CRIC domains map and the CRIC IP ranges (in
+	// site.resolution_order) and ordered by data-flow direction (read: src=server,
+	// dst=client; write: inverted).
+	// srcSiteStatus/dstSiteStatus record the per-endpoint resolution outcome
+	// (resolved_config/resolved_hostname/resolved/resolved_ip, or
+	// ambiguous/unknown_domain/no_host)
+	// so the UNKNOWN rate stays measurable. A site is empty unless its status is
+	// one of the resolved ones or "ambiguous", which names the first of the
+	// several sites the endpoint matched and must be read as a guess.
+	srcSite       string `json:"-"`
+	dstSite       string `json:"-"`
+	srcSiteStatus string `json:"-"`
+	dstSiteStatus string `json:"-"`
+
+	// VO resolution results, filled in before any rule runs so the drop filter,
+	// the routing rules and the exclusions all match on the resolved VO rather
+	// than on whatever the auth/token stream happened to report. Carriers for the WLCG converter, and
+	// deliberately NOT serialized: they are emitted on the WLCG record only.
+	//
+	// voResolved is set once the correlator has run the resolution, which happens
+	// only while WLCG mode is on. With it off these stay empty and every consumer
+	// falls back to VO, leaving behaviour exactly as upstream.
+	voResolved bool   `json:"-"`
+	resolvedVO string `json:"-"` // first source in wlcg.vo_order that had a value
+	voSource   string `json:"-"` // which source that was: record, scitags or config
+	scitagsVO  string `json:"-"` // the SciTags experiment name, also published on its own
+	experiment string `json:"-"` // SciTags experiment name for the 'U'-stream ids
+	activity   string `json:"-"` // SciTags activity name for the 'U'-stream ids
+
+	// Traffic classification results, filled in by trafficRecordEnricher after
+	// the sites are resolved. Carriers for the WLCG converter and deliberately
+	// NOT serialized: the three classification fields are emitted on the WLCG
+	// record only.
+	//
+	// trafficScope is the canonical topology answer (LAN/WAN/UNKNOWN); empty
+	// means nothing classified this record, which is the case whenever WLCG mode
+	// or wlcg.traffic_enabled is off, and the fields are then left off the record
+	// entirely. site_internal_traffic is derived from it at serialization time
+	// rather than stored, so the two cannot drift apart.
+	// xrootdInternal says the operation was generated by XRootD itself rather
+	// than by an end user; it is an independent axis from the scope.
+	trafficScope   string `json:"-"`
+	xrootdInternal bool   `json:"-"`
+
+	// userInfoKnown records whether User came from the 'u' stream rather than
+	// from the BuildUserHex fallback for a user id no user info was correlated
+	// for. The traffic classifier needs the difference: a hex fallback for a low
+	// user id looks exactly like a numeric job-agent account.
+	userInfoKnown bool `json:"-"`
+}
+
+// routingVO is the VO every rule matches on: the resolved one once the
+// correlator has worked it out, and the packet's own otherwise.
+func (r *CollectorRecord) routingVO() string {
+	if r.voResolved {
+		return r.resolvedVO
+	}
+	return r.VO
+}
+
+// clientHost returns the best available fully-qualified client host name for
+// site resolution: the DNS-resolved hostname when we have it, otherwise the raw
+// Host (which is only usable when it is already a name rather than an IP).
+func (r *CollectorRecord) clientHost() string {
+	if r.clientHostname != "" {
+		return r.clientHostname
+	}
+	return r.Host
 }
 
 // GStreamEvent represents a gstream event with added server information
@@ -101,14 +187,14 @@ type FileState struct {
 
 // UserState tracks user information from user packets
 type UserState struct {
-	UserID         uint32
-	UserInfo       parser.UserInfo
-	AuthInfo       parser.AuthInfo
-	TokenInfo      parser.TokenInfo
-	AppInfo        string
-	ExperimentCode string
-	ActivityCode   string
-	CreatedAt      time.Time
+	UserID       uint32
+	UserInfo     parser.UserInfo
+	AuthInfo     parser.AuthInfo
+	TokenInfo    parser.TokenInfo
+	AppInfo      string
+	ExperimentID int // SciTags experiment id from the 'U' stream (&Ec=), 0 if unset
+	ActivityID   int // SciTags activity id from the 'U' stream (&Ac=), 0 if unset
+	CreatedAt    time.Time
 }
 
 // PathInfo represents path mapping with associated user info
@@ -137,12 +223,12 @@ type Correlator struct {
 	enrichmentWG          sync.WaitGroup
 	enrichmentDropCount   int64 // atomic; counts records dropped due to full queue
 	wlcgMetadata          WLCGMetadata
+	scitags               *ScitagsRegistry // resolves 'U'-stream experiment/activity ids to names
 	ctx                   context.Context
 	cancel                context.CancelFunc
 
 	// WLCG routing configuration
-	wlcgVOs          []string
-	wlcgPathPrefixes []string
+	wlcgRouting wlcgRouting
 
 	// Record drop filter
 	dropPathPrefixes []string
@@ -156,17 +242,41 @@ type CorrelatorConfig struct {
 	EnableDNSEnrichment bool
 	DNSCacheTTL         time.Duration
 	DNSTimeout          time.Duration
-	EnrichmentWorkers   int // Number of enrichment worker goroutines (default: 5)
-	EnrichmentQueueSize int // Maximum number of pending enrichment requests (default: 1000000)
-	WLCGMetadata        WLCGMetadata // producer/type values used in WLCG records
+	EnrichmentWorkers   int               // Number of enrichment worker goroutines (default: 5)
+	EnrichmentQueueSize int               // Maximum number of pending enrichment requests (default: 1000000)
+	WLCGMetadata        WLCGMetadata      // producer/type values used in WLCG records
+	SiteRegistry        *SiteRegistry     // src/dst RCSite resolver; nil disables src_site/dst_site resolution
+	SiteOverrides       *SiteOverrides    // operator pins consulted before every CRIC lookup; nil disables overriding
+	SiteHostRegistry    *HostSiteRegistry // CRIC SE endpoint resolver backing the "hostname" method; nil drops that method
+	SiteIPRegistry      *IPSiteRegistry   // CRIC netroutes resolver backing the "ip" method; nil drops that method
+	Scitags             *ScitagsRegistry  // SciTags id->name resolver; defaults to the embedded snapshot when nil
 	Logger              *logrus.Logger
 
-	// WLCG routing: records matching any VO (case-insensitive) or path prefix are
-	// converted and routed to the WLCG exchange.
-	// If WLCGVOs/WLCGPathPrefixes are nil, defaults apply (["cms"], ["/store", "/user/dteam"]).
-	// If they are non-nil but empty, WLCG routing is effectively disabled.
-	WLCGVOs          []string
-	WLCGPathPrefixes []string
+	// Site resolution tuning. SiteLocalSite is the RCSite this collector runs at,
+	// which resolves the reporting server without any lookup; empty disables the
+	// "config" method. SiteResolutionOrder is the order the per-endpoint methods
+	// are tried in (nil/empty uses DefaultSiteResolutionOrder).
+	SiteLocalSite           string
+	SiteLocalSiteLANClients bool // also apply SiteLocalSite to clients on private/loopback addresses
+	SiteResolutionOrder     []string
+
+	// WLCG routing. When WLCGEnabled is false, which is the default, routing is
+	// the upstream rule ("cms", /store, /user/dteam) and the fields below are
+	// ignored. See shoveler.WLCGConfig.
+	WLCGEnabled bool
+
+	// Used only when WLCGEnabled is true. WLCGVOs/WLCGPathPrefixes pick which
+	// records to convert; leaving both empty converts everything. The Exclude
+	// lists then take records back out.
+	WLCGVOs                 []string
+	WLCGPathPrefixes        []string
+	WLCGExcludeVOs          []string
+	WLCGExcludePathPrefixes []string
+
+	// Traffic classification (LAN/WAN scope and XRootD-internal origin). It is
+	// part of WLCG mode: the fields it produces are emitted on WLCG records only,
+	// so it is registered only when WLCGEnabled and Traffic.Enabled are both set.
+	Traffic TrafficConfig
 
 	// Drop filter: records matching any VO (case-insensitive) or path prefix are
 	// silently dropped before any publish. Defaults to empty (drop nothing).
@@ -191,6 +301,12 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		config.Logger = logrus.New()
 	}
 
+	// Always have a SciTags resolver; fall back to the embedded snapshot so
+	// id->name resolution works even when the caller supplies none.
+	if config.Scitags == nil {
+		config.Scitags = NewScitagsRegistry(config.Logger)
+	}
+
 	// Set DNS enrichment defaults (treat non-positive values as unset)
 	if config.DNSCacheTTL <= 0 {
 		config.DNSCacheTTL = 1 * time.Hour // Default 1 hour cache
@@ -207,13 +323,17 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	wlcgVOs := config.WLCGVOs
-	if wlcgVOs == nil {
-		wlcgVOs = append([]string(nil), defaultWLCGVOs...)
-	}
-	wlcgPathPrefixes := config.WLCGPathPrefixes
-	if wlcgPathPrefixes == nil {
-		wlcgPathPrefixes = append([]string(nil), defaultWLCGPathPrefixes...)
+	// Copy the lists so the caller and the correlator cannot change each other's.
+	// nil and empty mean the same thing here: convert everything.
+	wlcgVOs := append([]string(nil), config.WLCGVOs...)
+	wlcgPathPrefixes := append([]string(nil), config.WLCGPathPrefixes...)
+
+	routing := wlcgRouting{
+		Enabled:             config.WLCGEnabled,
+		VOs:                 wlcgVOs,
+		PathPrefixes:        wlcgPathPrefixes,
+		ExcludeVOs:          config.WLCGExcludeVOs,
+		ExcludePathPrefixes: config.WLCGExcludePathPrefixes,
 	}
 
 	c := &Correlator{
@@ -228,10 +348,10 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		enrichmentWorkerCount: config.EnrichmentWorkers,
 		enrichmentQueueSize:   config.EnrichmentQueueSize,
 		wlcgMetadata:          config.WLCGMetadata,
+		scitags:               config.Scitags,
 		ctx:                   ctx,
 		cancel:                cancel,
-		wlcgVOs:               wlcgVOs,
-		wlcgPathPrefixes:      wlcgPathPrefixes,
+		wlcgRouting:           routing,
 		dropPathPrefixes:      config.DropPathPrefixes,
 		dropVOs:               config.DropVOs,
 	}
@@ -239,6 +359,40 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 	if config.EnableDNSEnrichment {
 		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
 		c.registerEnricher(&dnsRecordEnricher{correlator: c})
+	}
+
+	if config.SiteRegistry != nil {
+		// Registered after the DNS enricher so the resolved server/client host
+		// names are already populated when src/dst site resolution runs. The
+		// hostname and IP registries are optional and only used when the
+		// order reaches them.
+		order := NormalizeSiteResolutionOrder(config.SiteResolutionOrder, config.Logger)
+		config.Logger.Infof("site: resolution order %s (local site %q)",
+			strings.Join(order, " -> "), config.SiteLocalSite)
+		c.registerEnricher(&siteRecordEnricher{
+			domains:             config.SiteRegistry,
+			overrides:           config.SiteOverrides,
+			ambig:               newAmbiguityReporter(config.Logger),
+			hosts:               config.SiteHostRegistry,
+			ips:                 config.SiteIPRegistry,
+			wlcgOnly:            c.matchesWLCG,
+			localSite:           config.SiteLocalSite,
+			localSiteLANClients: config.SiteLocalSiteLANClients,
+			order:               order,
+		})
+	}
+
+	if config.WLCGEnabled && config.Traffic.Enabled {
+		// Registered last so the src/dst sites the scope is read from are already
+		// resolved. Gated on WLCG mode because the classifications are emitted on
+		// WLCG records only; without a site registry above, every scope is UNKNOWN
+		// and only the XRootD-internal axis says anything, which is by design —
+		// the two axes are independent.
+		logTrafficRules(config.Logger, config.Traffic)
+		c.registerEnricher(&trafficRecordEnricher{
+			classifier: newTrafficClassifier(config.Traffic),
+			wlcgOnly:   c.matchesWLCG,
+		})
 	}
 
 	c.startEnrichmentWorkers()
@@ -446,7 +600,7 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 			eaInfo := string(parts[1])
 
 			// Parse the eainfo fields
-			udid, experimentCode, activityCode := parseEAInfo(eaInfo)
+			udid, experimentID, activityID := parseEAInfo(eaInfo)
 
 			if udid == 0 {
 				c.logger.Debugf("Failed to parse udid from eainfo: %s", eaInfo)
@@ -475,35 +629,40 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 			userStateVal, userExists := c.userMap.Get(userStateKey)
 			if userExists {
 				if existingUserState, ok := userStateVal.(*UserState); ok {
-					existingUserState.ExperimentCode = experimentCode
-					existingUserState.ActivityCode = activityCode
+					existingUserState.ExperimentID = experimentID
+					existingUserState.ActivityID = activityID
 					c.userMap.Set(userStateKey, existingUserState)
-					c.logger.Debugf("Updated user %s (udid=%d) with experiment=%s, activity=%s",
-						userInfo.Username, udid, experimentCode, activityCode)
+					c.logger.Debugf("Updated user %s (udid=%d) with experiment_id=%d, activity_id=%d",
+						userInfo.Username, udid, experimentID, activityID)
 				}
 			} else {
-				// Create new user state with experiment/activity codes
+				// Create new user state with experiment/activity ids
 				userState := &UserState{
-					UserID:         udid,
-					UserInfo:       userInfo,
-					ExperimentCode: experimentCode,
-					ActivityCode:   activityCode,
-					CreatedAt:      time.Now(),
+					UserID:       udid,
+					UserInfo:     userInfo,
+					ExperimentID: experimentID,
+					ActivityID:   activityID,
+					CreatedAt:    time.Now(),
 				}
 				c.userMap.Set(userStateKey, userState)
-				c.logger.Debugf("Created new user state for %s (udid=%d) with experiment=%s, activity=%s",
-					userInfo.Username, udid, experimentCode, activityCode)
+				c.logger.Debugf("Created new user state for %s (udid=%d) with experiment_id=%d, activity_id=%d",
+					userInfo.Username, udid, experimentID, activityID)
 			}
 		}
 	}
 }
 
-// parseEAInfo parses experiment and activity info from eainfo string
-// Format: &Uc=udid&Ec=expc&Ac=actc
-// Returns: (udid, experimentCode, activityCode)
-func parseEAInfo(eaInfo string) (uint32, string, string) {
+// parseEAInfo parses the experiment/activity mapping carried on the 'U'
+// (MAPUEAC) stream.
+// Format: &Uc=udid&Ec=expid&Ac=actid
+// Ec and Ac are the numeric SciTags experiment id and activity id (they are ids,
+// not names). Non-numeric or missing values yield 0, matching the xrootd
+// collector's atoi-based decode (PR #2855). The 0 sentinel is treated as "unset"
+// downstream so it never resolves to a name.
+// Returns: (udid, experimentID, activityID)
+func parseEAInfo(eaInfo string) (uint32, int, int) {
 	var udid uint32
-	var experimentCode, activityCode string
+	var experimentID, activityID int
 
 	// Split by & and parse each key=value pair
 	parts := strings.Split(eaInfo, "&")
@@ -525,13 +684,14 @@ func parseEAInfo(eaInfo string) (uint32, string, string) {
 				udid = uint32(val)
 			}
 		case "Ec":
-			experimentCode = value
+			// atoi-style: ignore errors, leaving 0 for empty/non-numeric values
+			experimentID, _ = strconv.Atoi(value)
 		case "Ac":
-			activityCode = value
+			activityID, _ = strconv.Atoi(value)
 		}
 	}
 
-	return udid, experimentCode, activityCode
+	return udid, experimentID, activityID
 }
 
 // parseUserInfo parses userInfo from bytes
@@ -1102,6 +1262,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	// DNS enrichment tracking
 	var needsDNSEnrichment bool
 	var enrichmentIP string
+	var clientHostname string
 
 	if userInfo != nil {
 		// Use username from userInfo
@@ -1121,6 +1282,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 				if hostname != "" {
 					// Successfully resolved - extract domain from hostname
 					userDomain = extractDomainFromHostname(hostname)
+					clientHostname = hostname
 				} else if needsAsync {
 					// Mark record as needing async DNS enrichment
 					needsDNSEnrichment = true
@@ -1129,6 +1291,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 			} else {
 				// Host is already a hostname - extract domain directly
 				userDomain = extractDomainFromHostname(host)
+				clientHostname = host
 			}
 		}
 
@@ -1171,12 +1334,14 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		}
 	}
 
-	// Extract experiment and activity codes
-	experiment := ""
-	activity := ""
+	// Carry the raw SciTags ids from the 'U' stream. They are parsed packet data,
+	// so they are stamped here unconditionally; turning them into names happens
+	// in ConvertToWLCG, for WLCG-bound records only.
+	experimentID := 0
+	activityID := 0
 	if userInfo != nil {
-		experiment = userInfo.ExperimentCode
-		activity = userInfo.ActivityCode
+		experimentID = userInfo.ExperimentID
+		activityID = userInfo.ActivityID
 	}
 
 	// Extract directory names from filename
@@ -1225,6 +1390,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		ServerIP:               serverIP,
 		Site:                   site,
 		User:                   user,
+		userInfoKnown:          userInfo != nil,
 		UserDN:                 userDN,
 		UserDomain:             userDomain,
 		VO:                     vo,
@@ -1234,8 +1400,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		TokenOrg:               tokenOrg,
 		TokenRole:              tokenRole,
 		TokenGroups:            tokenGroups,
-		Experiment:             experiment,
-		Activity:               activity,
+		ExperimentID:           experimentID,
+		ActivityID:             activityID,
 		Filename:               state.Filename,
 		Dirname1:               dirname1,
 		Dirname2:               dirname2,
@@ -1274,6 +1440,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		enrichmentIP:           enrichmentIP,
 		needsServerDNS:         needsServerDNS,
 		serverEnrichmentIP:     serverEnrichmentIP,
+		clientHostname:         clientHostname,
 	}
 }
 

@@ -34,8 +34,14 @@ type WLCGRecord struct {
 	OperationTime          int64                  `json:"operation_time"`
 	Operation              string                 `json:"operation"`
 	ServerSite             string                 `json:"server_site"`
+	SrcSite                string                 `json:"src_site,omitempty"`
+	DstSite                string                 `json:"dst_site,omitempty"`
+	SrcSiteStatus          string                 `json:"src_site_status,omitempty"`
+	DstSiteStatus          string                 `json:"dst_site_status,omitempty"`
 	UserProtocol           string                 `json:"user_protocol,omitempty"`
 	VO                     string                 `json:"vo,omitempty"`
+	RecordVO               string                 `json:"record_vo,omitempty"`
+	VOSource               string                 `json:"vo_source,omitempty"`
 	WriteBytes             int64                  `json:"write_bytes"`
 	ReadAverage            int64                  `json:"read_average,omitempty"`
 	ReadBytesAtClose       int64                  `json:"read_bytes_at_close,omitempty"`
@@ -65,19 +71,41 @@ type WLCGRecord struct {
 	WriteSigma             int32                  `json:"write_sigma,omitempty"`
 	Experiment             string                 `json:"experiment,omitempty"`
 	Activity               string                 `json:"activity,omitempty"`
+	ExperimentID           int                    `json:"experiment_id,omitempty"`
+	ActivityID             int                    `json:"activity_id,omitempty"`
+	ScitagsVO              string                 `json:"scitags_vo,omitempty"`
 	CRABId                 string                 `json:"CRAB_Id,omitempty"`
 	CRABRetry              string                 `json:"CRAB_Retry,omitempty"`
 	CRABWorkflow           string                 `json:"CRAB_Workflow,omitempty"`
 	Metadata               map[string]interface{} `json:"metadata"`
+
+	// The two traffic classifications, both read from the src/dst sites above and
+	// from the record's account, protocol and path. They are written only while
+	// WLCG mode and wlcg.traffic_enabled are on, so a collector without them
+	// emits exactly what it emitted before.
+	//
+	// SiteInternalTraffic is true when both ends resolved to the same RCSite and
+	// false when they resolved to different ones. It is a pointer because an
+	// unresolved topology is neither: the field is then left off the record
+	// entirely rather than published as a false, which would claim the two ends
+	// were resolved and found apart. Read TrafficScope == "UNKNOWN" for that case.
+	//
+	// XRootDInternalTraffic is an independent axis: whether XRootD generated the
+	// operation itself (replication, a system or job-agent account) rather than
+	// an end user. It is a pointer only so the field is absent, rather than a
+	// meaningless false, on records nothing classified.
+	SiteInternalTraffic   *bool  `json:"site_internal_traffic,omitempty"`
+	TrafficScope          string `json:"traffic_scope,omitempty"`
+	XRootDInternalTraffic *bool  `json:"xrootd_internal_traffic,omitempty"`
 }
 
 // IsWLCGPacket determines if a record should be converted to WLCG format
 // using the default routing rules from the reference implementation.
 //
-// Deprecated: runtime routing uses CorrelatorConfig (WLCGVOs/WLCGPathPrefixes)
-// and may differ when those values are overridden.
+// Deprecated: runtime routing uses CorrelatorConfig (WLCGVOs/WLCGPathPrefixes
+// and the WLCGExclude* lists) and may differ when those values are overridden.
 func IsWLCGPacket(record *CollectorRecord) bool {
-	return matchesWLCGWithRules(record, defaultWLCGVOs, defaultWLCGPathPrefixes)
+	return wlcgRouting{VOs: defaultWLCGVOs, PathPrefixes: defaultWLCGPathPrefixes}.eligible(record.VO, record.Filename)
 }
 
 // WLCGMetadata holds the configurable producer/type values used to create the
@@ -90,13 +118,63 @@ type WLCGMetadata struct {
 	Producer        string // metadata.producer for file-transfer (file-close) records
 	Type            string // metadata.type for file-transfer records
 	GStreamProducer string // metadata.producer for gstream cache & TPC records
+
+	// VOResolution holds the VO settings; they only apply when it is enabled.
+	VOResolution VOResolution
+}
+
+// VOResolution holds the VO settings for a converted record, off by default.
+// While Enabled is false "vo" is whatever the packet said and record_vo is not
+// written at all, so the output matches a collector without any of this.
+type VOResolution struct {
+	Enabled bool
+
+	// VO names the VO this collector serves: one of the three sources the resolved
+	// "vo" field can come from, used last by default. Empty leaves it out of
+	// the resolution entirely.
+	VO string
+
+	// Order is the order the VO sources are tried in, first hit wins. Nil means
+	// DefaultVOOrder (record, scitags, config). See NormalizeVOOrder.
+	Order []string
+}
+
+// deriveOperation classifies a record as "read", "write", or "unknown" from its
+// transfer counters. Read wins when any read bytes are present (single or
+// vector). It is shared by ConvertToWLCG (which reports it as the WLCG
+// operation) and the site enricher (which uses it to order src/dst sites) so
+// direction is derived from a single source of truth.
+func deriveOperation(record *CollectorRecord) string {
+	switch {
+	case record.Read > 0 || record.Readv > 0:
+		return "read"
+	case record.Write > 0:
+		return "write"
+	default:
+		return "unknown"
+	}
 }
 
 // ConvertToWLCG converts a CollectorRecord to WLCG format
 // Based on references/wlcg_converter.py
-func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, error) {
+func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsRegistry) (*WLCGRecord, error) {
 	// Generate unique ID
 	uniqueID := uuid.New().String()
+
+	// Resolve the numeric SciTags ids from the 'U' stream to the names published
+	// by the registry. This happens here rather than at record creation because
+	// the names belong to the WLCG record: ConvertToWLCG is only ever reached
+	// through the WLCG routing predicate, so a record that is not WLCG-bound
+	// never pays for the lookups and never carries the fields. A nil registry
+	// disables resolution and leaves the ids unaccompanied.
+	// SciTags names for the 'U'-stream ids. When wlcg.enabled is on the correlator
+	// has already looked these up, before routing, so reuse its answer rather than
+	// looking them up twice and counting unmapped ids twice. With it off nothing
+	// has run yet, so do it here, where records that are not WLCG-bound skip it.
+	experiment, activity, scitagsVO := record.experiment, record.activity, record.scitagsVO
+	if !record.voResolved {
+		experiment, activity, scitagsVO = resolveScitagsNames(record, scitags)
+	}
 
 	// Extract server domain from server hostname
 	serverDomain := ""
@@ -108,12 +186,7 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, err
 	}
 
 	// Determine operation type
-	operation := "unknown"
-	if record.Read > 0 || record.Readv > 0 {
-		operation = "read"
-	} else if record.Write > 0 {
-		operation = "write"
-	}
+	operation := deriveOperation(record)
 
 	// Extract user from DN (everything after CN=)
 	user := ""
@@ -146,6 +219,10 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, err
 		OperationTime:          record.OperationTime,
 		Operation:              operation,
 		ServerSite:             record.Site,
+		SrcSite:                record.srcSite,
+		DstSite:                record.dstSite,
+		SrcSiteStatus:          record.srcSiteStatus,
+		DstSiteStatus:          record.dstSiteStatus,
 		UserProtocol:           record.Protocol,
 		VO:                     record.VO,
 		WriteBytes:             record.Write,
@@ -170,8 +247,39 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, err
 		WriteMax:               record.WriteMax,
 		WriteMin:               record.WriteMin,
 		WriteOperations:        record.WriteOperations,
-		Experiment:             record.Experiment,
-		Activity:               record.Activity,
+		Experiment:             experiment,
+		Activity:               activity,
+		ExperimentID:           record.ExperimentID,
+		ActivityID:             record.ActivityID,
+		ScitagsVO:              scitagsVO,
+	}
+
+	// With wlcg.enabled, "vo" is found out from the record, scitags, and config in the order of vo_order. The
+	// correlator did that before routing (see Correlator.resolveRecordVO) so the
+	// WLCG rules could match on it; here we just publish it, with record_vo and
+	// vo_source so a reader can see where it came from.
+	//
+	// With it off, "vo" stays as the packet reported it and neither record_vo nor
+	// vo_source is written.
+	if meta.VOResolution.Enabled {
+		wlcg.RecordVO = record.VO
+		wlcg.VO = record.resolvedVO
+		wlcg.VOSource = record.voSource
+	}
+
+	// Traffic classification. trafficRecordEnricher worked both answers out after
+	// the sites were resolved; here they are only published. An empty scope means
+	// nothing classified this record (WLCG mode or wlcg.traffic_enabled is off),
+	// and then none of the three fields is written.
+	//
+	// site_internal_traffic is derived from the scope here rather than carried
+	// separately, so "LAN implies internal, WAN implies not, UNKNOWN implies no
+	// answer" holds by construction. "user" is untouched by any of this.
+	if record.trafficScope != "" {
+		wlcg.TrafficScope = record.trafficScope
+		wlcg.SiteInternalTraffic = siteInternalFromScope(record.trafficScope)
+		xrootdInternal := record.xrootdInternal
+		wlcg.XRootDInternalTraffic = &xrootdInternal
 	}
 
 	// Parse appinfo for CRAB information if present
