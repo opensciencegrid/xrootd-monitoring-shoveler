@@ -49,6 +49,59 @@ state:
 #   drop_vos: []
 #   drop_path_prefixes: []
 
+# Src/dst site resolution (collector mode only)
+# Resolves each end of a transfer to its WLCG RCSite (e.g. CERN-PROD, AGLT2) and
+# stamps src_site/dst_site plus a per-endpoint *_site_status on the WLCG-formatted
+# record, ordered by data-flow direction (read: src=server, dst=client; write:
+# inverted). Records not routed to the WLCG exchange are untouched.
+# Enabled by default using the CRIC snapshots embedded in the binary, so no
+# network access is required.
+# site:
+#   enabled: true              # false disables all src_site/dst_site resolution
+#
+#   # The RCSite this collector runs at. Every server reporting to it is at that
+#   # site by definition, so setting this resolves the server end with no lookup.
+#   # Leave empty on a collector aggregating several sites.
+#   local_site: ""
+#   local_site_lan_clients: true  # also apply local_site to private/loopback clients
+#
+#   # Which identifiers are tried, in order; the first hit wins. Leaving a method
+#   # out is how you turn it off. Examples assume local_site: CERN-PROD.
+#   #   config   - local_site (above): the reporting server always, plus
+#   #              private-address clients when local_site_lan_clients is set
+#   #   hostname - exact CRIC SE endpoint host: root://xrootd.aglt2.org:1094
+#   #   ip       - CRIC netroutes CIDR: 137.138.5.4 falls in 137.138.0.0/16
+#   #   domain   - longest domain suffix: wn01.cern.ch -> cern.ch
+#   # A name matching several sites (computecanada.ca matches three) yields the
+#   # first of them with status "ambiguous", and the next method is still tried:
+#   # a definite hit later in the order replaces the guess.
+#   resolution_order: ["config", "hostname", "ip", "domain"]
+#
+#   # CRIC domains map ("" = the embedded snapshot; else a file path or URL).
+#   source: ""
+#   refresh_interval: 86400    # seconds between re-fetches of a URL source (0 disables)
+#
+#   # The site's own answer for an endpoint. OFF by default: a pin overrides every
+#   # CRIC answer, so it must be switched on deliberately. It is the escape hatch
+#   # for a CRIC entry you know is wrong, or one CRIC cannot disambiguate.
+#   # Not part of resolution_order: it cannot be reordered or left out there.
+#   # A key is an exact host, a domain suffix, an address, or a CIDR. The collector
+#   # logs each ambiguous endpoint once with the exact line to add here.
+#   overrides_enabled: false
+#   overrides:
+#     scotgrid.ac.uk: UKI-SCOTGRID-GLASGOW   # every host under the suffix
+#     159.93.39.0/24: JINR-T1                # two sites declare this same range
+#
+#   # CRIC SE endpoints, backing the "hostname" method ("" = the embedded snapshot).
+#   hostname_enabled: true
+#   hostname_source: ""
+#   hostname_refresh_interval: 86400
+#
+#   # CRIC netroutes, backing the "ip" method ("" = the embedded snapshot).
+#   ip_enabled: true
+#   ip_source: ""
+#   ip_refresh_interval: 86400
+
 # Select which protocol to use in order to connect to the MQ
 # mq: amqp/stomp
 

@@ -261,7 +261,7 @@ func (c *Correlator) processEnrichmentRequest(req enrichmentRequest) {
 
 func (c *Correlator) buildEnrichedRecord(record *CollectorRecord, wlcgExchange string) (EnrichedRecord, error) {
 	if c.matchesWLCG(record) {
-		wlcgRecord, err := ConvertToWLCG(record, c.wlcgMetadata)
+		wlcgRecord, err := ConvertToWLCG(record, c.wlcgMetadata, c.scitags)
 		if err != nil {
 			return EnrichedRecord{}, err
 		}
@@ -370,6 +370,7 @@ func (d *dnsRecordEnricher) Enrich(ctx context.Context, record *CollectorRecord)
 		hostname := d.correlator.lookupDNSHostname(ctx, record.enrichmentIP)
 		if hostname != "" {
 			record.UserDomain = extractDomainFromHostname(hostname)
+			record.clientHostname = hostname
 		}
 		record.needsDNSEnrichment = false
 		record.enrichmentIP = ""

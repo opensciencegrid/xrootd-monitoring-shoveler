@@ -34,6 +34,10 @@ type WLCGRecord struct {
 	OperationTime          int64                  `json:"operation_time"`
 	Operation              string                 `json:"operation"`
 	ServerSite             string                 `json:"server_site"`
+	SrcSite                string                 `json:"src_site,omitempty"`
+	DstSite                string                 `json:"dst_site,omitempty"`
+	SrcSiteStatus          string                 `json:"src_site_status,omitempty"`
+	DstSiteStatus          string                 `json:"dst_site_status,omitempty"`
 	UserProtocol           string                 `json:"user_protocol,omitempty"`
 	VO                     string                 `json:"vo,omitempty"`
 	WriteBytes             int64                  `json:"write_bytes"`
@@ -65,6 +69,9 @@ type WLCGRecord struct {
 	WriteSigma             int32                  `json:"write_sigma,omitempty"`
 	Experiment             string                 `json:"experiment,omitempty"`
 	Activity               string                 `json:"activity,omitempty"`
+	ExperimentID           int                    `json:"experiment_id,omitempty"`
+	ActivityID             int                    `json:"activity_id,omitempty"`
+	ScitagsVO              string                 `json:"scitags_vo,omitempty"`
 	CRABId                 string                 `json:"CRAB_Id,omitempty"`
 	CRABRetry              string                 `json:"CRAB_Retry,omitempty"`
 	CRABWorkflow           string                 `json:"CRAB_Workflow,omitempty"`
@@ -92,11 +99,58 @@ type WLCGMetadata struct {
 	GStreamProducer string // metadata.producer for gstream cache & TPC records
 }
 
+// deriveOperation classifies a record as "read", "write", or "unknown" from its
+// transfer counters. Read wins when any read bytes are present (single or
+// vector). It is shared by ConvertToWLCG (which reports it as the WLCG
+// operation) and the site enricher (which uses it to order src/dst sites) so
+// direction is derived from a single source of truth.
+func deriveOperation(record *CollectorRecord) string {
+	switch {
+	case record.Read > 0 || record.Readv > 0:
+		return "read"
+	case record.Write > 0:
+		return "write"
+	default:
+		return "unknown"
+	}
+}
+
 // ConvertToWLCG converts a CollectorRecord to WLCG format
 // Based on references/wlcg_converter.py
-func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, error) {
+func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsRegistry) (*WLCGRecord, error) {
 	// Generate unique ID
 	uniqueID := uuid.New().String()
+
+	// Resolve the numeric SciTags ids from the 'U' stream to the names published
+	// by the registry. This happens here rather than at record creation because
+	// the names belong to the WLCG record: ConvertToWLCG is only ever reached
+	// through the WLCG routing predicate, so a record that is not WLCG-bound
+	// never pays for the lookups and never carries the fields. A nil registry
+	// disables resolution and leaves the ids unaccompanied.
+	experiment := ""
+	activity := ""
+	scitagsVO := ""
+	if scitags != nil && record.ExperimentID != 0 {
+		experiment = scitags.ExperimentName(record.ExperimentID)
+		if experiment == "" {
+			// The experiment id is unknown to the registry. Activity ids are
+			// namespaced per experiment, so the activity lookup cannot succeed
+			// either; skip it rather than counting the same unknown experiment a
+			// second time under kind="activity".
+			scitagsUnmappedIDsTotal.WithLabelValues("experiment").Inc()
+		} else {
+			// The SciTags experiment name is the VO the flow belongs to. It is kept
+			// in its own field so it never overwrites VO, which comes from the
+			// auth/token streams and downstream consumers already depend on it.
+			scitagsVO = experiment
+			if record.ActivityID != 0 {
+				activity = scitags.ActivityName(record.ExperimentID, record.ActivityID)
+				if activity == "" {
+					scitagsUnmappedIDsTotal.WithLabelValues("activity").Inc()
+				}
+			}
+		}
+	}
 
 	// Extract server domain from server hostname
 	serverDomain := ""
@@ -108,12 +162,7 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, err
 	}
 
 	// Determine operation type
-	operation := "unknown"
-	if record.Read > 0 || record.Readv > 0 {
-		operation = "read"
-	} else if record.Write > 0 {
-		operation = "write"
-	}
+	operation := deriveOperation(record)
 
 	// Extract user from DN (everything after CN=)
 	user := ""
@@ -146,6 +195,10 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, err
 		OperationTime:          record.OperationTime,
 		Operation:              operation,
 		ServerSite:             record.Site,
+		SrcSite:                record.srcSite,
+		DstSite:                record.dstSite,
+		SrcSiteStatus:          record.srcSiteStatus,
+		DstSiteStatus:          record.dstSiteStatus,
 		UserProtocol:           record.Protocol,
 		VO:                     record.VO,
 		WriteBytes:             record.Write,
@@ -170,8 +223,11 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, err
 		WriteMax:               record.WriteMax,
 		WriteMin:               record.WriteMin,
 		WriteOperations:        record.WriteOperations,
-		Experiment:             record.Experiment,
-		Activity:               record.Activity,
+		Experiment:             experiment,
+		Activity:               activity,
+		ExperimentID:           record.ExperimentID,
+		ActivityID:             record.ActivityID,
+		ScitagsVO:              scitagsVO,
 	}
 
 	// Parse appinfo for CRAB information if present
