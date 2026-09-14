@@ -63,6 +63,7 @@ graph LR
     - [IP Mapping](#ip-mapping)
     - [Src/Dst Site Resolution](#srcdst-site-resolution)
     - [SciTags Experiment and Activity](#scitags-experiment-and-activity)
+    - [WLCG Site Behaviour](#wlcg-site-behaviour)
   - [Running the Shoveler](#running-the-shoveler)
   - [Testing Packet Flow with the Collector](#testing-packet-flow-with-the-collector)
   - [:compass: Design](#compass-design)
@@ -155,12 +156,12 @@ The collector performs full packet parsing and correlation:
 - Maintains stateful tracking of file operations with TTL-based cleanup
 - Emits structured collector records with detailed metrics
 - Tracks parsing performance and state management via Prometheus metrics
-- **WLCG Format Conversion**: Automatically converts records to [WLCG format](https://twiki.cern.ch/twiki/bin/view/Main/GenericFileMonitoring) when:
-  - The VO is `cms`, OR
-  - The file path starts with `/store` or `/user/dteam`
+- **WLCG Format Conversion**: Converts records to [WLCG format](https://twiki.cern.ch/twiki/bin/view/Main/GenericFileMonitoring) when:
+  - The VO is `cms`, OR the file path starts with `/store` or `/user/dteam`
   - WLCG records are sent to a separate exchange (`amqp.exchange_wlcg`) instead of the main exchange
   - Cache gstream events with `/store` or `/user/dteam` paths are converted and sent to `amqp.exchange_wlcg_cache`
   - TPC gstream events with WLCG source/destination paths are converted and sent to `amqp.exchange_wlcg_tpc`
+  - A WLCG site can convert everything and determine each record's VO with `wlcg.enabled`; see [WLCG Site Behaviour](#wlcg-site-behaviour)
 
 Run with: `xrootd-monitoring-collector` (or `xrootd-monitoring-collector -c /path/to/config.yaml`)
 
@@ -249,6 +250,20 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 
 **IP Mapping (Shoveler Mode only):**
 * `SHOVELER_MAP_ALL` - Map all IPs to a single address
+
+**WLCG Records (Collector Mode only, prefix: `COLLECTOR_`):**
+* `COLLECTOR_WLCG_PRODUCER` - `metadata.producer` for WLCG file-transfer records (default: `cms`)
+* `COLLECTOR_WLCG_TYPE` - `metadata.type` for WLCG file-transfer records (default: `aaa-ng`)
+* `COLLECTOR_WLCG_GSTREAM_PRODUCER` - `metadata.producer` for WLCG gstream cache/TPC events (default: `cms-xrootd-cache`)
+
+**WLCG site behaviour (Collector Mode only, prefix: `COLLECTOR_`):** none of these do anything unless enabled. See [WLCG Site Behaviour](#wlcg-site-behaviour).
+* `COLLECTOR_WLCG_ENABLED` - turn the WLCG-site settings on (default: `false`)
+* `COLLECTOR_WLCG_VOS` - only these VOs are included (no default: unset means all)
+* `COLLECTOR_WLCG_PATH_PREFIXES` - only these paths are included (no default: unset means all)
+* `COLLECTOR_WLCG_EXCLUDE_VOS` - these VOs are excluded from the WLCG feed (default: empty)
+* `COLLECTOR_WLCG_EXCLUDE_PATH_PREFIXES` - these path prefixes are excluded (default: empty)
+* `COLLECTOR_WLCG_VO` - VO for a collector running at a specific VO (no default)
+* `COLLECTOR_WLCG_VO_ORDER` - VO order used to determine `vo` (default: `record scitags config`)
 
 ### Message Bus Credentials
 
@@ -560,8 +575,9 @@ monitoring stream (`&Ec=2&Ac=15`), and the collector puts them on its records:
 All of them are omitted when the transfer has no tag. Activity ids are numbered
 per experiment (activity 3 is `Data Brokering` for atlas and `Cache` for cms),
 so the collector always looks up the pair. `scitags_vo` is the experiment name,
-kept apart from `vo`, which still comes from the auth/token streams. It is left
-empty for the registry's `default` experiment (id 1), which is not a VO.
+kept apart from `vo` (see [How the VO is determined](#how-the-vo-is-determined)).
+It is left empty for the registry's `default` experiment (id 1), which is not a
+VO.
 
 > **Changed output:** plain records used to carry the raw values as strings in
 > `experiment` / `activity`. They now carry `experiment_id` / `activity_id` as
@@ -590,6 +606,126 @@ To refresh the embedded snapshot, replace `collector/scitags_api.json`:
 curl -fsS https://scitags.docs.cern.ch/api.json -o collector/scitags_api.json.tmp \
   && mv collector/scitags_api.json.tmp collector/scitags_api.json
 ```
+
+### WLCG Site Behaviour
+
+**Collector mode only.** `wlcg.enabled` turns on the settings a WLCG site needs.
+It is off by default, and while it is off none of the keys below do anything:
+records are converted by the upstream rule (VO `cms`, or a path under `/store` or
+`/user/dteam`) and a record's `vo` is whatever the packet said. That is what lets
+OSG and WLCG share one collector.
+
+With it on, every record is converted as a WLCG record. `vos` and `path_prefixes`
+have no defaults, so nothing limits that unless you set them.
+
+You can include, exclude specific VOs and path prefixes. You can also set the VO
+order in which the VO is determined (default is `["record", "scitags",
+"config"]`). The first VO that is found is used.
+
+```yaml
+wlcg:
+  enabled: true
+  vos: ["cms"]                                # only these VOs are included; unset means all
+  path_prefixes: ["/store"]                   # only these paths are included; unset means all
+  exclude_vos: ["dune", "belle2", "skao"]     # These VOs are excluded from the WLCG feed
+  exclude_path_prefixes: ["/pnfs/dune"]       # These path prefixes are excluded from the WLCG feed
+  vo: cms                                     # VO set for a collector running at a specific VO
+  vo_order: ["record", "scitags", "config"]   # VO order to determine the resolution of the VO
+```
+
+#### What becomes a WLCG record
+
+A record matching any VO (case-insensitive) or any path prefix is included; the
+rest stay on the main exchange. Setting just one list leaves that one working on
+its own, and an explicit `[]` is the same as leaving a list out.
+
+Leaving both unset includes everything. That is also the only rule that covers
+records with no VO, and most have none: a VO only shows up when the auth or token
+stream sent one, so no VO list would pick them up.
+
+`exclude_vos` and `exclude_path_prefixes` take records out again, for a site that
+also serves non-LHC VOs. Those records are published as plain collector records
+on the main exchange instead. Both default to empty, and they can only take
+records out, never add them.
+
+> **Scope:** these rules cover file-transfer (file-close) records. Which gstream
+> cache and TPC events are converted is still decided by the hardcoded `/store`
+> and `/user/dteam` check, unchanged from upstream.
+
+#### How the VO is determined
+
+A record can get its VO from three places and often has none of them, so a WLCG
+record carries four fields:
+
+| field | where it comes from | may be missing |
+|---|---|---|
+| `record_vo` | the auth/token stream, what the record itself said | yes, and usually is |
+| `scitags_vo` | the SciTags experiment name, from the `U` stream | yes |
+| `vo` | the one to read, determined from the other two and `wlcg.vo` | only if all three are |
+| `vo_source` | which source `vo` came from: `record`, `scitags` or `config` | only when `vo` is |
+
+`record_vo` and `scitags_vo` are published as-is and `vo_source` says which one
+was used, so a consumer can see where `vo` came from. All four go on the record
+itself, not in the `metadata` block, because MONIT checks that block against a
+fixed schema.
+
+`vo_order` sets the order the sources are tried in and the first VO that is found
+is used. The default tries the record before `wlcg.vo`, since the configured VO
+says the same thing for every record. Reorder it to change that: `["config",
+"record", "scitags"]` makes `wlcg.vo` win.
+
+Leaving a source out turns it off. An order without `config` never uses
+`wlcg.vo`, and one without `scitags` keeps SciTags out of `vo` while still
+publishing `scitags_vo`. Unknown or repeated names are dropped with a warning,
+and an empty list falls back to the default, the same as
+[`site.resolution_order`](#srcdst-site-resolution).
+
+`wlcg.vo` is for a collector running at a specific VO whose records carry none.
+**Leave it unset on a collector serving several VOs**, or every record that
+reported nothing gets the wrong VO.
+
+With `wlcg.enabled` off, `vo` is the packet's own VO and `record_vo` is not
+written at all, so the wire format is unchanged for consumers that do not know
+about it.
+
+#### The VO is determined first
+
+It is determined before any rule sees the record, so `filter.drop_vos`, `vos` and
+`exclude_vos` all match the same value:
+
+```
+determine vo / vo_source          ← wlcg.vo_order
+   ↓
+drop filter (filter.drop_vos)     ← that VO
+   ↓
+WLCG routing (vos, exclude_vos)   ← that VO
+   ↓
+convert, publish
+```
+
+Most records have no VO from the auth or token stream, so those rules would have
+almost nothing to match otherwise. A record whose VO came from SciTags or from
+`wlcg.vo` can now be dropped, included or excluded by it.
+
+> **Take care with `filter.drop_vos`.** It matches a VO the collector determined
+> rather than one the record sent, and dropping cannot be undone: a dropped
+> record goes nowhere and only shows up as a count in
+> `shoveler_records_dropped`. If `wlcg.vo: cms` is set, every record that
+> reported no VO gets `cms`, so `drop_vos: ["cms"]` throws the whole feed away.
+> Check `vo_source` on a sample first.
+
+With `wlcg.enabled` off nothing is determined, and every rule matches the VO from
+the packet, as upstream.
+
+#### Exclusions vs. the drop filter
+
+They do different things, and both run before conversion:
+
+| | `filter.drop_*` | `wlcg.exclude_*` |
+|---|---|---|
+| main exchange | not published | published |
+| WLCG exchange | not published | not published |
+| use it to | drop the records entirely | keep them, off the WLCG feed |
 
 ## Running the Shoveler
 

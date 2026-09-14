@@ -8,14 +8,34 @@ import (
 	"github.com/spf13/viper"
 )
 
-// WLCGConfig holds both the routing rules that decide whether a record is a
-// WLCG packet and the producer/type values written into the metadata block of
-// WLCG-formatted records. These differ between deployments, so they are
-// configurable instead of hardcoded.
+// WLCGConfig holds the routing rules that decide whether a record is a WLCG
+// packet, the producer/type values for the metadata block, and the settings
+// behind Enabled.
 type WLCGConfig struct {
-	// Routing: which records are treated as WLCG packets.
-	VOs          []string // case-insensitive exact match; defaults to ["cms"]
-	PathPrefixes []string // HasPrefix match; defaults to ["/store", "/user/dteam"]
+	// Enabled turns on the WLCG-site settings: the routing lists, the exclusions
+	// and the VO handling below. False, the default, leaves the collector working
+	// as before: the upstream rule ("cms", /store, /user/dteam) decides what is
+	// converted, and a record's "vo" is whatever the packet said.
+	Enabled bool
+
+	// Which records to convert. Used only when Enabled is true. Neither has a
+	// default: leaving both empty converts everything, which is what a WLCG site
+	// wants. Set either one to narrow it.
+	VOs          []string // case-insensitive exact match
+	PathPrefixes []string // HasPrefix match
+
+	// Which of those to leave out again, for a site that also serves non-LHC VOs.
+	// Both default to empty. Used only when Enabled is true.
+	ExcludeVOs          []string // case-insensitive exact match
+	ExcludePathPrefixes []string // HasPrefix match
+
+	// VO names the VO this collector serves, one of the three sources for the
+	// "vo" field, tried last by default. Empty leaves it out. Enabled only.
+	VO string
+
+	// VOOrder is the order the sources are tried in, first hit wins.
+	// Defaults to ["record", "scitags", "config"]. Enabled only.
+	VOOrder []string
 
 	// Metadata: producer/type values written into WLCG-formatted records.
 	Producer        string // metadata.producer for file-transfer (file-close) records
@@ -473,12 +493,36 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	// If the map is not set
 	c.IpMap = viper.GetStringMapString("map")
 
-	// WLCG routing configuration (collector mode only)
-	// Defaults preserve current behavior: CMS VO and /store, /user/dteam paths.
-	viper.SetDefault("wlcg.vos", []string{"cms"})
-	viper.SetDefault("wlcg.path_prefixes", []string{"/store", "/user/dteam"})
+	// WLCG routing (collector mode only), used only when wlcg.enabled is set.
+	// No defaults on purpose: unset means convert everything Set either list to narrow it: records matching any VO
+	// With wlcg.enabled off both are ignored and the upstream rule applies.
 	c.WLCG.VOs = viper.GetStringSlice("wlcg.vos")
 	c.WLCG.PathPrefixes = viper.GetStringSlice("wlcg.path_prefixes")
+
+	// WLCG-site behaviour, behind one option that is off by
+	// default. Nothing below has any effect while wlcg.enabled is false.
+	viper.SetDefault("wlcg.enabled", false)
+	c.WLCG.Enabled = viper.GetBool("wlcg.enabled")
+
+	// Exclusions take records out of the WLCG feed, for a site that also
+	// serves non-LHC VOs (dune, belle2, skao, ...). Both default to empty.
+	c.WLCG.ExcludeVOs = viper.GetStringSlice("wlcg.exclude_vos")
+	c.WLCG.ExcludePathPrefixes = viper.GetStringSlice("wlcg.exclude_path_prefixes")
+
+	// A record's "vo" comes from up to three sources, tried in wlcg.vo_order until
+	// one has a value. record_vo (the auth/token stream) and scitags_vo (the
+	// SciTags experiment name) are published next to it, so a reader can see where
+	// it came from.
+	//
+	// wlcg.vo names the VO this collector serves. Several collectors often publish
+	// to one broker, and a record only has a VO when the auth/token stream sent
+	// one, so records arrive with nothing saying which collector produced them.
+	// It has no default and is tried last, since it says the same thing for every
+	// record; put "config" first in wlcg.vo_order to have it instead.
+	c.WLCG.VO = strings.TrimSpace(viper.GetString("wlcg.vo"))
+	// No viper default here: an empty order is turned into the default inside the
+	// collector package, so it lives in one place.
+	c.WLCG.VOOrder = viper.GetStringSlice("wlcg.vo_order")
 
 	// Record drop filter (collector mode only); defaults to drop nothing.
 	c.Filter.DropPathPrefixes = viper.GetStringSlice("filter.drop_path_prefixes")

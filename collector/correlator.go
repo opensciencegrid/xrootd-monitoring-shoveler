@@ -104,6 +104,30 @@ type CollectorRecord struct {
 	dstSite       string `json:"-"`
 	srcSiteStatus string `json:"-"`
 	dstSiteStatus string `json:"-"`
+
+	// VO resolution results, filled in before any rule runs so the drop filter,
+	// the routing rules and the exclusions all match on the resolved VO rather
+	// than on whatever the auth/token stream happened to report. Carriers for the WLCG converter, and
+	// deliberately NOT serialized: they are emitted on the WLCG record only.
+	//
+	// voResolved is set once the correlator has run the resolution, which happens
+	// only while WLCG mode is on. With it off these stay empty and every consumer
+	// falls back to VO, leaving behaviour exactly as upstream.
+	voResolved bool   `json:"-"`
+	resolvedVO string `json:"-"` // first source in wlcg.vo_order that had a value
+	voSource   string `json:"-"` // which source that was: record, scitags or config
+	scitagsVO  string `json:"-"` // the SciTags experiment name, also published on its own
+	experiment string `json:"-"` // SciTags experiment name for the 'U'-stream ids
+	activity   string `json:"-"` // SciTags activity name for the 'U'-stream ids
+}
+
+// routingVO is the VO every rule matches on: the resolved one once the
+// correlator has worked it out, and the packet's own otherwise.
+func (r *CollectorRecord) routingVO() string {
+	if r.voResolved {
+		return r.resolvedVO
+	}
+	return r.VO
 }
 
 // clientHost returns the best available fully-qualified client host name for
@@ -177,8 +201,7 @@ type Correlator struct {
 	cancel                context.CancelFunc
 
 	// WLCG routing configuration
-	wlcgVOs          []string
-	wlcgPathPrefixes []string
+	wlcgRouting wlcgRouting
 
 	// Record drop filter
 	dropPathPrefixes []string
@@ -210,12 +233,18 @@ type CorrelatorConfig struct {
 	SiteLocalSiteLANClients bool // also apply SiteLocalSite to clients on private/loopback addresses
 	SiteResolutionOrder     []string
 
-	// WLCG routing: records matching any VO (case-insensitive) or path prefix are
-	// converted and routed to the WLCG exchange.
-	// If WLCGVOs/WLCGPathPrefixes are nil, defaults apply (["cms"], ["/store", "/user/dteam"]).
-	// If they are non-nil but empty, WLCG routing is effectively disabled.
-	WLCGVOs          []string
-	WLCGPathPrefixes []string
+	// WLCG routing. When WLCGEnabled is false, which is the default, routing is
+	// the upstream rule ("cms", /store, /user/dteam) and the fields below are
+	// ignored. See shoveler.WLCGConfig.
+	WLCGEnabled bool
+
+	// Used only when WLCGEnabled is true. WLCGVOs/WLCGPathPrefixes pick which
+	// records to convert; leaving both empty converts everything. The Exclude
+	// lists then take records back out.
+	WLCGVOs                 []string
+	WLCGPathPrefixes        []string
+	WLCGExcludeVOs          []string
+	WLCGExcludePathPrefixes []string
 
 	// Drop filter: records matching any VO (case-insensitive) or path prefix are
 	// silently dropped before any publish. Defaults to empty (drop nothing).
@@ -262,13 +291,17 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	wlcgVOs := config.WLCGVOs
-	if wlcgVOs == nil {
-		wlcgVOs = append([]string(nil), defaultWLCGVOs...)
-	}
-	wlcgPathPrefixes := config.WLCGPathPrefixes
-	if wlcgPathPrefixes == nil {
-		wlcgPathPrefixes = append([]string(nil), defaultWLCGPathPrefixes...)
+	// Copy the lists so the caller and the correlator cannot change each other's.
+	// nil and empty mean the same thing here: convert everything.
+	wlcgVOs := append([]string(nil), config.WLCGVOs...)
+	wlcgPathPrefixes := append([]string(nil), config.WLCGPathPrefixes...)
+
+	routing := wlcgRouting{
+		Enabled:             config.WLCGEnabled,
+		VOs:                 wlcgVOs,
+		PathPrefixes:        wlcgPathPrefixes,
+		ExcludeVOs:          config.WLCGExcludeVOs,
+		ExcludePathPrefixes: config.WLCGExcludePathPrefixes,
 	}
 
 	c := &Correlator{
@@ -286,8 +319,7 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		scitags:               config.Scitags,
 		ctx:                   ctx,
 		cancel:                cancel,
-		wlcgVOs:               wlcgVOs,
-		wlcgPathPrefixes:      wlcgPathPrefixes,
+		wlcgRouting:           routing,
 		dropPathPrefixes:      config.DropPathPrefixes,
 		dropVOs:               config.DropVOs,
 	}

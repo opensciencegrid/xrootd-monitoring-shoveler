@@ -31,23 +31,42 @@ state:
   # gstream_queue_size: 20000 # Max pending gstream packets kept in memory
   # dns_timeout: 2            # DNS lookup timeout in seconds
 
-# WLCG routing configuration (collector mode only)
-# Records matching any VO (case-insensitive) OR any path prefix are converted to
-# WLCG format and published to the WLCG exchange instead of the main exchange.
-# Omitting this block preserves the current default behavior.
+# WLCG configuration
+#
+# wlcg.enabled turns on the settings a WLCG site needs. It is off by default, and
+# while it is off none of the keys below do anything: records are converted by the
+# upstream rule (VO "cms", or a path under /store or /user/dteam) and a record's
+# "vo" is whatever the packet said. That is what lets OSG and WLCG share one
+# collector.
+#
+# With it on, every record is converted as a WLCG record. vos and path_prefixes have no defaults,
+# so nothing limits that unless you set them. 
+#
+# You can include, exclude specific VOs and path prefixes.
+# You can also set the VO order in which the VO is determined (default is ["record", "scitags", "config"]).
+# The first VO that is found is used.
+#
+# Environment variables use the COLLECTOR_WLCG_ prefix, for example
+# COLLECTOR_WLCG_ENABLED and COLLECTOR_WLCG_EXCLUDE_VOS.
+#
 # wlcg:
-#   vos: ["cms"]                              # default
-#   path_prefixes: ["/store", "/user/dteam"]  # default
+#   enabled: true
+#   vos: ["cms"]                              # only these VOs are included; unset means all
+#   path_prefixes: ["/store"]                   # only these paths are included; unset means all
+#   exclude_vos: ["dune", "belle2", "skao"]     # These VOs are excluded from the WLCG feed
+#   exclude_path_prefixes: ["/pnfs/dune"]       # These path prefixes are excluded from the WLCG feed
+#   vo: cms                                   # VO set for collector running at a specific VO. If not set, the VO is determined by the record, scitags, and config in the order of vo_order.
+#   vo_order: ["record", "scitags", "config"]   # VO order to determine the resolution of the VO.
 
 # Record drop filter (collector mode only)
 # Records matching any VO (case-insensitive) OR any path prefix are dropped
-# entirely — published to neither the main exchange nor the WLCG exchange.
+# entirely and published to neither the main exchange nor the WLCG exchange.
 # The drop filter is evaluated before WLCG routing.
-# A Prometheus counter (shoveler_records_dropped{reason="vo|path_prefix"})
+# A Prometheus counter (shoveler_records_dropped{reason="vo|path_prefix"}) is incremented for each dropped record.
 # Default is to drop nothing (empty lists).
 # filter:
-#   drop_vos: []
-#   drop_path_prefixes: []
+#   drop_vos: ["dune", "belle2", "skao"]     # These VOs are dropped from the WLCG feed
+#   drop_path_prefixes: ["/pnfs/dune"]       # These path prefixes are dropped from the WLCG feed
 
 # Src/dst site resolution (collector mode only)
 # Resolves each end of a transfer to its WLCG RCSite (e.g. CERN-PROD, AGLT2) and
