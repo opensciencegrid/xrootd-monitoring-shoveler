@@ -680,6 +680,42 @@ exactly what CRIC does server-side — replicated locally so no record ever wait
 a network call. The server's self-reported `site` field (from the `=` map packet)
 is left untouched; `src_site`/`dst_site` are new fields alongside it.
 
+#### Clients reported by an unqualified name
+
+XRootD reports the client host as it saw it, so a client in the reporting
+server's own DNS domain arrives unqualified — `b9p04p7188` rather than
+`b9p04p7188.cern.ch`. That endpoint has nothing any resolution method can use:
+no domain to suffix-match, no address to place in a netroute, and it is not a
+private address, so `site.local_site` cannot claim it either. It lands on
+`no_host`, and because a scope needs both ends, the record's `traffic_scope`
+comes out `UNKNOWN` however well the server end resolved.
+
+With `state.enable_dns_enrichment` on, such a name is resolved forward during
+enrichment: the name is handed to the system resolver as-is, exactly as
+`host b9p04p7188` would, and the resolver expands it through the `search` list in
+the collector VM's own `/etc/resolv.conf`. **No domain is configured or appended
+anywhere in the collector** — a name with no dots gets search expansion by the
+default `ndots:1`, so each deployment simply inherits its own site's list. The
+address
+that comes back feeds the `ip` method, and reverse-resolving it yields the FQDN
+the `hostname` and `domain` methods need. A CERN worker node reading from CERN
+EOS then resolves through the CRIC netroute that owns its range and the record
+becomes `LAN` / `site_internal_traffic: true` instead of `UNKNOWN`.
+
+Answers are cached for `state.dns_cache_ttl`, **including failures**: a busy
+worker node that DNS cannot place is looked up once, not once per record. Only
+unqualified names trigger it — a client reported as an address or as an FQDN
+already carries what the resolver needs.
+
+> **Beware of short names from other sites.** The search list is the collector
+> VM's own, so an unqualified name from a remote site is looked up in the
+> collector's domain, not in the site that reported it. Usually it simply does
+> not resolve and the endpoint stays `no_host`, which is the right answer — a
+> bare name is only meaningful inside the DNS that issued it, so no collector can
+> place one from elsewhere. The risk is a collision: a client called `wn001` at
+> another site, when a `wn001` also exists in the collector's own domain, would be
+> placed at the wrong site.
+
 ### SciTags Experiment and Activity
 
 **Collector mode only.** [SciTags](https://scitags.docs.cern.ch) labels a

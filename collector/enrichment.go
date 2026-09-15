@@ -11,6 +11,12 @@ import (
 // DNSResolver interface allows mocking DNS lookups in tests.
 type DNSResolver interface {
 	LookupAddr(ctx context.Context, addr string) ([]string, error)
+	// LookupHost resolves a host name to addresses. It is the forward direction,
+	// used to give an unqualified client name an address the site resolver can
+	// work with. The name is passed through untouched: expanding a bare
+	// "b9p04p7188" is the system resolver's job, via the search list in
+	// resolv.conf, exactly as `host b9p04p7188` would.
+	LookupHost(ctx context.Context, host string) ([]string, error)
 }
 
 // defaultDNSResolver wraps net.DefaultResolver.
@@ -18,6 +24,10 @@ type defaultDNSResolver struct{}
 
 func (r *defaultDNSResolver) LookupAddr(ctx context.Context, addr string) ([]string, error) {
 	return net.DefaultResolver.LookupAddr(ctx, addr)
+}
+
+func (r *defaultDNSResolver) LookupHost(ctx context.Context, host string) ([]string, error) {
+	return net.DefaultResolver.LookupHost(ctx, host)
 }
 
 // RecordEnricher defines an enrichment stage for collector records.
@@ -161,7 +171,7 @@ func (q *enrichmentWorkQueue) Close() {
 
 // NeedsEnrichment returns true when a record has pending asynchronous enrichments.
 func (r *CollectorRecord) NeedsEnrichment() bool {
-	return r.needsDNSEnrichment || r.needsServerDNS
+	return r.needsDNSEnrichment || r.needsServerDNS || r.needsClientNameLookup
 }
 
 // NeedsDNSEnrichment is kept for compatibility with older callers.
@@ -392,6 +402,67 @@ func (d *dnsRecordEnricher) Enrich(ctx context.Context, record *CollectorRecord)
 		record.needsServerDNS = false
 		record.serverEnrichmentIP = ""
 	}
+
+	// An unqualified client name carries no domain to match and no address to
+	// place, so every site method misses it and the endpoint lands on no_host.
+	// Resolving the name gives the rest of the chain something to work with: the
+	// address feeds the "ip" method (CRIC netroutes), and reverse-resolving that
+	// address yields the FQDN the "hostname" and "domain" methods need.
+	if record.needsClientNameLookup {
+		if addr := d.correlator.lookupClientAddress(ctx, record.clientLookupName); addr != "" {
+			record.clientIP = addr
+			if hostname := d.correlator.lookupDNSHostname(ctx, addr); hostname != "" {
+				record.clientHostname = hostname
+				record.UserDomain = extractDomainFromHostname(hostname)
+			}
+		}
+		record.needsClientNameLookup = false
+		record.clientLookupName = ""
+	}
+}
+
+// clientNameCacheKey namespaces forward lookups in the shared DNS cache, which
+// is otherwise keyed by address. Without it a host named like an address could
+// collide with a reverse entry.
+func clientNameCacheKey(host string) string { return "name:" + host }
+
+// lookupClientAddress resolves a client host name to a single address, through
+// the same cache and timeout as the reverse lookups. A name that does not
+// resolve is cached as an empty answer so a busy worker node that DNS cannot
+// place is not looked up again for every record it produces — the "1000 packets
+// must not all hit DNS" constraint applies to failures most of all.
+func (c *Correlator) lookupClientAddress(parentCtx context.Context, host string) string {
+	if !c.enableDNSEnrichment || host == "" {
+		return ""
+	}
+
+	key := clientNameCacheKey(host)
+	if val, exists := c.dnsCache.Get(key); exists {
+		addr, _ := val.(string)
+		return addr
+	}
+
+	lookupCtx := parentCtx
+	if lookupCtx == nil {
+		lookupCtx = c.ctx
+	}
+	lookupCtx, cancel := context.WithTimeout(lookupCtx, c.dnsTimeout)
+	defer cancel()
+
+	addrs, err := c.dnsResolver.LookupHost(lookupCtx, host)
+	if err != nil || len(addrs) == 0 {
+		c.logger.Debugf("client name lookup failed for %s: %v", host, err)
+		c.dnsCache.Set(key, "")
+		return ""
+	}
+
+	// First answer wins. A worker node with several addresses sits at one site,
+	// so any of them places it; taking the first keeps the result stable for the
+	// cache lifetime.
+	addr := addrs[0]
+	c.logger.Debugf("client name lookup success: %s -> %s", host, addr)
+	c.dnsCache.Set(key, addr)
+	return addr
 }
 
 func extractDomainFromHostname(hostname string) string {

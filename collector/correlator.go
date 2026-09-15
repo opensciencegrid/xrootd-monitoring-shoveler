@@ -87,6 +87,18 @@ type CollectorRecord struct {
 	serverEnrichmentIP string `json:"-"` // Server IP address that needs enrichment
 	clientHostname     string `json:"-"` // Full resolved client hostname for site matching (UserDomain keeps only the 2-label domain, which is too coarse for longest-suffix CRIC matching)
 
+	// Client name lookup. XRootD reports the client host as it saw it, and a
+	// client in the reporting server's own DNS domain arrives unqualified
+	// ("b9p04p7188"): no domain for the suffix match, no address for the route
+	// match, so every site method misses and the endpoint lands on no_host.
+	// needsClientNameLookup asks the DNS enricher to resolve clientLookupName
+	// forward, handing the bare name to the system resolver exactly as `host`
+	// would and letting resolv.conf's search list expand it; clientIP keeps the
+	// answer for the site resolver.
+	needsClientNameLookup bool   `json:"-"`
+	clientLookupName      string `json:"-"`
+	clientIP              string `json:"-"` // address resolved for a name-reported client; "" when it was reported as one or could not be resolved
+
 	// Src/dst site resolution results. These are carriers for the WLCG converter
 	// and are deliberately NOT serialized: the site fields are emitted on the WLCG
 	// record only, so the plain collector record keeps its existing shape.
@@ -1347,6 +1359,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	var needsDNSEnrichment bool
 	var enrichmentIP string
 	var clientHostname string
+	var needsClientNameLookup bool
+	var clientLookupName string
 
 	if userInfo != nil {
 		// Use username from userInfo
@@ -1372,6 +1386,12 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 					needsDNSEnrichment = true
 					enrichmentIP = ipStr
 				}
+			} else if !strings.Contains(host, ".") && host != "unknown" {
+				// An unqualified name: nothing to suffix-match and no address to
+				// place, so it is resolved forward during enrichment instead.
+				clientHostname = host
+				needsClientNameLookup = true
+				clientLookupName = host
 			} else {
 				// Host is already a hostname - extract domain directly
 				userDomain = extractDomainFromHostname(host)
@@ -1521,6 +1541,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		WriteBytesAtClose:      rec.Xfr.Write,
 		HasFileCloseMsg:        1,
 		needsDNSEnrichment:     needsDNSEnrichment,
+		needsClientNameLookup:  needsClientNameLookup,
+		clientLookupName:       clientLookupName,
 		enrichmentIP:           enrichmentIP,
 		needsServerDNS:         needsServerDNS,
 		serverEnrichmentIP:     serverEnrichmentIP,
