@@ -102,6 +102,8 @@ func TestConvertToWLCG(t *testing.T) {
 		Host:                   "client.example.com",
 		Filename:               "/store/data/Run2018D/file.root",
 		Protocol:               "root",
+		ClientApp:              "ucache",
+		ClientInfo:             "ucache/1.1.0 (root.exe)",
 		AppInfo:                "162_https://glidein.cern.ch/162/190501:101553:heewon:crab:RPCEfficiency:SingleMuon:Run2018D-PromptReco-v2_0",
 		IPv6:                   false,
 		Filesize:               1234567890,
@@ -157,6 +159,14 @@ func TestConvertToWLCG(t *testing.T) {
 
 	if wlcg.ClientHost != "client.example.com" {
 		t.Errorf("ClientHost = %v, expected client.example.com", wlcg.ClientHost)
+	}
+
+	if wlcg.ClientApp != "ucache" {
+		t.Errorf("ClientApp = %v, expected ucache", wlcg.ClientApp)
+	}
+
+	if wlcg.ClientInfo != "ucache/1.1.0 (root.exe)" {
+		t.Errorf("ClientInfo = %v, expected ucache/1.1.0 (root.exe)", wlcg.ClientInfo)
 	}
 
 	if wlcg.ServerHost != "xrootd.cern.ch" {
