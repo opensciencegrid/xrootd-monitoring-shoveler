@@ -45,6 +45,8 @@ type CollectorRecord struct {
 	LogicalDirname         string    `json:"logical_dirname"`
 	Protocol               string    `json:"protocol"`
 	AppInfo                string    `json:"appinfo"`
+	ClientApp              string    `json:"client_app,omitempty"`
+	ClientInfo             string    `json:"client_info,omitempty"`
 	IPv6                   bool      `json:"ipv6"`
 	Filesize               int64     `json:"filesize"`
 	ReadOperations         int32     `json:"read_operations"`
@@ -1092,6 +1094,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	host := "unknown"
 	protocol := "unknown"
 	appInfo := ""
+	clientApp := ""
+	clientInfo := ""
 	ipv6 := false
 	tokenSubject := ""
 	tokenUsername := ""
@@ -1147,6 +1151,11 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		if userInfo.AppInfo != "" {
 			appInfo = userInfo.AppInfo
 		}
+
+		// The client's own identity from the login, &x= and &y= of the user
+		// record: already parsed, simply not carried onto the record until now.
+		clientApp = userInfo.AuthInfo.ExecName
+		clientInfo = userInfo.AuthInfo.MonInfo
 
 		// Check if IPv6
 		if userInfo.AuthInfo.InetVersion == "6" {
@@ -1242,6 +1251,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		LogicalDirname:         logicalDirname,
 		Protocol:               protocol,
 		AppInfo:                appInfo,
+		ClientApp:              clientApp,
+		ClientInfo:             clientInfo,
 		IPv6:                   ipv6,
 		Filesize:               state.FileSize,
 		ReadOperations:         rec.Ops.Read,
