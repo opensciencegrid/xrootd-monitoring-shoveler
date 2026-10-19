@@ -190,6 +190,14 @@ type FileState struct {
 	ServerID  string
 	StreamID  int64
 	CreatedAt time.Time
+
+	// User is the client as it was resolved at open, nil when nothing could be
+	// resolved then. The open is where the identity is freshest: the 'd' record
+	// for the file arrives with it and the login is as close as it will ever be.
+	// The close can come hours later, by which time the dictionary entries it
+	// would otherwise be resolved from may be gone, and a transfer that outlived
+	// them would be reported with host "unknown". See resolveRecordUser.
+	User *UserState
 }
 
 // UserState tracks user information from user packets
@@ -202,6 +210,11 @@ type UserState struct {
 	ExperimentID int // SciTags experiment id from the 'U' stream (&Ec=), 0 if unset
 	ActivityID   int // SciTags activity id from the 'U' stream (&Ac=), 0 if unset
 	CreatedAt    time.Time
+
+	// partial marks a state built by getUserInfo from a 'd' path record alone,
+	// with no userMap entry behind it: the client host and protocol are known,
+	// the authentication, token and app info are not.
+	partial bool
 }
 
 // PathInfo represents path mapping with associated user info
@@ -969,11 +982,19 @@ func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Pa
 	// Filename may come from Lfn field OR from dictid lookup
 	filename := string(rec.Lfn)
 	if filename == "" && rec.Header.FileId != 0 {
-		// No filename in open record, try to get it from dict ID
+		// No filename in open record, try to get it from dict ID. A 'd' record
+		// stores a *PathInfo; only a 'd' whose user part failed to parse is kept
+		// as the raw "userInfo\npath" string, and the path is what follows the
+		// newline.
 		dictKey := BuildDictKey(serverID, rec.Header.FileId)
 		if val, exists := c.dictMap.Get(dictKey); exists {
-			if path, ok := val.(string); ok {
-				filename = path
+			switch v := val.(type) {
+			case *PathInfo:
+				filename = v.Path
+			case string:
+				if _, path, ok := strings.Cut(v, "\n"); ok {
+					filename = path
+				}
 			}
 		}
 	}
@@ -983,6 +1004,10 @@ func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Pa
 	if userId == 0 {
 		userId = rec.User
 	}
+
+	// Resolve the client now, while its dictionary entries are present, and
+	// carry it on the open state to the close.
+	user := c.getUserInfo(userId, rec.Header.FileId, serverID)
 
 	openTime := windowBeg
 	if openTime <= 0 {
@@ -997,6 +1022,7 @@ func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Pa
 		Filename:  filename,
 		ServerID:  serverID,
 		CreatedAt: time.Now(),
+		User:      user,
 	}
 
 	// Key is only serverID + fileID (not userId)
@@ -1207,6 +1233,7 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 		return &UserState{
 			UserInfo: userInfo,
 			// AuthInfo will be empty - no 'u' packet received
+			partial: true,
 		}
 	}
 
@@ -1218,6 +1245,37 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 
 	c.logger.Debugf("Found full user state: username=%s, DN=%s, VO=%s", userState.UserInfo.Username, userState.AuthInfo.DN, userState.AuthInfo.Org)
 	return userState
+}
+
+// resolveRecordUser picks the client for a record about to be emitted: the
+// session as the dictionaries hold it now, or the one resolved when the file
+// was opened when the dictionaries no longer have it.
+//
+// The open-time state is the fallback because the close can arrive long after
+// the dictionary entries it would be looked up in have gone. When the lookup
+// still finds the session, the current object is preferred: the session may
+// have been written again since the open, for example by a login that arrived
+// after an 'i' or 'U' record had already created its entry. A partial state
+// (from the 'd' record alone) only stands in when nothing fuller is found. A
+// key now held by a different session, a reused socket, does not replace the
+// client captured at open.
+func (c *Correlator) resolveRecordUser(state *FileState) *UserState {
+	open := state.User
+	live := c.getUserInfo(state.UserID, state.FileID, state.ServerID)
+	switch {
+	case live == nil:
+		return open
+	case open == nil:
+		return live
+	case live.partial:
+		return open
+	case open.partial:
+		return live
+	case live.UserID == open.UserID:
+		return live
+	default:
+		return open
+	}
 }
 
 // extractDirnames extracts dirname1, dirname2, and logical_dirname from a filepath
@@ -1338,8 +1396,9 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		readvCountAvg = float64(rec.Ops.Rsegs) / float64(rec.Ops.Readv)
 	}
 
-	// Get user information if available (using userID, fileID and serverID)
-	userInfo := c.getUserInfo(state.UserID, state.FileID, state.ServerID)
+	// Get user information if available: the client resolved at open, or a
+	// lookup by userID, fileID and serverID now (see resolveRecordUser)
+	userInfo := c.resolveRecordUser(state)
 
 	// Set defaults
 	user := BuildUserHex(state.UserID)
