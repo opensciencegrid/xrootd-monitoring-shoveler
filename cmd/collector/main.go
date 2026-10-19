@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -74,23 +73,14 @@ func main() {
 		case "amqp":
 			// Only start AMQP if URL is configured
 			if config.AmqpURL != nil && config.AmqpURL.String() != "" {
-				// If OAuth is enabled, self-register (first run) and start the
-				// token fetch loop before StartAMQP, blocking until the first
-				// access token is on disk. Disabled => unchanged behavior.
 				if config.OAuthEnabled {
-					ready, err := shoveler.StartOAuthManager(context.Background(), &config)
-					if err != nil {
-						logger.Fatalln("Failed to start OAuth manager:", err)
-					}
-					select {
-					case <-ready:
-						logger.Infoln("OAuth: initial access token ready")
-					case <-time.After(60 * time.Second):
-						logger.Fatalln("Timed out waiting for the first OAuth access token")
-					}
+					// Registers on first run, then starts AMQP once the registry
+					// issues a token; packets queue on disk until then.
+					shoveler.StartAMQPWithOAuth(&config, cq)
+				} else {
+					// Start the AMQP go func
+					go shoveler.StartAMQP(&config, cq)
 				}
-				// Start the AMQP go func
-				go shoveler.StartAMQP(&config, cq)
 			} else {
 				logger.Warnln("Output type is 'mq' with AMQP but no amqp.url configured - skipping AMQP output")
 			}

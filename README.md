@@ -231,8 +231,8 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN_FILE` - File holding the one-time bootstrap token (preferred; wins over inline)
 * `<PREFIX>_AMQP_OAUTH_PRIVATE_KEY_FILE` - Generated private key path (default: `/etc/xrootd-monitoring-shoveler/oauth/private.pem`)
 * `<PREFIX>_AMQP_OAUTH_STATE_FILE` - Persisted registration state path (default: `/etc/xrootd-monitoring-shoveler/oauth/registration.json`)
-* `<PREFIX>_AMQP_OAUTH_CLIENT_NAME` - Client name sent at registration for admin readability (default: `shoveler`)
-* `<PREFIX>_AMQP_OAUTH_SCOPES` - Optional scopes to request at token time (Keycloak intersects with what's allowed)
+* `<PREFIX>_AMQP_OAUTH_CLIENT_NAME` - Client name sent at registration for admin readability (default: `shoveler@<hostname>`)
+* `<PREFIX>_AMQP_OAUTH_SCOPES` - Optional scopes to request at token time (the registry intersects with what's granted)
 
 **STOMP Configuration (shoveler: `SHOVELER_STOMP_*`, collector: `COLLECTOR_STOMP_*`):**
 * `<PREFIX>_STOMP_USER` - STOMP username
@@ -268,9 +268,10 @@ On the other hand, if STOMP is the selected protocol user and password will need
 
 #### OAuth2 Self-Registration (private_key_jwt)
 
-Instead of a long-lived JWT pasted into the token file, the shoveler can fully self-onboard against an OIDC issuer
-(Keycloak) and keep its own access token fresh. The operator's only manual artifact is a single short-lived
-**bootstrap token**. No long-lived shared secret ever exists or crosses the wire.
+Instead of a long-lived JWT pasted into the token file, the shoveler can onboard itself with a shoveler registry
+and keep its own access token fresh. The operator's only manual step is supplying a single short-lived
+**bootstrap token**. No long-lived shared secret ever exists or crosses the wire. The registry's side of the
+protocol is specified in [docs/registry-protocol.md](docs/registry-protocol.md).
 
 Enable it under `amqp.oauth` (see `config/config.yaml` for the full commented block):
 
@@ -280,38 +281,32 @@ amqp:
   token_location: /etc/xrootd-monitoring-shoveler/token
   oauth:
     enabled: true
-    token_url: https://kc.example.org/realms/xrootd/protocol/openid-connect/token
-    registration_url: https://kc.example.org/realms/xrootd/clients-registrations/openid-connect
+    token_url: https://registry.example.org/token
+    registration_url: https://registry.example.org/register
     bootstrap_token_file: /etc/xrootd-monitoring-shoveler/oauth/bootstrap.token
-    private_key_file: /etc/xrootd-monitoring-shoveler/oauth/private.pem
-    state_file: /etc/xrootd-monitoring-shoveler/oauth/registration.json
-    client_name: shoveler
 ```
 
 How it works end to end:
 
-1. **Bootstrap (first run only).** The operator pastes a one-time bootstrap (initial access) token into
-   `bootstrap_token_file` (recommended) or `bootstrap_token`. On startup the shoveler generates a 2048-bit RSA
-   keypair (`private_key_file`, mode `0600` — the private key **never leaves the host**), builds a JWKS from the
-   public key, and calls the dynamic client registration endpoint with the bootstrap token as a bearer. It requests
-   `token_endpoint_auth_method: private_key_jwt` and `grant_types: ["client_credentials"]`, delivering only its
-   public key via `jwks`. The returned `client_id`, `registration_access_token`, and `registration_client_uri` are
-   persisted to `state_file` (mode `0600`). The bootstrap token is now spent and can be removed.
-2. **Steady state (every run).** If `state_file` already exists, registration is skipped. The shoveler signs a
-   short-lived client-assertion JWT with its private key and exchanges it at the token endpoint via
-   `private_key_jwt` for an access token. That token is written atomically to `token_location`, and the existing
-   token-file watcher rotates the AMQP connections with zero downtime. Tokens are refreshed at ~50% of their
-   remaining lifetime, well before expiry. Transient issuer downtime is retried and never crashes the shoveler —
-   the on-disk queue buffers messages in the meantime.
+1. **Registration (first run only).** The operator puts a one-time bootstrap token in `bootstrap_token_file`
+   (recommended) or `bootstrap_token`. On startup the shoveler generates a 2048-bit RSA keypair (`private_key_file`,
+   mode `0600`; the private key **never leaves the host**) and registers its public key with the registry, using the
+   bootstrap token as a bearer. The returned `client_id` is saved to `state_file` (mode `0600`). The bootstrap
+   token is then spent and can be removed.
+2. **Approval.** A registry admin approves the new registration and grants its RabbitMQ permissions. Until then the
+   registry answers token requests with `authorization_pending`; the shoveler logs a warning, keeps receiving
+   packets into its on-disk queue, and checks again every minute.
+3. **Steady state (every run).** If `state_file` exists, registration is skipped. The shoveler signs a short-lived
+   client assertion with its private key and exchanges it at `token_url` for an access token. That token is written
+   atomically to `token_location`, AMQP starts (or the existing token-file watcher rotates its connections), and
+   the token is refreshed at ~50% of its lifetime. Registry outages are retried and never crash the shoveler.
 
-**Authorization is admin-attached, not self-assigned.** The shoveler registers its **identity and public key only**.
-The per-site exchange **scope** — the actual RabbitMQ authorization — is attached out-of-band by an admin-side
-registration script *after your registration is approved*. The shoveler never requests or assumes a specific scope,
-and it tolerates Keycloak ignoring any scope it didn't grant. Any `scopes` you configure are merely requested at
-token time and intersected with what the issuer allows.
+If the registry rejects the registration outright (for example an expired or already-used bootstrap token), the
+shoveler exits with an error. If an approved client is later revoked, the shoveler logs an error and keeps
+queuing; to re-onboard, delete `state_file` and supply a new bootstrap token.
 
-RabbitMQ must trust the **same Keycloak issuer** (via `rabbitmq_auth_backend_oauth2`) that signs these access tokens,
-so that the `scope` claim maps to the expected exchange permissions.
+RabbitMQ must trust the registry's signing keys (via `rabbitmq_auth_backend_oauth2`) so that the `scope` claim in
+the issued tokens maps to the expected exchange permissions.
 
 ### Packet Verification
 

@@ -301,7 +301,13 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 			c.OAuthStateFile = viper.GetString("amqp.oauth.state_file")
 			log.Debugln("AMQP OAuth State File:", c.OAuthStateFile)
 
-			viper.SetDefault("amqp.oauth.client_name", "shoveler")
+			// Default to the hostname so admins can tell pending
+			// registrations apart.
+			defaultClientName := "shoveler"
+			if hostname, err := os.Hostname(); err == nil && hostname != "" {
+				defaultClientName = "shoveler@" + hostname
+			}
+			viper.SetDefault("amqp.oauth.client_name", defaultClientName)
 			c.OAuthClientName = viper.GetString("amqp.oauth.client_name")
 			log.Debugln("AMQP OAuth Client Name:", c.OAuthClientName)
 

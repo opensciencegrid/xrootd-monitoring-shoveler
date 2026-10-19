@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,106 +36,139 @@ func oauthTestConfig(t *testing.T, tokenURL, regURL string) *Config {
 	}
 }
 
-// fakeKeycloak returns an httptest server with /register and /token handlers,
-// and records what it received.
-type fakeKeycloak struct {
-	server          *httptest.Server
-	regCount        int
-	regBearer       string
-	regBody         map[string]interface{}
-	tokenAssertion  string
-	tokenGrantType  string
-	tokenScope      string
-	accessToken     string
-	expiresIn       int
-	registrationErr int // if non-zero, /register returns this status
+// shortOAuthDelays shrinks the retry and pending intervals for the test.
+func shortOAuthDelays(t *testing.T) {
+	t.Helper()
+	oldRetry, oldPending := oauthRetryBackoff, oauthPendingInterval
+	oauthRetryBackoff, oauthPendingInterval = 10*time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() { oauthRetryBackoff, oauthPendingInterval = oldRetry, oldPending })
 }
 
-func newFakeKeycloak(t *testing.T) *fakeKeycloak {
+// fakeRegistry is an httptest server with /register and /token handlers that
+// records what it received.
+type fakeRegistry struct {
+	server *httptest.Server
+
+	mu             sync.Mutex
+	regCount       int
+	regBearer      string
+	regBody        map[string]interface{}
+	regStatuses    []int // statuses to return from /register before succeeding
+	tokenCount     int
+	tokenAssertion string
+	tokenGrantType string
+	tokenScope     string
+	pendingCount   int // /token answers authorization_pending this many times
+	accessToken    string
+	expiresIn      int
+}
+
+func newFakeRegistry(t *testing.T) *fakeRegistry {
 	t.Helper()
-	fk := &fakeKeycloak{accessToken: "fake-access-token", expiresIn: 300}
+	fr := &fakeRegistry{accessToken: "fake-access-token", expiresIn: 300}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		fk.regCount++
-		fk.regBearer = r.Header.Get("Authorization")
-		_ = json.NewDecoder(r.Body).Decode(&fk.regBody)
-		if fk.registrationErr != 0 {
-			w.WriteHeader(fk.registrationErr)
-			_, _ = w.Write([]byte(`{"error":"forced"}`))
+		fr.mu.Lock()
+		defer fr.mu.Unlock()
+		fr.regCount++
+		fr.regBearer = r.Header.Get("Authorization")
+		fr.regBody = nil
+		_ = json.NewDecoder(r.Body).Decode(&fr.regBody)
+		if len(fr.regStatuses) > 0 {
+			status := fr.regStatuses[0]
+			fr.regStatuses = fr.regStatuses[1:]
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":"invalid_token","error_description":"forced"}`))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"client_id":                 "generated-client-id",
-			"registration_access_token": "reg-access-token",
-			"registration_client_uri":   "https://kc.example.org/clients/generated-client-id",
-		})
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"client_id": "generated-client-id"})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		fr.mu.Lock()
+		defer fr.mu.Unlock()
+		fr.tokenCount++
 		_ = r.ParseForm()
-		fk.tokenAssertion = r.Form.Get("client_assertion")
-		fk.tokenGrantType = r.Form.Get("grant_type")
-		fk.tokenScope = r.Form.Get("scope")
+		fr.tokenAssertion = r.Form.Get("client_assertion")
+		fr.tokenGrantType = r.Form.Get("grant_type")
+		fr.tokenScope = r.Form.Get("scope")
 		w.Header().Set("Content-Type", "application/json")
+		if fr.pendingCount > 0 {
+			fr.pendingCount--
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"authorization_pending","error_description":"awaiting admin approval"}`))
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"access_token": fk.accessToken,
-			"expires_in":   fk.expiresIn,
+			"access_token": fr.accessToken,
+			"expires_in":   fr.expiresIn,
 			"token_type":   "Bearer",
 		})
 	})
-	fk.server = httptest.NewServer(mux)
-	t.Cleanup(fk.server.Close)
-	return fk
+	fr.server = httptest.NewServer(mux)
+	t.Cleanup(fr.server.Close)
+	return fr
 }
 
-func (fk *fakeKeycloak) tokenURL() string { return fk.server.URL + "/token" }
-func (fk *fakeKeycloak) regURL() string   { return fk.server.URL + "/register" }
+func (fr *fakeRegistry) tokenURL() string { return fr.server.URL + "/token" }
+func (fr *fakeRegistry) regURL() string   { return fr.server.URL + "/register" }
+
+// waitReady waits for the first token to be written.
+func waitReady(t *testing.T, ready <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first token")
+	}
+}
 
 func TestOAuthRegistrationAndTokenFetch(t *testing.T) {
-	fk := newFakeKeycloak(t)
-	config := oauthTestConfig(t, fk.tokenURL(), fk.regURL())
+	fr := newFakeRegistry(t)
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	ready, err := StartOAuthManager(ctx, config)
 	require.NoError(t, err)
+	waitReady(t, ready)
 
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for first token")
-	}
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
 
 	// Registration assertions.
-	require.Equal(t, 1, fk.regCount, "registration should be called exactly once")
-	assert.Equal(t, "Bearer bootstrap-initial-access-token", fk.regBearer, "bootstrap token must be sent as bearer")
-	assert.Equal(t, "private_key_jwt", fk.regBody["token_endpoint_auth_method"])
+	require.Equal(t, 1, fr.regCount, "registration should be called exactly once")
+	assert.Equal(t, "Bearer bootstrap-initial-access-token", fr.regBearer, "bootstrap token must be sent as bearer")
+	assert.Equal(t, "private_key_jwt", fr.regBody["token_endpoint_auth_method"])
+	assert.Equal(t, "shoveler", fr.regBody["client_name"])
 
 	// The request must carry a jwks with the public key (n and e present).
-	jwks, ok := fk.regBody["jwks"].(map[string]interface{})
+	jwks, ok := fr.regBody["jwks"].(map[string]interface{})
 	require.True(t, ok, "request must include jwks")
 	keys, ok := jwks["keys"].([]interface{})
 	require.True(t, ok)
 	require.Len(t, keys, 1)
 	key0 := keys[0].(map[string]interface{})
 	assert.Equal(t, "RSA", key0["kty"])
-	assert.NotEmpty(t, key0["n"], "jwks must include modulus")
-	assert.NotEmpty(t, key0["e"], "jwks must include exponent")
-	assert.NotEmpty(t, key0["kid"], "jwks must include kid")
+	require.NotEmpty(t, key0["n"], "jwks must include modulus")
+	require.NotEmpty(t, key0["e"], "jwks must include exponent")
+	// The kid is the RFC 7638 thumbprint of the registered key, so the
+	// registry can recompute it.
+	assert.Equal(t, rsaThumbprint(key0["n"].(string), key0["e"].(string)), key0["kid"])
 
 	// No scope must be requested at registration time (authorization is
-	// admin-attached).
-	_, hasScope := fk.regBody["scope"]
+	// granted registry-side on approval).
+	_, hasScope := fr.regBody["scope"]
 	assert.False(t, hasScope, "registration must not request a scope")
 
-	// State file written 0600 with returned values.
+	// State file written 0600 with the returned client_id.
 	requireFileMode(t, config.OAuthStateFile, 0600)
 	state, err := loadRegistrationState(config.OAuthStateFile)
 	require.NoError(t, err)
 	assert.Equal(t, "generated-client-id", state.ClientID)
-	assert.Equal(t, "reg-access-token", state.RegistrationAccessToken)
-	assert.NotEmpty(t, state.Kid)
 
 	// Private key PEM written 0600.
 	requireFileMode(t, config.OAuthPrivateKeyFile, 0600)
@@ -146,58 +180,183 @@ func TestOAuthRegistrationAndTokenFetch(t *testing.T) {
 	assert.Equal(t, "fake-access-token", string(tokenData))
 
 	// The client_assertion must be a parseable JWT signed by the generated key
-	// with the right iss/sub/aud.
-	assert.Equal(t, "client_credentials", fk.tokenGrantType)
-	require.NotEmpty(t, fk.tokenAssertion)
+	// with the right iss/sub/aud/kid.
+	assert.Equal(t, "client_credentials", fr.tokenGrantType)
+	require.NotEmpty(t, fr.tokenAssertion)
 	privKey, err := loadPrivateKey(config.OAuthPrivateKeyFile)
 	require.NoError(t, err)
 	var claims jwt.StandardClaims
-	parsed, err := jwt.ParseWithClaims(fk.tokenAssertion, &claims, func(token *jwt.Token) (interface{}, error) {
+	parsed, err := jwt.ParseWithClaims(fr.tokenAssertion, &claims, func(token *jwt.Token) (interface{}, error) {
 		return &privKey.PublicKey, nil
 	})
 	require.NoError(t, err)
 	require.True(t, parsed.Valid)
 	assert.Equal(t, "generated-client-id", claims.Issuer)
 	assert.Equal(t, "generated-client-id", claims.Subject)
-	assert.Equal(t, fk.tokenURL(), claims.Audience)
-	assert.Equal(t, state.Kid, parsed.Header["kid"])
+	assert.Equal(t, fr.tokenURL(), claims.Audience)
+	assert.NotEmpty(t, claims.Id, "assertion must carry a jti")
+	assert.Equal(t, key0["kid"], parsed.Header["kid"])
 }
 
 func TestOAuthRegistrationSkippedWhenStateExists(t *testing.T) {
-	fk := newFakeKeycloak(t)
-	config := oauthTestConfig(t, fk.tokenURL(), fk.regURL())
+	fr := newFakeRegistry(t)
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
 
 	// Pre-create a private key and state file so registration should be skipped.
-	require.NoError(t, os.MkdirAll(filepath.Dir(config.OAuthStateFile), 0700))
 	key, err := generateTestKey()
 	require.NoError(t, err)
 	require.NoError(t, savePrivateKey(config.OAuthPrivateKeyFile, key))
-	require.NoError(t, saveRegistrationState(config.OAuthStateFile, &registrationState{
-		ClientID: "pre-existing-client",
-		Kid:      "pre-existing-kid",
-	}))
+	require.NoError(t, saveRegistrationState(config.OAuthStateFile, &registrationState{ClientID: "pre-existing-client"}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	ready, err := StartOAuthManager(ctx, config)
 	require.NoError(t, err)
+	waitReady(t, ready)
 
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for first token")
-	}
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	assert.Equal(t, 0, fr.regCount, "registration must be skipped when a state file exists")
 
-	assert.Equal(t, 0, fk.regCount, "registration must be skipped when a state file exists")
-
-	// The assertion must be signed with the pre-existing client_id and kid.
-	require.NotEmpty(t, fk.tokenAssertion)
+	// The assertion must be signed with the pre-existing client_id and the
+	// key's thumbprint.
+	require.NotEmpty(t, fr.tokenAssertion)
 	var claims jwt.StandardClaims
-	parsed, _, err := new(jwt.Parser).ParseUnverified(fk.tokenAssertion, &claims)
+	parsed, _, err := new(jwt.Parser).ParseUnverified(fr.tokenAssertion, &claims)
 	require.NoError(t, err)
 	assert.Equal(t, "pre-existing-client", claims.Issuer)
-	assert.Equal(t, "pre-existing-kid", parsed.Header["kid"])
+	assert.Equal(t, jwkThumbprint(&key.PublicKey), parsed.Header["kid"])
+}
+
+func TestOAuthRegistrationReusesExistingKey(t *testing.T) {
+	fr := newFakeRegistry(t)
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+
+	// A key but no state: e.g. a previous run crashed after generating the key.
+	key, err := generateTestKey()
+	require.NoError(t, err)
+	require.NoError(t, savePrivateKey(config.OAuthPrivateKeyFile, key))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+	waitReady(t, ready)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	require.Equal(t, 1, fr.regCount)
+	key0 := fr.regBody["jwks"].(map[string]interface{})["keys"].([]interface{})[0].(map[string]interface{})
+	assert.Equal(t, jwkThumbprint(&key.PublicKey), key0["kid"], "registration must present the existing key")
+}
+
+func TestOAuthWaitsWhileAuthorizationPending(t *testing.T) {
+	shortOAuthDelays(t)
+	fr := newFakeRegistry(t)
+	fr.pendingCount = 3
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+	waitReady(t, ready)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	assert.Equal(t, 4, fr.tokenCount, "should poll until approved")
+	assert.Equal(t, 1, fr.regCount, "pending approval must not trigger re-registration")
+	tokenData, err := os.ReadFile(config.AmqpToken)
+	require.NoError(t, err)
+	assert.Equal(t, "fake-access-token", string(tokenData))
+}
+
+func TestOAuthRegistrationRetriesTransientErrors(t *testing.T) {
+	shortOAuthDelays(t)
+	fr := newFakeRegistry(t)
+	fr.regStatuses = []int{http.StatusServiceUnavailable, http.StatusTooManyRequests}
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+	waitReady(t, ready)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	assert.Equal(t, 3, fr.regCount)
+}
+
+func TestOAuthRegistrationPermanentErrorStops(t *testing.T) {
+	shortOAuthDelays(t)
+	fr := newFakeRegistry(t)
+	fr.regStatuses = []int{http.StatusUnauthorized}
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+
+	m, err := newOAuthManager(config)
+	require.NoError(t, err)
+
+	err = m.run(context.Background(), make(chan struct{}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid_token")
+	assert.NoFileExists(t, config.OAuthStateFile)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	assert.Equal(t, 1, fr.regCount, "a 4xx must not be retried")
+	assert.Equal(t, 0, fr.tokenCount)
+}
+
+func TestOAuthRunStopsOnCancel(t *testing.T) {
+	shortOAuthDelays(t)
+	fr := newFakeRegistry(t)
+	fr.pendingCount = 1 << 30 // never approved
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+
+	m, err := newOAuthManager(config)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- m.run(ctx, make(chan struct{})) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("run did not stop after cancel")
+	}
+}
+
+func TestEndpointErrorPermanent(t *testing.T) {
+	assert.True(t, (&endpointError{Status: 400}).permanent())
+	assert.True(t, (&endpointError{Status: 401}).permanent())
+	assert.True(t, (&endpointError{Status: 404}).permanent())
+	assert.False(t, (&endpointError{Status: 408}).permanent())
+	assert.False(t, (&endpointError{Status: 429}).permanent())
+	assert.False(t, (&endpointError{Status: 500}).permanent())
+	assert.False(t, (&endpointError{Status: 503}).permanent())
+
+	e := newEndpointError(400, []byte(`{"error":"authorization_pending","error_description":"wait"}`))
+	assert.Equal(t, "authorization_pending", e.Code)
+	assert.Equal(t, "wait", e.Description)
+
+	e = newEndpointError(502, []byte("bad gateway\n"))
+	assert.Empty(t, e.Code)
+	assert.Equal(t, "bad gateway", e.Description)
+}
+
+func TestRSAThumbprintRFC7638(t *testing.T) {
+	// Example key and expected thumbprint from RFC 7638 section 3.1.
+	n := "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw"
+	assert.Equal(t, "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs", rsaThumbprint(n, "AQAB"))
 }
 
 func TestNextRefreshInterval(t *testing.T) {
@@ -302,7 +461,7 @@ func TestOAuthConfigValidationSucceedsWithStateFileOnly(t *testing.T) {
 
 	dir := t.TempDir()
 	stateFile := filepath.Join(dir, "registration.json")
-	require.NoError(t, saveRegistrationState(stateFile, &registrationState{ClientID: "c", Kid: "k"}))
+	require.NoError(t, saveRegistrationState(stateFile, &registrationState{ClientID: "c"}))
 
 	configFile := filepath.Join(dir, "config.yaml")
 	// Enabled, required URLs present, NO bootstrap token, but a state file exists.

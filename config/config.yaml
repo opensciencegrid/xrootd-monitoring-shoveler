@@ -20,28 +20,26 @@ amqp:
 
   # OAuth2 self-registration + private_key_jwt (optional).
   #
-  # When enabled, the shoveler self-onboards against an OIDC issuer (Keycloak):
-  # on first run it generates an RSA keypair, registers its identity + PUBLIC
-  # key using a one-time bootstrap token, and then fetches access tokens via
-  # private_key_jwt. Each fetched token is written to `token_location` above and
-  # rotated automatically by the existing token-file watcher. The private key
-  # never leaves the host and no long-lived shared secret ever exists.
+  # When enabled, the shoveler onboards itself with a shoveler registry: on
+  # first run it generates an RSA keypair and registers its PUBLIC key using a
+  # one-time bootstrap token, then fetches access tokens via private_key_jwt.
+  # Each fetched token is written to `token_location` above and rotated
+  # automatically by the existing token-file watcher. The private key never
+  # leaves the host and no long-lived shared secret ever exists. Protocol
+  # details: docs/registry-protocol.md
   #
-  # IMPORTANT: the shoveler registers identity + public key ONLY. The per-site
-  # exchange scope (the actual RabbitMQ authorization) is attached admin-side
-  # after your registration is approved -- the shoveler never requests it.
+  # A new registration must be approved by a registry admin, who also grants
+  # its RabbitMQ permissions. Until then packets are queued on disk.
   #
   # oauth:
   #   enabled: true
-  #   # OIDC token endpoint (client_credentials grant).
-  #   token_url: https://kc.example.org/realms/xrootd/protocol/openid-connect/token
-  #   # Dynamic client registration endpoint.
-  #   registration_url: https://kc.example.org/realms/xrootd/clients-registrations/openid-connect
+  #   token_url: https://registry.example.org/token
+  #   registration_url: https://registry.example.org/register
   #
-  #   # The one-time bootstrap (initial access) token. It is SINGLE-USE and only
-  #   # needed on the FIRST run; once registration succeeds the state_file below
-  #   # is sufficient and this may be removed. Supplying it via a file is the
-  #   # recommended approach (the file wins if both are set):
+  #   # The one-time bootstrap token. It is only needed on the FIRST run; once
+  #   # registration succeeds the state_file below is sufficient and this may
+  #   # be removed. Supplying it via a file is recommended (the file wins if
+  #   # both are set):
   #   bootstrap_token_file: /etc/xrootd-monitoring-shoveler/oauth/bootstrap.token
   #   # bootstrap_token: paste-one-time-token-here
   #
@@ -49,12 +47,12 @@ amqp:
   #   private_key_file: /etc/xrootd-monitoring-shoveler/oauth/private.pem
   #   state_file: /etc/xrootd-monitoring-shoveler/oauth/registration.json
   #
-  #   # Readable name sent at registration so admins can identify this client.
-  #   client_name: shoveler
+  #   # Name shown to registry admins (default: shoveler@<hostname>).
+  #   # client_name: shoveler@xrootd.example.edu
   #
-  #   # Optional scopes to request at token time. Leave empty to let Keycloak
-  #   # apply whatever it associates with the client by default; any scope listed
-  #   # here is intersected with what the issuer allows.
+  #   # Optional scopes to request at token time. Leave empty to receive
+  #   # everything the admin granted; anything listed here is intersected with
+  #   # the granted scopes.
   #   # scopes:
   #   #   - my_rabbit_server.write:xrd-mon/shoveled-xrd
 

@@ -1,10 +1,8 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"net"
-	"time"
 
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/input"
@@ -56,24 +54,14 @@ func main() {
 
 	switch config.MQ {
 	case "amqp":
-		// If OAuth is enabled, self-register (first run) and start the token
-		// fetch loop BEFORE StartAMQP, blocking until the first access token has
-		// been written to the token file so StartAMQP's initial stat/read finds
-		// it. When disabled this block is skipped and behavior is unchanged.
 		if config.OAuthEnabled {
-			ready, err := shoveler.StartOAuthManager(context.Background(), &config)
-			if err != nil {
-				logrus.Fatalln("Failed to start OAuth manager:", err)
-			}
-			select {
-			case <-ready:
-				logrus.Infoln("OAuth: initial access token ready")
-			case <-time.After(60 * time.Second):
-				logrus.Fatalln("Timed out waiting for the first OAuth access token")
-			}
+			// Registers on first run, then starts AMQP once the registry
+			// issues a token; packets queue on disk until then.
+			shoveler.StartAMQPWithOAuth(&config, cq)
+		} else {
+			// Start the AMQP go func
+			go shoveler.StartAMQP(&config, cq)
 		}
-		// Start the AMQP go func
-		go shoveler.StartAMQP(&config, cq)
 	case "stomp":
 		// Start the STOMP go func
 		go shoveler.StartStomp(&config, cq)
