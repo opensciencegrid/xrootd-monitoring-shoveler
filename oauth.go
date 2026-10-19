@@ -51,9 +51,13 @@ var (
 	// After a transient failure (network error, 5xx, token-file write).
 	oauthRetryBackoff = 15 * time.Second
 
-	// While the registry rejects the client (disabled, or awaiting approval on
-	// registries that have an approval step).
+	// While the registration awaits approval, or the registry rejects the
+	// client (disabled or revoked).
 	oauthPendingInterval = 60 * time.Second
+
+	// How often the "awaiting approval" warning is repeated, so it stays
+	// visible in logs at the default (warning) level.
+	oauthPendingReminder = time.Hour
 )
 
 // registrationState is the persisted result of registration: everything the
@@ -128,7 +132,7 @@ type oauthManager struct {
 // StartAMQPWithOAuth starts the OAuth manager and launches StartAMQP once the
 // first access token is on disk. It returns immediately so packet intake can
 // start; messages buffer in the on-disk queue until the registry issues a
-// token, for example while the client is disabled in the registry.
+// token, for example while a new registration awaits approval.
 func StartAMQPWithOAuth(config *Config, queue *ConfirmationQueue) {
 	ready, err := StartOAuthManager(context.Background(), config)
 	if err != nil {
@@ -223,7 +227,8 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 	}
 
 	first := true
-	lastProblem := "" // error code of the current failure streak, to avoid log spam
+	lastProblem := ""             // error code of the current failure streak, to avoid log spam
+	var lastPendingWarn time.Time // when the "awaiting approval" warning was last logged
 	for {
 		token, lifetime, err := m.fetchToken(ctx)
 		if err != nil {
@@ -239,9 +244,10 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 			wait := oauthRetryBackoff
 			switch code {
 			case oauthErrAuthorizationPending:
-				if lastProblem != code {
-					log.Warningln("OAuth: registration for client_id", m.clientID,
-						"is awaiting approval by a registry admin; messages are queued until then")
+				if lastProblem != code || time.Since(lastPendingWarn) >= oauthPendingReminder {
+					log.Warningln("OAuth: client_id", m.clientID, "is awaiting approval in the registry;",
+						"approve the client whose key fingerprint is", m.kid, "- messages are queued until then")
+					lastPendingWarn = time.Now()
 				} else {
 					log.Debugln("OAuth: still awaiting approval for client_id", m.clientID)
 				}
@@ -304,7 +310,12 @@ func (m *oauthManager) registerWithRetry(ctx context.Context) error {
 					clientID, m.config.OAuthStateFile, err)
 			}
 			m.clientID = clientID
-			log.Infoln("OAuth: registration complete, client_id:", clientID)
+			if m.config.OAuthBootstrapToken == "" {
+				log.Warningln("OAuth: registered without a registration token as client_id", clientID,
+					"with key fingerprint", m.kid, "- a registry admin must approve it")
+			} else {
+				log.Infoln("OAuth: registration complete, client_id:", clientID)
+			}
 			return nil
 		}
 		if ctx.Err() != nil {
@@ -312,6 +323,9 @@ func (m *oauthManager) registerWithRetry(ctx context.Context) error {
 		}
 		var ee *endpointError
 		if errors.As(err, &ee) && ee.permanent() {
+			if m.config.OAuthBootstrapToken == "" {
+				return fmt.Errorf("registry rejected registration without a registration token (it may require one; check registration_url): %w", err)
+			}
 			return fmt.Errorf("registry rejected registration (check the registration token and registration_url): %w", err)
 		}
 		log.Warningln("OAuth: registration failed, will retry:", err)
@@ -344,7 +358,11 @@ func (m *oauthManager) doRegister(ctx context.Context) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+m.config.OAuthBootstrapToken)
+	// Without a token the registration is open and the client waits for
+	// approval in the registry.
+	if m.config.OAuthBootstrapToken != "" {
+		req.Header.Set("Authorization", "Bearer "+m.config.OAuthBootstrapToken)
+	}
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {

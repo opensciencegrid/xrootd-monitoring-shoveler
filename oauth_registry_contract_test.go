@@ -7,6 +7,11 @@ package shoveler
 //	SHOVELER_REGISTRY_URL=http://127.0.0.1:18080 \
 //	SHOVELER_REGISTRY_BOOTSTRAP=<token> SHOVELER_REGISTRY_BOOTSTRAP2=<token> \
 //	go test -run TestRegistryContract -v .
+//
+// Set SHOVELER_REGISTRY_OPEN=1 when the registry accepts registrations
+// without a token (hybrid mode) to also check the pending path, and
+// SHOVELER_REGISTRY_APPROVE_CMD to a command that approves the client_id
+// appended to it, to check that approval lets the client fetch tokens.
 
 import (
 	"context"
@@ -15,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -171,6 +177,43 @@ func TestRegistryContract(t *testing.T) {
 		clientID, err := m2.doRegister(context.Background())
 		require.NoError(t, err, "a 400 must not consume the registration token")
 		assert.NotEqual(t, m.clientID, clientID)
+	})
+
+	t.Run("registration without a token", func(t *testing.T) {
+		cfg := registryContractConfig(t, base, "")
+		open, err := newOAuthManager(cfg)
+		require.NoError(t, err)
+		clientID, err := open.doRegister(context.Background())
+		if os.Getenv("SHOVELER_REGISTRY_OPEN") == "" {
+			// Token-only registry: must refuse, permanently.
+			requirePermanent(t, err)
+			return
+		}
+		require.NoError(t, err, "hybrid registry must accept a registration without a token")
+		open.clientID = clientID
+
+		_, _, err = open.fetchToken(context.Background())
+		var ee *endpointError
+		require.ErrorAs(t, err, &ee)
+		assert.Equal(t, oauthErrAuthorizationPending, ee.Code, "a pending client must get authorization_pending")
+
+		// Pending status must only be revealed to the key holder.
+		key, err := generateTestKey()
+		require.NoError(t, err)
+		assertion, err := buildClientAssertion(clientID, cfg.OAuthTokenURL, open.kid, key)
+		require.NoError(t, err)
+		_, e := postAssertion(t, cfg.OAuthTokenURL, assertion)
+		require.NotNil(t, e)
+		assert.Equal(t, oauthErrInvalidClient, e.Code, "a forged assertion for a pending client must be invalid_client")
+
+		approve := os.Getenv("SHOVELER_REGISTRY_APPROVE_CMD")
+		if approve == "" {
+			return
+		}
+		out, err := exec.Command("sh", "-c", approve+" "+clientID).CombinedOutput()
+		require.NoError(t, err, "approve command failed: %s", out)
+		_, _, err = open.fetchToken(context.Background())
+		assert.NoError(t, err, "an approved client must get a token")
 	})
 
 	t.Run("replayed assertion is invalid_client", func(t *testing.T) {

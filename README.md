@@ -227,7 +227,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_OAUTH_ENABLED` - Enable OAuth2 self-registration + token fetch: `true` or `false` (default: `false`)
 * `<PREFIX>_AMQP_OAUTH_TOKEN_URL` - OIDC token endpoint (`client_credentials` grant)
 * `<PREFIX>_AMQP_OAUTH_REGISTRATION_URL` - Dynamic client registration endpoint
-* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN` - One-time registration token from the registry, inline
+* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN` - One-time registration token from the registry, inline (optional: without one the shoveler waits for approval)
 * `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN_FILE` - File holding the one-time registration token (preferred; wins over inline)
 * `<PREFIX>_AMQP_OAUTH_PRIVATE_KEY_FILE` - Generated private key path (default: `/etc/xrootd-monitoring-shoveler/oauth/private.pem`)
 * `<PREFIX>_AMQP_OAUTH_STATE_FILE` - Persisted registration state path (default: `/etc/xrootd-monitoring-shoveler/oauth/registration.json`)
@@ -269,12 +269,21 @@ On the other hand, if STOMP is the selected protocol user and password will need
 #### OAuth2 Self-Registration (private_key_jwt)
 
 Instead of a long-lived JWT pasted into the token file, the shoveler can onboard itself with a shoveler registry
-(such as Shoveler-registry) and keep its own access token fresh. The operator's only manual step is supplying a
-single short-lived **registration token**. No long-lived shared secret ever exists or crosses the wire. The
-protocol between the shoveler and the registry is specified in [docs/registry-protocol.md](docs/registry-protocol.md).
+(such as Shoveler-registry) and keep its own access token fresh. No long-lived shared secret ever exists or crosses
+the wire. The protocol between the shoveler and the registry is specified in
+[docs/registry-protocol.md](docs/registry-protocol.md).
 
-A site owner logs in to the registry and creates a registration token for their site. The registry shows the
-token once, together with a ready-to-paste config block like this one (see `config/config.yaml` for every option):
+There are two ways to onboard:
+
+* **With a registration token (instant).** A site owner logs in to the registry and creates a one-time registration
+  token for their site. The registry shows it once, with a ready-to-paste config block. Write the token to
+  `bootstrap_token_file` (mode `0600`); the shoveler is active as soon as it starts.
+* **Without a token (approval).** Leave `bootstrap_token_file` out and just start the shoveler. It registers
+  itself and waits, queuing packets on disk, until a registry admin or site manager approves it on the dashboard
+  and assigns its site. The shoveler logs its key fingerprint (also shown in the registry) so the approver can
+  check they are approving the right host. Your registry must support this mode.
+
+The config is the same either way, minus `bootstrap_token_file` (see `config/config.yaml` for every option):
 
 ```yaml
 amqp:
@@ -287,16 +296,16 @@ amqp:
     bootstrap_token_file: /etc/xrootd-monitoring-shoveler/oauth/bootstrap.token
 ```
 
-Write the token to `bootstrap_token_file` (mode `0600`) and start the shoveler. Copy `token_url` exactly as the
-registry shows it: the registry checks it character for character.
+Copy `token_url` exactly as the registry shows it: the registry checks it character for character.
 
 How it works end to end:
 
 1. **Registration (first run only).** The shoveler generates a 2048-bit RSA keypair (`private_key_file`, mode
    `0600`; the private key **never leaves the host**) and registers its public key with the registry, using the
-   registration token as a bearer. Creating the token was the site owner's approval, so the new client is active
-   immediately. The returned `client_id` is saved to `state_file` (mode `0600`). The token is now spent and the
-   file can be deleted.
+   registration token, if any, as a bearer. With a token the new client is active immediately (creating the token
+   was the site owner's approval) and the token file can be deleted afterwards. Without one, the shoveler logs a
+   warning with its key fingerprint, repeated hourly, and polls every minute until the client is approved. Either
+   way the returned `client_id` is saved to `state_file` (mode `0600`).
 2. **Steady state (every run).** If `state_file` exists, registration is skipped. The shoveler signs a short-lived
    client assertion with its private key and exchanges it at `token_url` for an access token. That token is written
    atomically to `token_location`, AMQP starts (or the existing token-file watcher rotates its connections), and
@@ -305,11 +314,13 @@ How it works end to end:
 
 The `oauth/` directory holding the key and `state_file` must survive restarts and redeploys.
 
-If the registry rejects the registration (for example an expired, revoked or already-used registration token), the
-shoveler exits with an error; create a new token. If the client is later disabled in the registry, the shoveler
+If the registry rejects the registration (for example an expired, revoked or already-used registration token, or no
+token on a registry that requires one), the shoveler exits with an error. If `bootstrap_token_file` is set but can't
+be read on the first run, the shoveler refuses to start rather than falling back to waiting for approval. If a pending
+registration is denied or expires, delete `state_file` and restart to register again. If the client is later disabled in the registry, the shoveler
 logs an error, keeps queuing, and retries every minute: a client disabled by its owner or for being idle starts
-working again once the owner re-enables it. A client revoked by a registry admin can't be re-enabled; create a new
-registration token, delete `state_file`, and restart the shoveler.
+working again once the owner re-enables it. A client revoked by a registry admin can't be re-enabled; delete
+`state_file` and restart the shoveler, with a new registration token or to wait for approval.
 
 RabbitMQ must trust the registry's signing keys (via `rabbitmq_auth_backend_oauth2`) so that the permissions in the
 issued tokens map to the expected exchange.

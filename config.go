@@ -314,28 +314,36 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 			c.OAuthScopes = viper.GetStringSlice("amqp.oauth.scopes")
 			log.Debugln("AMQP OAuth Scopes:", c.OAuthScopes)
 
-			// The bootstrap token may be supplied inline or via a file; the
-			// file is preferred and wins when both are set.
+			// Validation: token_url and registration_url are always required
+			// when OAuth is enabled.
+			if c.OAuthTokenURL == "" || c.OAuthRegistrationURL == "" {
+				log.Panicln("amqp.oauth.enabled is true but amqp.oauth.token_url and amqp.oauth.registration_url are both required")
+			}
+
+			// The bootstrap (registration) token may be supplied inline or via
+			// a file; the file is preferred and wins when both are set. It is
+			// optional: without one, the first run registers anyway and waits
+			// for an admin to approve it in the registry. It is only read on
+			// the first run (no state file yet).
+			firstRun := !fileExists(c.OAuthStateFile)
 			c.OAuthBootstrapToken = viper.GetString("amqp.oauth.bootstrap_token")
 			c.OAuthBootstrapTokenFile = viper.GetString("amqp.oauth.bootstrap_token_file")
 			if c.OAuthBootstrapTokenFile != "" {
 				data, readErr := os.ReadFile(c.OAuthBootstrapTokenFile)
-				if readErr != nil {
-					log.Warningln("Unable to read OAuth bootstrap token file:", c.OAuthBootstrapTokenFile, readErr)
-				} else {
+				switch {
+				case readErr == nil:
 					c.OAuthBootstrapToken = strings.TrimSpace(string(data))
+				case firstRun:
+					// A configured but unreadable token must not silently
+					// turn into a registration that waits for approval.
+					log.Panicln("amqp.oauth: unable to read bootstrap_token_file", c.OAuthBootstrapTokenFile, readErr,
+						"- fix it, or remove bootstrap_token_file to register without a token and wait for approval")
+				default:
+					log.Debugln("OAuth bootstrap token file not readable (not needed after registration):", readErr)
 				}
 			}
-
-			// Validation: token_url and registration_url are always required
-			// when OAuth is enabled. A bootstrap token is only required on the
-			// first run (when no state file exists yet); afterwards the state
-			// file is sufficient and the bootstrap token may be absent.
-			if c.OAuthTokenURL == "" || c.OAuthRegistrationURL == "" {
-				log.Panicln("amqp.oauth.enabled is true but amqp.oauth.token_url and amqp.oauth.registration_url are both required")
-			}
-			if !fileExists(c.OAuthStateFile) && c.OAuthBootstrapToken == "" {
-				log.Panicln("amqp.oauth: first run requires a one-time bootstrap token (amqp.oauth.bootstrap_token or amqp.oauth.bootstrap_token_file); none provided and no state file at " + c.OAuthStateFile)
+			if firstRun && c.OAuthBootstrapToken == "" {
+				log.Warningln("amqp.oauth: no registration token configured; the shoveler will register and wait for a registry admin to approve it")
 			}
 		}
 	case "stomp":

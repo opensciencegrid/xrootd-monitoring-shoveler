@@ -15,38 +15,59 @@ It uses standard OAuth 2.0 messages:
 `oauth_registry_contract_test.go` checks a live registry against this
 contract using the shoveler's own client code.
 
-## Lifecycle
+## Two ways to register
+
+| | With a registration token | Without a token |
+|---|---|---|
+| Who acts first | a site owner creates a token on the registry's dashboard | nobody: the sysadmin just starts the shoveler |
+| What the shoveler sends | `Authorization: Bearer <token>` | no `Authorization` header |
+| Result | client active immediately, bound to the token's site | client **pending**, not bound to any site |
+| Who approves | creating the token was the approval | a registry admin or site manager, on the dashboard |
 
 ```
-site owner               registry                         shoveler
-  |  log in, create         |                                 |
-  |  registration token     |                                 |
-  |------------------------>|                                 |
-  |  write token to the shoveler host                         |
-  |---------------------------------------------------------->|
-  |                         |  POST /register (token, key)    |
-  |                         |<--------------------------------|
-  |                         |  201 {client_id}                |
-  |                         |-------------------------------->|
-  |                         |  POST /token (signed assertion) |
-  |                         |<--------------------------------|
-  |                         |  200 {access_token, expires_in} |
-  |                         |-------------------------------->|   connects to RabbitMQ
+with a token                                  without a token
+
+site owner -> registry: create token          shoveler -> registry: POST /register (no token)
+owner -> shoveler host: write token file      registry -> shoveler: 201 {client_id}   [pending]
+shoveler -> registry: POST /register (token)  shoveler -> registry: POST /token
+registry -> shoveler: 201 {client_id}         registry -> shoveler: 400 authorization_pending
+shoveler -> registry: POST /token                (polls every 60 s; packets queue on disk)
+registry -> shoveler: 200 {access_token}      approver -> registry: approve into a site
+                                              shoveler -> registry: POST /token
+                                              registry -> shoveler: 200 {access_token}
 ```
 
-**The registration token is the approval.** Only a member of the site's
-COmanage group (`<COMANAGE_GROUP_PREFIX><site>`) can create one, so a client
-registered with it is active immediately, bound to that site, with the
-standard RabbitMQ permissions. There is no pending state.
+### Registration tokens
 
-## Registration tokens
-
-Created by a site owner on the registry's dashboard and shown once. They are
-single-use, expire after `REGISTRATION_TOKEN_TTL_SECONDS` (default 72 hours),
-can be revoked from the dashboard, and are stored only as a SHA-256 hash.
-
-The shoveler reads the token from `amqp.oauth.bootstrap_token_file` (or
+Created by a site owner (a member of the site's COmanage group
+`<COMANAGE_GROUP_PREFIX><site>`) on the registry's dashboard and shown once.
+They are single-use, expire after `REGISTRATION_TOKEN_TTL_SECONDS` (default 72
+hours), can be revoked from the dashboard, and are stored only as a SHA-256
+hash. The shoveler reads the token from `amqp.oauth.bootstrap_token_file` (or
 `bootstrap_token`) and only needs it on the first run.
+
+### Approving pending clients
+
+In Shoveler-registry, registration without a token is controlled by
+`ALLOW_PENDING_REGISTRATION` (default on), at most `MAX_PENDING_CLIENTS`
+(default 100) may wait at once, and unapproved ones are deleted after
+`PENDING_CLIENT_TTL_SECONDS` (default 7 days). With it off, a registration
+without a token gets `401 invalid_token`.
+
+The registry lists pending clients with their `client_name` (default
+`shoveler@<hostname>`), `software_version`, source IP, registration time, and
+key fingerprint (the RFC 7638 thumbprint, which is also the key's `kid`). The
+shoveler logs the same fingerprint when it registers and every hour while it
+waits, so the approver can confirm the request came from the real host.
+
+The approver picks the site the client belongs to (one they manage, or any
+site for a registry admin) and approves it. From then on it is a normal client
+of that site. The shoveler's next poll, within 60 s, gets a token.
+
+Denying a pending client deletes it. The registry also deletes pending clients
+that nobody approves within a set time. Either way the
+shoveler gets `invalid_client` from then on; to try again, delete its
+`state_file` and restart it.
 
 ## Registration endpoint
 
@@ -54,7 +75,7 @@ Configured as `amqp.oauth.registration_url` (`<PORTAL_BASE_URL>/register`).
 
 ```http
 POST /register
-Authorization: Bearer <registration token>
+Authorization: Bearer <registration token>      (omitted when registering without a token)
 Content-Type: application/json
 
 {
@@ -86,7 +107,9 @@ The registry requires: `token_endpoint_auth_method` = `private_key_jwt`;
 exactly one RSA key of at least 2048 bits with a non-empty `kid`, `use` absent
 or `sig`, `alg` absent or `RS256`, and no private-key members.
 
-**Success** (`201 Created`). The shoveler reads only `client_id`.
+**Success** (`201 Created`), for both kinds of registration. The shoveler
+reads only `client_id`; the response doesn't say whether the client is
+pending.
 
 ```json
 {
@@ -104,15 +127,24 @@ offered.
 **Idempotent retry.** If the response is lost, the shoveler retries with the
 same token and the same key (it saves the key before registering). The
 registry returns the original client as long as the token hasn't expired or
-been revoked. The same token with a different key is rejected.
+been revoked. The same token with a different key is rejected. A retried
+registration without a token may create a second pending client; the extra
+one is never approved and expires.
+
+**A bad token is never downgraded.** If an `Authorization` header is present
+but the token is unknown, expired, revoked or used, the answer is `401
+invalid_token`, never a pending registration. The shoveler only omits the
+header when no token is configured, and refuses to start if a configured
+token file can't be read.
 
 **Errors:**
 
 | Status | `error` | When | Shoveler behavior |
 |---|---|---|---|
-| 401 | `invalid_token` | token missing, unknown, expired, revoked, or used with a different key | logs the error and exits |
+| 401 | `invalid_token` | token unknown, expired, revoked, or used with a different key; or no token, on a registry that requires one | logs the error and exits |
 | 400 | `invalid_client_metadata` | the request fails validation (the token is not spent) | logs the error and exits |
 | 429 | `invalid_request` | per-IP rate limit (`Retry-After` set) | retries every 15 s |
+| 503 | `temporarily_unavailable` | too many clients already pending approval | retries every 15 s |
 | 5xx or network error | | | retries every 15 s |
 
 The shoveler treats every 4xx except 408 and 429 as permanent.
@@ -161,14 +193,15 @@ the access token, falling back to 10 minutes).
 
 | Status | `error` | When | Shoveler behavior |
 |---|---|---|---|
-| 401 | `invalid_client` | unknown or disabled client, bad signature or `kid`, wrong `aud`, expired or too long-lived assertion, replayed `jti` (one uniform response) | logs an error once, retries every 60 s, keeps queuing |
+| 400 | `authorization_pending` | a valid assertion from a client that hasn't been approved yet | logs a warning with the key fingerprint (then hourly), polls every 60 s, keeps queuing |
+| 401 | `invalid_client` | unknown, denied or disabled client, bad signature or `kid`, wrong `aud`, expired or too long-lived assertion, replayed `jti` (one uniform response) | logs an error once, retries every 60 s, keeps queuing |
 | 429 | `invalid_client` | per-client rate limit (`Retry-After` set) | treated as rate limiting whatever the body says; retries every 15 s |
 | 400 | `unsupported_grant_type` | | retries every 15 s |
 | 5xx or network error | | | retries every 15 s |
 
-The shoveler also understands `authorization_pending`, for a registry that
-holds new clients for approval: it logs a warning once and polls every 60 s.
-Shoveler-registry never sends it.
+The registry must fully verify the assertion (signature, `kid`, `aud`,
+lifetime, `jti`) before answering `authorization_pending`. Anything less gets
+`invalid_client`, so only the key holder can learn that a client is pending.
 
 ## Access tokens
 
@@ -194,17 +227,18 @@ A client stops getting tokens (401 `invalid_client`) when it is disabled:
 | Disabled by | Recovery |
 |---|---|
 | site owner, or idle expiry (unused for `IDLE_DAYS`) | the owner re-enables it on the dashboard; the shoveler picks it up on its next 60 s retry |
-| registry admin | not re-enablable (the key may be compromised): create a new registration token, delete the shoveler's `state_file`, and restart it |
+| registry admin | not re-enablable (the key may be compromised): delete the shoveler's `state_file` and restart it, with a new registration token or to wait for approval |
 
 ## Shoveler files
 
 | Path (default) | Contents |
 |---|---|
-| `/etc/xrootd-monitoring-shoveler/oauth/bootstrap.token` | the registration token; can be deleted after the first successful start |
+| `/etc/xrootd-monitoring-shoveler/oauth/bootstrap.token` | the registration token, if one is used; can be deleted after the first successful start |
 | `/etc/xrootd-monitoring-shoveler/oauth/private.pem` | RSA private key (PKCS#1, mode 0600); never leaves the host |
 | `/etc/xrootd-monitoring-shoveler/oauth/registration.json` | `{"client_id": "..."}` (mode 0600) |
 | `amqp.token_location` | current access token, rewritten atomically on each refresh |
 
 The `oauth/` directory must survive restarts and redeploys. If the state file
 exists, the shoveler skips registration. If only the key exists, it registers
-again with that same key. If both are lost, create a new registration token.
+again with that same key. If both are lost, it registers as a new client:
+with a new registration token, or without one and waits for approval again.

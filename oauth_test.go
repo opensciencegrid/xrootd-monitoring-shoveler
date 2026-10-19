@@ -281,6 +281,30 @@ func TestOAuthWaitsWhileAuthorizationPending(t *testing.T) {
 	assert.Equal(t, "fake-access-token", string(tokenData))
 }
 
+func TestOAuthRegistrationWithoutTokenWaitsForApproval(t *testing.T) {
+	shortOAuthDelays(t)
+	fr := newFakeRegistry(t)
+	fr.pendingCount = 2 // approved on the third poll
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+	config.OAuthBootstrapToken = ""
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+	waitReady(t, ready)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	require.Equal(t, 1, fr.regCount)
+	assert.Empty(t, fr.regBearer, "no Authorization header without a token")
+	assert.Equal(t, 3, fr.tokenCount)
+	state, err := loadRegistrationState(config.OAuthStateFile)
+	require.NoError(t, err)
+	assert.Equal(t, "generated-client-id", state.ClientID)
+}
+
 func TestOAuthRateLimitIsTransient(t *testing.T) {
 	// The registry answers 429 with an invalid_client body; it must be retried
 	// on the short backoff, not treated as a revoked client.
@@ -459,28 +483,72 @@ func TestOAuthConfigParsingFromEnv(t *testing.T) {
 	assert.Equal(t, "env-bootstrap", c.OAuthBootstrapToken)
 }
 
-func TestOAuthConfigValidationFailsFastOnFirstRun(t *testing.T) {
+func TestOAuthConfigAllowsFirstRunWithoutToken(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 
 	dir := t.TempDir()
 	configFile := filepath.Join(dir, "config.yaml")
-	// Enabled, required URLs present, but no bootstrap token and no state file.
+	// Enabled, required URLs present, no token and no state file: the shoveler
+	// registers without a token and waits for approval.
 	yaml := "" +
 		"mq: amqp\n" +
 		"amqp:\n" +
 		"  url: amqps://example.com/vhost\n" +
 		"  oauth:\n" +
 		"    enabled: true\n" +
-		"    token_url: https://kc.example.org/token\n" +
-		"    registration_url: https://kc.example.org/register\n" +
+		"    token_url: https://registry.example.org/token\n" +
+		"    registration_url: https://registry.example.org/register\n" +
 		"    state_file: " + filepath.Join(dir, "does-not-exist.json") + "\n"
 	require.NoError(t, os.WriteFile(configFile, []byte(yaml), 0644))
 
 	c := &Config{}
-	assert.Panics(t, func() {
+	assert.NotPanics(t, func() {
 		c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER")
-	}, "first run without a bootstrap token must fail fast")
+	})
+	assert.Empty(t, c.OAuthBootstrapToken)
+}
+
+func TestOAuthConfigUnreadableTokenFile(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		stateFile  bool
+		wantsPanic bool
+	}{
+		{"first run fails fast", false, true},
+		{"ignored once registered", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+
+			dir := t.TempDir()
+			stateFile := filepath.Join(dir, "registration.json")
+			if tc.stateFile {
+				require.NoError(t, saveRegistrationState(stateFile, &registrationState{ClientID: "c"}))
+			}
+			configFile := filepath.Join(dir, "config.yaml")
+			yaml := "" +
+				"mq: amqp\n" +
+				"amqp:\n" +
+				"  url: amqps://example.com/vhost\n" +
+				"  oauth:\n" +
+				"    enabled: true\n" +
+				"    token_url: https://registry.example.org/token\n" +
+				"    registration_url: https://registry.example.org/register\n" +
+				"    bootstrap_token_file: " + filepath.Join(dir, "missing.token") + "\n" +
+				"    state_file: " + stateFile + "\n"
+			require.NoError(t, os.WriteFile(configFile, []byte(yaml), 0644))
+
+			c := &Config{}
+			read := func() { c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER") }
+			if tc.wantsPanic {
+				assert.Panics(t, read, "a configured but unreadable token must not fall back to approval mode")
+			} else {
+				assert.NotPanics(t, read)
+			}
+		})
+	}
 }
 
 func TestOAuthConfigValidationSucceedsWithStateFileOnly(t *testing.T) {

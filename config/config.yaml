@@ -21,26 +21,28 @@ amqp:
   # OAuth2 self-registration + private_key_jwt (optional).
   #
   # When enabled, the shoveler onboards itself with a shoveler registry: on
-  # first run it generates an RSA keypair and registers its PUBLIC key using a
-  # one-time registration token, then fetches access tokens via private_key_jwt.
+  # first run it generates an RSA keypair and registers its PUBLIC key, then
+  # fetches access tokens via private_key_jwt.
   # Each fetched token is written to `token_location` above and rotated
   # automatically by the existing token-file watcher. The private key never
   # leaves the host and no long-lived shared secret ever exists. Protocol
   # details: docs/registry-protocol.md
   #
-  # The registration token comes from the registry: a site owner creates it
-  # for their site, and that is the approval, so the shoveler gets tokens
-  # right away. The oauth/ directory below must survive restarts.
+  # Registering with a one-time registration token (created by a site owner
+  # in the registry) makes the shoveler active right away. Without one, it
+  # registers anyway and waits, queuing packets, until a registry admin or
+  # site manager approves it; it logs its key fingerprint so the approver can
+  # check it. The oauth/ directory below must survive restarts.
   #
   # oauth:
   #   enabled: true
   #   token_url: https://registry.example.org/token
   #   registration_url: https://registry.example.org/register
   #
-  #   # The one-time registration token. It is only needed on the FIRST run; once
-  #   # registration succeeds the state_file below is sufficient and this may
-  #   # be removed. Supplying it via a file is recommended (the file wins if
-  #   # both are set):
+  #   # The optional one-time registration token; leave it out to wait for
+  #   # approval instead. It is only used on the FIRST run; once registration
+  #   # succeeds the state_file below is sufficient and this may be removed.
+  #   # Supplying it via a file is recommended (the file wins if both are set):
   #   bootstrap_token_file: /etc/xrootd-monitoring-shoveler/oauth/bootstrap.token
   #   # bootstrap_token: paste-one-time-token-here
   #
