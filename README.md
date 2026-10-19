@@ -227,12 +227,12 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_OAUTH_ENABLED` - Enable OAuth2 self-registration + token fetch: `true` or `false` (default: `false`)
 * `<PREFIX>_AMQP_OAUTH_TOKEN_URL` - OIDC token endpoint (`client_credentials` grant)
 * `<PREFIX>_AMQP_OAUTH_REGISTRATION_URL` - Dynamic client registration endpoint
-* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN` - One-time bootstrap (initial access) token, inline
-* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN_FILE` - File holding the one-time bootstrap token (preferred; wins over inline)
+* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN` - One-time registration token from the registry, inline
+* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN_FILE` - File holding the one-time registration token (preferred; wins over inline)
 * `<PREFIX>_AMQP_OAUTH_PRIVATE_KEY_FILE` - Generated private key path (default: `/etc/xrootd-monitoring-shoveler/oauth/private.pem`)
 * `<PREFIX>_AMQP_OAUTH_STATE_FILE` - Persisted registration state path (default: `/etc/xrootd-monitoring-shoveler/oauth/registration.json`)
-* `<PREFIX>_AMQP_OAUTH_CLIENT_NAME` - Client name sent at registration for admin readability (default: `shoveler@<hostname>`)
-* `<PREFIX>_AMQP_OAUTH_SCOPES` - Optional scopes to request at token time (the registry intersects with what's granted)
+* `<PREFIX>_AMQP_OAUTH_CLIENT_NAME` - Client name sent at registration for display in the registry (default: `shoveler@<hostname>`)
+* `<PREFIX>_AMQP_OAUTH_SCOPES` - Optional scopes to request at token time (Shoveler-registry ignores them and issues the site's standard permissions)
 
 **STOMP Configuration (shoveler: `SHOVELER_STOMP_*`, collector: `COLLECTOR_STOMP_*`):**
 * `<PREFIX>_STOMP_USER` - STOMP username
@@ -269,11 +269,12 @@ On the other hand, if STOMP is the selected protocol user and password will need
 #### OAuth2 Self-Registration (private_key_jwt)
 
 Instead of a long-lived JWT pasted into the token file, the shoveler can onboard itself with a shoveler registry
-and keep its own access token fresh. The operator's only manual step is supplying a single short-lived
-**bootstrap token**. No long-lived shared secret ever exists or crosses the wire. The registry's side of the
-protocol is specified in [docs/registry-protocol.md](docs/registry-protocol.md).
+(such as Shoveler-registry) and keep its own access token fresh. The operator's only manual step is supplying a
+single short-lived **registration token**. No long-lived shared secret ever exists or crosses the wire. The
+protocol between the shoveler and the registry is specified in [docs/registry-protocol.md](docs/registry-protocol.md).
 
-Enable it under `amqp.oauth` (see `config/config.yaml` for the full commented block):
+A site owner logs in to the registry and creates a registration token for their site. The registry shows the
+token once, together with a ready-to-paste config block like this one (see `config/config.yaml` for every option):
 
 ```yaml
 amqp:
@@ -286,27 +287,32 @@ amqp:
     bootstrap_token_file: /etc/xrootd-monitoring-shoveler/oauth/bootstrap.token
 ```
 
+Write the token to `bootstrap_token_file` (mode `0600`) and start the shoveler. Copy `token_url` exactly as the
+registry shows it: the registry checks it character for character.
+
 How it works end to end:
 
-1. **Registration (first run only).** The operator puts a one-time bootstrap token in `bootstrap_token_file`
-   (recommended) or `bootstrap_token`. On startup the shoveler generates a 2048-bit RSA keypair (`private_key_file`,
-   mode `0600`; the private key **never leaves the host**) and registers its public key with the registry, using the
-   bootstrap token as a bearer. The returned `client_id` is saved to `state_file` (mode `0600`). The bootstrap
-   token is then spent and can be removed.
-2. **Approval.** A registry admin approves the new registration and grants its RabbitMQ permissions. Until then the
-   registry answers token requests with `authorization_pending`; the shoveler logs a warning, keeps receiving
-   packets into its on-disk queue, and checks again every minute.
-3. **Steady state (every run).** If `state_file` exists, registration is skipped. The shoveler signs a short-lived
+1. **Registration (first run only).** The shoveler generates a 2048-bit RSA keypair (`private_key_file`, mode
+   `0600`; the private key **never leaves the host**) and registers its public key with the registry, using the
+   registration token as a bearer. Creating the token was the site owner's approval, so the new client is active
+   immediately. The returned `client_id` is saved to `state_file` (mode `0600`). The token is now spent and the
+   file can be deleted.
+2. **Steady state (every run).** If `state_file` exists, registration is skipped. The shoveler signs a short-lived
    client assertion with its private key and exchanges it at `token_url` for an access token. That token is written
    atomically to `token_location`, AMQP starts (or the existing token-file watcher rotates its connections), and
-   the token is refreshed at ~50% of its lifetime. Registry outages are retried and never crash the shoveler.
+   the token is refreshed at ~50% of its lifetime. Registry outages and rate limiting are retried and never crash
+   the shoveler; packets keep going into the on-disk queue in the meantime.
 
-If the registry rejects the registration outright (for example an expired or already-used bootstrap token), the
-shoveler exits with an error. If an approved client is later revoked, the shoveler logs an error and keeps
-queuing; to re-onboard, delete `state_file` and supply a new bootstrap token.
+The `oauth/` directory holding the key and `state_file` must survive restarts and redeploys.
 
-RabbitMQ must trust the registry's signing keys (via `rabbitmq_auth_backend_oauth2`) so that the `scope` claim in
-the issued tokens maps to the expected exchange permissions.
+If the registry rejects the registration (for example an expired, revoked or already-used registration token), the
+shoveler exits with an error; create a new token. If the client is later disabled in the registry, the shoveler
+logs an error, keeps queuing, and retries every minute: a client disabled by its owner or for being idle starts
+working again once the owner re-enables it. A client revoked by a registry admin can't be re-enabled; create a new
+registration token, delete `state_file`, and restart the shoveler.
+
+RabbitMQ must trust the registry's signing keys (via `rabbitmq_auth_backend_oauth2`) so that the permissions in the
+issued tokens map to the expected exchange.
 
 ### Packet Verification
 

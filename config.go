@@ -105,9 +105,9 @@ type Config struct {
 
 	// OAuth2 self-registration + private_key_jwt token fetch (optional).
 	// When enabled the shoveler registers its public key with the registry
-	// using a one-time bootstrap token, then keeps AmqpToken populated with a
-	// fresh access token fetched via private_key_jwt. The per-site exchange
-	// scope is granted registry-side after an admin approves the registration.
+	// using a one-time registration token, then keeps AmqpToken populated with
+	// a fresh access token fetched via private_key_jwt. The site's exchange
+	// permissions are granted registry-side.
 	OAuthEnabled            bool     // amqp.oauth.enabled
 	OAuthTokenURL           string   // amqp.oauth.token_url
 	OAuthRegistrationURL    string   // amqp.oauth.registration_url
@@ -115,7 +115,7 @@ type Config struct {
 	OAuthBootstrapTokenFile string   // amqp.oauth.bootstrap_token_file (preferred; file wins over inline)
 	OAuthPrivateKeyFile     string   // amqp.oauth.private_key_file
 	OAuthStateFile          string   // amqp.oauth.state_file
-	OAuthScopes             []string // amqp.oauth.scopes (optional; the registry intersects with what's granted)
+	OAuthScopes             []string // amqp.oauth.scopes (optional; the registry may ignore them)
 	OAuthClientName         string   // amqp.oauth.client_name
 }
 
@@ -301,8 +301,8 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 			c.OAuthStateFile = viper.GetString("amqp.oauth.state_file")
 			log.Debugln("AMQP OAuth State File:", c.OAuthStateFile)
 
-			// Default to the hostname so admins can tell pending
-			// registrations apart.
+			// Default to the hostname so a site's shovelers can be told
+			// apart in the registry.
 			defaultClientName := "shoveler"
 			if hostname, err := os.Hostname(); err == nil && hostname != "" {
 				defaultClientName = "shoveler@" + hostname
