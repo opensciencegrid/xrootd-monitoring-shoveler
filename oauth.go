@@ -51,8 +51,8 @@ var (
 	// After a transient failure (network error, 5xx, token-file write).
 	oauthRetryBackoff = 15 * time.Second
 
-	// While the registration awaits admin approval, or the registry no longer
-	// recognises the client.
+	// While the registry rejects the client (disabled, or awaiting approval on
+	// registries that have an approval step).
 	oauthPendingInterval = 60 * time.Second
 )
 
@@ -128,7 +128,7 @@ type oauthManager struct {
 // StartAMQPWithOAuth starts the OAuth manager and launches StartAMQP once the
 // first access token is on disk. It returns immediately so packet intake can
 // start; messages buffer in the on-disk queue until the registry issues a
-// token, for example while a new registration awaits admin approval.
+// token, for example while the client is disabled in the registry.
 func StartAMQPWithOAuth(config *Config, queue *ConfirmationQueue) {
 	ready, err := StartOAuthManager(context.Background(), config)
 	if err != nil {
@@ -232,7 +232,8 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 			}
 			var ee *endpointError
 			code := ""
-			if errors.As(err, &ee) {
+			// A 429 is rate limiting whatever its error code says.
+			if errors.As(err, &ee) && ee.Status != http.StatusTooManyRequests {
 				code = ee.Code
 			}
 			wait := oauthRetryBackoff
@@ -248,8 +249,8 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 			case oauthErrInvalidClient:
 				if lastProblem != code {
 					log.Errorln("OAuth: the registry does not accept client_id", m.clientID,
-						"(revoked or unknown):", err, "- to re-register, remove", m.config.OAuthStateFile,
-						"and supply a new bootstrap token")
+						"(disabled, revoked or unknown):", err, "- if it was disabled, re-enable it in the registry;",
+						"if it was revoked, remove", m.config.OAuthStateFile, "and supply a new registration token")
 				} else {
 					log.Debugln("OAuth: registry still rejects client_id", m.clientID)
 				}
@@ -298,7 +299,7 @@ func (m *oauthManager) registerWithRetry(ctx context.Context) error {
 			state := &registrationState{ClientID: clientID}
 			if err := saveRegistrationState(m.config.OAuthStateFile, state); err != nil {
 				// The registry has our key; a restart re-registers with the
-				// same key and bootstrap token.
+				// same key and registration token.
 				return fmt.Errorf("registered as client_id %s but failed to persist %s: %w",
 					clientID, m.config.OAuthStateFile, err)
 			}
@@ -311,7 +312,7 @@ func (m *oauthManager) registerWithRetry(ctx context.Context) error {
 		}
 		var ee *endpointError
 		if errors.As(err, &ee) && ee.permanent() {
-			return fmt.Errorf("registry rejected registration (check the bootstrap token and registration_url): %w", err)
+			return fmt.Errorf("registry rejected registration (check the registration token and registration_url): %w", err)
 		}
 		log.Warningln("OAuth: registration failed, will retry:", err)
 		if !sleepCtx(ctx, oauthRetryBackoff) {
@@ -322,8 +323,8 @@ func (m *oauthManager) registerWithRetry(ctx context.Context) error {
 
 // doRegister performs the HTTP registration call and returns the client_id.
 func (m *oauthManager) doRegister(ctx context.Context) (string, error) {
-	// Register identity + public key only. No scope is requested: the
-	// per-site exchange authorization is granted registry-side on approval.
+	// Register identity + public key only. No scope is requested: the site's
+	// exchange permissions are granted registry-side.
 	body := map[string]interface{}{
 		"client_name":                m.config.OAuthClientName,
 		"grant_types":                []string{"client_credentials"},

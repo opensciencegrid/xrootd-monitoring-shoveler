@@ -59,6 +59,7 @@ type fakeRegistry struct {
 	tokenGrantType string
 	tokenScope     string
 	pendingCount   int // /token answers authorization_pending this many times
+	limitedCount   int // /token answers 429 invalid_client this many times
 	accessToken    string
 	expiresIn      int
 }
@@ -95,6 +96,12 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 		fr.tokenGrantType = r.Form.Get("grant_type")
 		fr.tokenScope = r.Form.Get("scope")
 		w.Header().Set("Content-Type", "application/json")
+		if fr.limitedCount > 0 {
+			fr.limitedCount--
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"invalid_client"}`))
+			return
+		}
 		if fr.pendingCount > 0 {
 			fr.pendingCount--
 			w.WriteHeader(http.StatusBadRequest)
@@ -272,6 +279,27 @@ func TestOAuthWaitsWhileAuthorizationPending(t *testing.T) {
 	tokenData, err := os.ReadFile(config.AmqpToken)
 	require.NoError(t, err)
 	assert.Equal(t, "fake-access-token", string(tokenData))
+}
+
+func TestOAuthRateLimitIsTransient(t *testing.T) {
+	// The registry answers 429 with an invalid_client body; it must be retried
+	// on the short backoff, not treated as a revoked client.
+	shortOAuthDelays(t)
+	oauthPendingInterval = time.Hour
+	fr := newFakeRegistry(t)
+	fr.limitedCount = 2
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+	waitReady(t, ready)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	assert.Equal(t, 3, fr.tokenCount)
 }
 
 func TestOAuthRegistrationRetriesTransientErrors(t *testing.T) {
