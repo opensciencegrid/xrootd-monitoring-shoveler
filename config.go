@@ -3,6 +3,7 @@ package shoveler
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -101,6 +102,21 @@ type Config struct {
 	IpMapAll              string
 	IpMap                 map[string]string
 	Filter                FilterConfig
+
+	// OAuth2 self-registration + private_key_jwt token fetch (optional).
+	// When enabled the shoveler registers its public key with the registry
+	// using a one-time bootstrap token, then keeps AmqpToken populated with a
+	// fresh access token fetched via private_key_jwt. The per-site exchange
+	// scope is granted registry-side after an admin approves the registration.
+	OAuthEnabled            bool     // amqp.oauth.enabled
+	OAuthTokenURL           string   // amqp.oauth.token_url
+	OAuthRegistrationURL    string   // amqp.oauth.registration_url
+	OAuthBootstrapToken     string   // amqp.oauth.bootstrap_token (one-time initial access token)
+	OAuthBootstrapTokenFile string   // amqp.oauth.bootstrap_token_file (preferred; file wins over inline)
+	OAuthPrivateKeyFile     string   // amqp.oauth.private_key_file
+	OAuthStateFile          string   // amqp.oauth.state_file
+	OAuthScopes             []string // amqp.oauth.scopes (optional; the registry intersects with what's granted)
+	OAuthClientName         string   // amqp.oauth.client_name
 }
 
 func (c *Config) ReadConfig() {
@@ -265,6 +281,57 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		viper.SetDefault("amqp.publish_workers", 10)
 		c.AmqpPublishWorkers = viper.GetInt("amqp.publish_workers")
 		log.Debugln("AMQP Publish Workers:", c.AmqpPublishWorkers)
+
+		// OAuth2 self-registration + private_key_jwt configuration
+		viper.SetDefault("amqp.oauth.enabled", false)
+		c.OAuthEnabled = viper.GetBool("amqp.oauth.enabled")
+		log.Debugln("AMQP OAuth Enabled:", c.OAuthEnabled)
+		if c.OAuthEnabled {
+			c.OAuthTokenURL = viper.GetString("amqp.oauth.token_url")
+			log.Debugln("AMQP OAuth Token URL:", c.OAuthTokenURL)
+
+			c.OAuthRegistrationURL = viper.GetString("amqp.oauth.registration_url")
+			log.Debugln("AMQP OAuth Registration URL:", c.OAuthRegistrationURL)
+
+			viper.SetDefault("amqp.oauth.private_key_file", "/etc/xrootd-monitoring-shoveler/oauth/private.pem")
+			c.OAuthPrivateKeyFile = viper.GetString("amqp.oauth.private_key_file")
+			log.Debugln("AMQP OAuth Private Key File:", c.OAuthPrivateKeyFile)
+
+			viper.SetDefault("amqp.oauth.state_file", "/etc/xrootd-monitoring-shoveler/oauth/registration.json")
+			c.OAuthStateFile = viper.GetString("amqp.oauth.state_file")
+			log.Debugln("AMQP OAuth State File:", c.OAuthStateFile)
+
+			viper.SetDefault("amqp.oauth.client_name", "shoveler")
+			c.OAuthClientName = viper.GetString("amqp.oauth.client_name")
+			log.Debugln("AMQP OAuth Client Name:", c.OAuthClientName)
+
+			c.OAuthScopes = viper.GetStringSlice("amqp.oauth.scopes")
+			log.Debugln("AMQP OAuth Scopes:", c.OAuthScopes)
+
+			// The bootstrap token may be supplied inline or via a file; the
+			// file is preferred and wins when both are set.
+			c.OAuthBootstrapToken = viper.GetString("amqp.oauth.bootstrap_token")
+			c.OAuthBootstrapTokenFile = viper.GetString("amqp.oauth.bootstrap_token_file")
+			if c.OAuthBootstrapTokenFile != "" {
+				data, readErr := os.ReadFile(c.OAuthBootstrapTokenFile)
+				if readErr != nil {
+					log.Warningln("Unable to read OAuth bootstrap token file:", c.OAuthBootstrapTokenFile, readErr)
+				} else {
+					c.OAuthBootstrapToken = strings.TrimSpace(string(data))
+				}
+			}
+
+			// Validation: token_url and registration_url are always required
+			// when OAuth is enabled. A bootstrap token is only required on the
+			// first run (when no state file exists yet); afterwards the state
+			// file is sufficient and the bootstrap token may be absent.
+			if c.OAuthTokenURL == "" || c.OAuthRegistrationURL == "" {
+				log.Panicln("amqp.oauth.enabled is true but amqp.oauth.token_url and amqp.oauth.registration_url are both required")
+			}
+			if !fileExists(c.OAuthStateFile) && c.OAuthBootstrapToken == "" {
+				log.Panicln("amqp.oauth: first run requires a one-time bootstrap token (amqp.oauth.bootstrap_token or amqp.oauth.bootstrap_token_file); none provided and no state file at " + c.OAuthStateFile)
+			}
+		}
 	case "stomp":
 		viper.SetDefault("stomp.topic", "xrootd.shoveler")
 
