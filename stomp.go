@@ -149,6 +149,7 @@ sendMessageLoop:
 			log.Errorln("Failed to publish message:", err)
 			session.handleReconnect()
 		} else {
+			MessagesPublished.Inc()
 			break sendMessageLoop
 		}
 	}

@@ -20,6 +20,11 @@ var (
 		Help: "The total number of packets that failed validation",
 	})
 
+	MessagesPublished = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_messages_published",
+		Help: "The total number of messages published to the message bus",
+	})
+
 	RabbitmqReconnects = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_rabbitmq_reconnects",
 		Help: "The total number of reconnections to rabbitmq bus",

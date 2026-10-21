@@ -61,6 +61,7 @@ graph LR
     - [Message Bus Credentials](#message-bus-credentials)
     - [Packet Verification](#packet-verification)
     - [IP Mapping](#ip-mapping)
+    - [Health Reports to the Registry](#health-reports-to-the-registry)
   - [Running the Shoveler](#running-the-shoveler)
   - [Testing Packet Flow with the Collector](#testing-packet-flow-with-the-collector)
   - [:compass: Design](#compass-design)
@@ -242,6 +243,11 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `SHOVELER_METRICS_ENABLE` - Enable Prometheus metrics: `true` or `false` (default: `true`)
 * `SHOVELER_METRICS_PORT` - Metrics HTTP server port (default: `8000`)
 
+**Health Reports (Shoveler Mode only):**
+* `SHOVELER_REGISTRY_REPORT_URL` - Registry endpoint to send health reports to, e.g. `https://shoveler-auth.example.org/report` (default: unset, no reports)
+* `SHOVELER_REGISTRY_REPORT_INTERVAL` - Seconds between reports, 10 to 3600 (default: `60`)
+* `SHOVELER_REGISTRY_TOKEN_LOCATION` - Access token sent with each report (default: `amqp.token_location`)
+
 **Queue (Shoveler Mode only):**
 * `SHOVELER_QUEUE_DIRECTORY` - Persistent queue directory (default: `/var/spool/xrootd-monitoring-shoveler/queue`)
 
@@ -283,6 +289,45 @@ map:
    <ip address>: <ip address>
    
 ```
+
+### Health Reports to the Registry
+
+The shoveler can report its health to the
+[shoveler registry](https://github.com/djw8605/Shoveler-registry) that issues
+its message bus tokens, so the registry's admins can see whether it is running
+correctly. Set `registry.report_url`:
+
+```yaml
+registry:
+  report_url: https://shoveler-auth.example.org/report
+  report_interval: 60   # seconds (default)
+```
+
+Every `report_interval` seconds the shoveler POSTs its counters since it
+started (packets received, packets that failed validation, messages published,
+message bus reconnects) and its queue size, as JSON:
+
+```json
+{
+  "started_at": "2026-10-21T02:00:00Z",
+  "interval_seconds": 60,
+  "version": "1.5.0",
+  "metrics": {
+    "packets_received": 120345,
+    "validations_failed": 12,
+    "messages_published": 120333,
+    "rabbitmq_reconnects": 0,
+    "queue_size": 0
+  }
+}
+```
+
+It authenticates with `Authorization: Bearer <token>`, using the access token
+the registry issued it, read fresh from `amqp.token_location` for every report
+(set `registry.token_location` to use another file). The registry keeps about a
+day of reports and flags a shoveler that stops reporting, receives no packets,
+or stops publishing. A failed report is logged once, as a warning, until
+reports succeed again; it never affects shoveling.
 
 ## Running the Shoveler
 
@@ -591,6 +636,7 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_packets_received` - Total packets received
 - `shoveler_validations_failed` - Packets that failed validation
 - `shoveler_queue_size` - Current queue size
+- `shoveler_messages_published` - Messages published to the message bus
 - `shoveler_rabbitmq_reconnects` - MQ reconnection count
 
 **Collector Binary (additional):**

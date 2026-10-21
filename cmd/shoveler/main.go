@@ -66,6 +66,9 @@ func main() {
 		shoveler.StartMetrics(config.MetricsPort)
 	}
 
+	// Report health to the shoveler registry, if configured
+	shoveler.StartReporter(&config)
+
 	// Start pprof profiling if enabled
 	if config.Profile {
 		shoveler.StartProfile(config.ProfilePort)

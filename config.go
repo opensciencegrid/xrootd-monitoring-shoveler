@@ -101,6 +101,16 @@ type Config struct {
 	IpMapAll              string
 	IpMap                 map[string]string
 	Filter                FilterConfig
+	Registry              RegistryConfig
+}
+
+// RegistryConfig is where the shoveler reports its health (its counters and
+// queue size) to the shoveler registry, so the registry can show whether it
+// is running correctly. Reporting is off unless ReportURL is set.
+type RegistryConfig struct {
+	ReportURL      string // e.g. https://shoveler-auth.example.org/report
+	ReportInterval int    // seconds between reports
+	TokenLocation  string // access token the registry issued (the AMQP token by default)
 }
 
 func (c *Config) ReadConfig() {
@@ -343,6 +353,20 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	viper.SetDefault("wlcg.path_prefixes", []string{"/store", "/user/dteam"})
 	c.WLCG.VOs = viper.GetStringSlice("wlcg.vos")
 	c.WLCG.PathPrefixes = viper.GetStringSlice("wlcg.path_prefixes")
+
+	// Health reports to the shoveler registry; off unless report_url is set.
+	c.Registry.ReportURL = viper.GetString("registry.report_url")
+	viper.SetDefault("registry.report_interval", 60)
+	c.Registry.ReportInterval = viper.GetInt("registry.report_interval")
+	if c.Registry.ReportInterval < 10 || c.Registry.ReportInterval > 3600 {
+		log.Warningln("registry.report_interval must be 10 to 3600 seconds; using 60")
+		c.Registry.ReportInterval = 60
+	}
+	viper.SetDefault("registry.token_location", "/etc/xrootd-monitoring-shoveler/token")
+	if c.AmqpToken != "" {
+		viper.SetDefault("registry.token_location", c.AmqpToken)
+	}
+	c.Registry.TokenLocation = viper.GetString("registry.token_location")
 
 	// Record drop filter (collector mode only); defaults to drop nothing.
 	c.Filter.DropPathPrefixes = viper.GetStringSlice("filter.drop_path_prefixes")
