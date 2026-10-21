@@ -64,6 +64,15 @@ amqp:
   #   # them and always issues the site's standard permissions.
   #   # scopes:
   #   #   - my_rabbit_server.write:xrd-mon/shoveled-xrd
+  #
+  #   # Health reports (on by default): once it has a token, the shoveler
+  #   # sends its packet counts and queue size to the registry every
+  #   # report_interval seconds, so the registry can show whether it is
+  #   # running correctly. report_url defaults to token_url with its final
+  #   # /token replaced by /report.
+  #   # report_health: true
+  #   # report_interval: 60
+  #   # report_url: https://registry.example.org/report
 
 # If using stomp protocol please configure the following commented lines as needed
 #stomp:

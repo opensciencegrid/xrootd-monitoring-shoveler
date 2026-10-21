@@ -62,6 +62,13 @@ type fakeRegistry struct {
 	limitedCount   int // /token answers 429 invalid_client this many times
 	accessToken    string
 	expiresIn      int
+	reports        []fakeReport // health reports received at /report
+}
+
+// fakeReport is one health report the fake registry received.
+type fakeReport struct {
+	Authorization string
+	Body          HealthReport
 }
 
 func newFakeRegistry(t *testing.T) *fakeRegistry {
@@ -113,6 +120,14 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 			"expires_in":   fr.expiresIn,
 			"token_type":   "Bearer",
 		})
+	})
+	mux.HandleFunc("/report", func(w http.ResponseWriter, r *http.Request) {
+		fr.mu.Lock()
+		defer fr.mu.Unlock()
+		report := fakeReport{Authorization: r.Header.Get("Authorization")}
+		_ = json.NewDecoder(r.Body).Decode(&report.Body)
+		fr.reports = append(fr.reports, report)
+		w.WriteHeader(http.StatusNoContent)
 	})
 	fr.server = httptest.NewServer(mux)
 	t.Cleanup(fr.server.Close)

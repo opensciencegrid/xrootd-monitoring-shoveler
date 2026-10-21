@@ -118,6 +118,13 @@ type Config struct {
 	OAuthStateFile          string   // amqp.oauth.state_file
 	OAuthScopes             []string // amqp.oauth.scopes (optional; the registry may ignore them)
 	OAuthClientName         string   // amqp.oauth.client_name
+
+	// Health reports to the same registry, sent with the access token it
+	// issues, so it can show whether the shoveler is running correctly (see
+	// report.go). On by default once OAuth is enabled.
+	OAuthReportHealth   bool   // amqp.oauth.report_health
+	OAuthReportURL      string // amqp.oauth.report_url (default: beside token_url)
+	OAuthReportInterval int    // amqp.oauth.report_interval, in seconds
 }
 
 // OAuthStateDir is where OAuth mode keeps what the shoveler writes itself (its
@@ -333,6 +340,27 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 			if c.OAuthTokenURL == "" || c.OAuthRegistrationURL == "" {
 				log.Panicln("amqp.oauth.enabled is true but amqp.oauth.token_url and amqp.oauth.registration_url are both required")
 			}
+
+			// Health reports go to the registry that issues the tokens, by
+			// default at its report endpoint beside the token endpoint.
+			viper.SetDefault("amqp.oauth.report_health", true)
+			c.OAuthReportHealth = viper.GetBool("amqp.oauth.report_health")
+			viper.SetDefault("amqp.oauth.report_url", defaultReportURL(c.OAuthTokenURL))
+			c.OAuthReportURL = viper.GetString("amqp.oauth.report_url")
+			viper.SetDefault("amqp.oauth.report_interval", 60)
+			c.OAuthReportInterval = viper.GetInt("amqp.oauth.report_interval")
+			if c.OAuthReportInterval < minReportInterval || c.OAuthReportInterval > maxReportInterval {
+				log.Warningf("amqp.oauth.report_interval must be %d to %d seconds; using 60",
+					minReportInterval, maxReportInterval)
+				c.OAuthReportInterval = 60
+			}
+			if c.OAuthReportHealth && c.OAuthReportURL == "" {
+				log.Warningln("amqp.oauth: health reports are off: no report_url, and token_url",
+					c.OAuthTokenURL, "doesn't end in /token to derive one from")
+				c.OAuthReportHealth = false
+			}
+			log.Debugln("AMQP OAuth Health Reports:", c.OAuthReportHealth, c.OAuthReportURL,
+				"every", c.OAuthReportInterval, "s")
 
 			// The bootstrap (registration) token may be supplied inline or via
 			// a file; the file is preferred and wins when both are set. It is

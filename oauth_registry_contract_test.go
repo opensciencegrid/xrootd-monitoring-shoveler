@@ -11,7 +11,8 @@ package shoveler
 // Set SHOVELER_REGISTRY_OPEN=1 when the registry accepts registrations
 // without a token (hybrid mode) to also check the pending path, and
 // SHOVELER_REGISTRY_APPROVE_CMD to a command that approves the client_id
-// appended to it, to check that approval lets the client fetch tokens.
+// appended to it, to check that approval lets the client fetch tokens. The
+// health report checks are skipped on a registry without a report endpoint.
 
 import (
 	"context"
@@ -122,6 +123,40 @@ func TestRegistryContract(t *testing.T) {
 		_, lifetime, err := m.fetchToken(context.Background())
 		require.NoError(t, err)
 		assert.Greater(t, lifetime, oauthRefreshFloor, "expires_in (or exp) should give a usable lifetime")
+	})
+
+	t.Run("health report with the issued token", func(t *testing.T) {
+		if !tokenOK {
+			t.Skip("token endpoint does not issue tokens yet")
+		}
+		r := contractReporter(t, config.OAuthTokenURL, config.AmqpToken, m.httpClient)
+		require.NoError(t, r.Send(context.Background(), NewHealthReport(60)))
+	})
+
+	t.Run("health report without a valid token is invalid_token", func(t *testing.T) {
+		if !tokenOK {
+			t.Skip("token endpoint does not issue tokens yet")
+		}
+		bad := filepath.Join(t.TempDir(), "token")
+		require.NoError(t, os.WriteFile(bad, []byte("not-a-token"), 0600))
+		r := contractReporter(t, config.OAuthTokenURL, bad, m.httpClient)
+		err := r.Send(context.Background(), NewHealthReport(60))
+		var ee *endpointError
+		require.ErrorAs(t, err, &ee)
+		assert.Equal(t, http.StatusUnauthorized, ee.Status)
+		assert.Equal(t, "invalid_token", ee.Code)
+	})
+
+	t.Run("malformed health report is invalid_request", func(t *testing.T) {
+		if !tokenOK {
+			t.Skip("token endpoint does not issue tokens yet")
+		}
+		r := contractReporter(t, config.OAuthTokenURL, config.AmqpToken, m.httpClient)
+		err := r.Send(context.Background(), NewHealthReport(1)) // below the 10 s minimum
+		var ee *endpointError
+		require.ErrorAs(t, err, &ee)
+		assert.Equal(t, http.StatusBadRequest, ee.Status)
+		assert.Equal(t, "invalid_request", ee.Code)
 	})
 
 	t.Run("restart resumes from state without bootstrap", func(t *testing.T) {
@@ -252,6 +287,21 @@ func TestRegistryContract(t *testing.T) {
 		require.NotNil(t, e)
 		assert.Equal(t, oauthErrInvalidClient, e.Code)
 	})
+}
+
+// contractReporter reports to the endpoint beside tokenURL, skipping the test
+// on a registry that has no report endpoint.
+func contractReporter(t *testing.T, tokenURL, tokenFile string, client *http.Client) *Reporter {
+	t.Helper()
+	r := &Reporter{URL: defaultReportURL(tokenURL), TokenFile: tokenFile, Client: client}
+	require.NotEmpty(t, r.URL, "token_url must end in /token")
+	resp, err := client.Post(r.URL, "application/json", strings.NewReader("{}"))
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		t.Skip("registry has no report endpoint")
+	}
+	return r
 }
 
 func requirePermanent(t *testing.T, err error) {

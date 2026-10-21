@@ -132,8 +132,9 @@ type oauthManager struct {
 // StartAMQPWithOAuth starts the OAuth manager and launches StartAMQP once the
 // first access token is on disk. It returns immediately so packet intake can
 // start; messages buffer in the on-disk queue until the registry issues a
-// token, for example while a new registration awaits approval.
-func StartAMQPWithOAuth(config *Config, queue *ConfirmationQueue) {
+// token, for example while a new registration awaits approval. The returned
+// channel is closed once that first token is on disk.
+func StartAMQPWithOAuth(config *Config, queue *ConfirmationQueue) <-chan struct{} {
 	ready, err := StartOAuthManager(context.Background(), config)
 	if err != nil {
 		log.Fatalln("Failed to start OAuth manager:", err)
@@ -143,6 +144,7 @@ func StartAMQPWithOAuth(config *Config, queue *ConfirmationQueue) {
 		log.Infoln("OAuth: initial access token ready, starting AMQP")
 		StartAMQP(config, queue)
 	}()
+	return ready
 }
 
 // StartOAuthManager loads (or creates) the shoveler's key and registration

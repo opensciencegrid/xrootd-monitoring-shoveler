@@ -301,6 +301,7 @@ func (w *PublishWorker) publishMessage(msgStruct *MessageStruct) {
 				}
 			}
 			// Successfully published
+			MessagesPublished.Inc()
 			return
 		}
 	}

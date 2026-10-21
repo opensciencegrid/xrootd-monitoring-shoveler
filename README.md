@@ -233,6 +233,9 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_OAUTH_STATE_FILE` - Persisted registration state path (default: `/var/lib/xrootd-monitoring-shoveler/oauth/registration.json`)
 * `<PREFIX>_AMQP_OAUTH_CLIENT_NAME` - Client name sent at registration for display in the registry (default: `shoveler@<hostname>`)
 * `<PREFIX>_AMQP_OAUTH_SCOPES` - Optional scopes to request at token time (Shoveler-registry ignores them and issues the site's standard permissions)
+* `SHOVELER_AMQP_OAUTH_REPORT_HEALTH` - Send health reports to the registry: `true` or `false` (default: `true`; shoveler binary only)
+* `SHOVELER_AMQP_OAUTH_REPORT_URL` - Registry endpoint for health reports (default: `token_url` with its final `/token` replaced by `/report`)
+* `SHOVELER_AMQP_OAUTH_REPORT_INTERVAL` - Seconds between health reports, 10 to 3600 (default: `60`)
 
 **STOMP Configuration (shoveler: `SHOVELER_STOMP_*`, collector: `COLLECTOR_STOMP_*`):**
 * `<PREFIX>_STOMP_USER` - STOMP username
@@ -333,6 +336,32 @@ working again once the owner re-enables it. A client revoked by a registry admin
 
 RabbitMQ must trust the registry's signing keys (via `rabbitmq_auth_backend_oauth2`) so that the permissions in the
 issued tokens map to the expected exchange.
+
+#### Health Reports
+
+Once the registry has issued it a token, the shoveler also reports its health to the registry, so the registry's
+admins can see whether it is running correctly: right away, then every `report_interval` seconds (default 60), it
+POSTs its counters since it started (packets received, packets that failed validation, messages published, message
+bus reconnects) and its queue size, authenticated with that token. The registry keeps about a day of reports and
+flags a shoveler that stops reporting, receives no packets, or stops publishing. The wire format is in
+[docs/registry-protocol.md](docs/registry-protocol.md#health-report-endpoint).
+
+This is on by default with OAuth. Reports go to `token_url` with its final `/token` replaced by `/report`
+(Shoveler-registry's layout); set `report_url` for a registry laid out differently, or `report_health: false` to
+stop sending them:
+
+```yaml
+amqp:
+  oauth:
+    # ...
+    report_health: true      # the default
+    report_interval: 60      # seconds, 10 to 3600
+    # report_url: https://registry.example.org/report
+```
+
+A shoveler awaiting approval sends nothing until it is approved. A failed report is logged once, as a warning, until
+reports succeed again (a registry with no report endpoint is asked again hourly), and never affects shoveling. Only
+the shoveler binary reports; the collector does not.
 
 ### Packet Verification
 
@@ -670,6 +699,7 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_packets_received` - Total packets received
 - `shoveler_validations_failed` - Packets that failed validation
 - `shoveler_queue_size` - Current queue size
+- `shoveler_messages_published` - Messages published to the message bus
 - `shoveler_rabbitmq_reconnects` - MQ reconnection count
 
 **Collector Binary (additional):**

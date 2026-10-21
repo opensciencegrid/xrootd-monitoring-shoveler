@@ -57,7 +57,9 @@ func main() {
 		if config.OAuthEnabled {
 			// Registers on first run, then starts AMQP once the registry
 			// issues a token; packets queue on disk until then.
-			shoveler.StartAMQPWithOAuth(&config, cq)
+			ready := shoveler.StartAMQPWithOAuth(&config, cq)
+			// From then on, also report health to the registry.
+			shoveler.StartReporter(&config, ready)
 		} else {
 			// Start the AMQP go func
 			go shoveler.StartAMQP(&config, cq)

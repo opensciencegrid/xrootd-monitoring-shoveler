@@ -12,6 +12,9 @@ It uses standard OAuth 2.0 messages:
   authenticated with `private_key_jwt` ([RFC 7523 §2.2](https://datatracker.ietf.org/doc/html/rfc7523#section-2.2))
 * errors: [RFC 6749 §5.2](https://datatracker.ietf.org/doc/html/rfc6749#section-5.2) error bodies
 
+plus one registry-specific message, the [health report](#health-report-endpoint), a JSON POST authenticated with
+the access token.
+
 `oauth_registry_contract_test.go` checks a live registry against this
 contract using the shoveler's own client code.
 
@@ -219,6 +222,71 @@ them. They're minted for
 The registry also serves `/.well-known/openid-configuration`, advertising
 `registration_endpoint`, `token_endpoint`, `jwks_uri`, and
 `private_key_jwt` / `RS256` as the token-endpoint authentication method.
+
+## Health report endpoint
+
+Configured as `amqp.oauth.report_url`, by default `token_url` with its final
+`/token` replaced by `/report` (`<PORTAL_BASE_URL>/report`). Once the shoveler
+has its first access token it reports right away, then every
+`amqp.oauth.report_interval` seconds (default 60, from 10 to 3600), so the
+registry can show whether it is running correctly. `amqp.oauth.report_health:
+false` turns this off. Only the shoveler binary reports, not the collector.
+
+```http
+POST /report
+Authorization: Bearer <access token from the token endpoint>
+Content-Type: application/json
+
+{
+  "started_at": "2026-10-21T02:00:00Z",
+  "interval_seconds": 60,
+  "version": "2.4.0",
+  "metrics": {
+    "packets_received": 120345,
+    "validations_failed": 12,
+    "messages_published": 120333,
+    "rabbitmq_reconnects": 0,
+    "queue_size": 0
+  }
+}
+```
+
+* `started_at` (RFC 3339) is when the shoveler process started. Reports with the
+  same value come from one process; the counters restart from zero with each
+  new one, so the registry never computes a rate across a restart.
+* `interval_seconds` is the configured report interval. The registry treats a
+  shoveler as not reporting after 3 missed intervals (at least 3 minutes).
+* `version` is omitted when the build has no version.
+* `metrics` holds counters since `started_at`, and the current `queue_size`
+  (messages waiting to be published, in memory or on disk). Any may be
+  omitted. The registry ignores names it doesn't know, so a shoveler can send
+  more.
+
+The registry accepts only an access token it issued (its signature under a
+`kid` it publishes, `iss` = `TOKEN_ISSUER`, `aud` = `RESOURCE_SERVER_ID`,
+unexpired) whose `sub` is an approved, enabled client. A pending client has no
+token, so it can't report.
+
+**Success:** `204 No Content`.
+
+**Errors:**
+
+| Status | `error` | When | Shoveler behavior |
+|---|---|---|---|
+| 401 | `invalid_token` | missing, foreign, expired or malformed token, or a disabled or unknown client (one uniform response) | logs a warning once, keeps reporting every interval |
+| 400 | `invalid_request` | malformed report; `error_description` says what | logs a warning once, keeps reporting |
+| 429 | `invalid_request` | per-client rate limit (`REPORT_RATE_LIMIT` per `REPORT_RATE_WINDOW`, default 10 per 60 s; `Retry-After` set) | next report at the normal interval |
+| 404 | | a registry without health reports | logs a warning once, asks again hourly |
+| 5xx or network error | | | logs a warning once, keeps reporting |
+
+A failure is logged again only when it changes kind, and recovery is logged
+at info level. Reporting never affects shoveling.
+
+The registry keeps reports for `METRICS_RETENTION_HOURS` (default 24), always
+keeping each client's latest so it can say when a shoveler was last heard
+from, and shows each shoveler as healthy, not reporting, receiving no packets
+(none in the last 15 minutes), not publishing (packets received but none
+published in the last 15 minutes), or never reported.
 
 ## Disabling and recovery
 
