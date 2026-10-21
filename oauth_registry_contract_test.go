@@ -58,7 +58,7 @@ func postAssertion(t *testing.T, tokenURL, assertion string) (*http.Response, *e
 	}
 	resp, err := http.PostForm(tokenURL, form)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 == 2 {
 		return resp, nil
 	}
