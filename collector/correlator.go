@@ -275,12 +275,20 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 		return nil, nil
 	}
 
+	// Every f-stream packet begins with a FileTOD (isTime) record whose
+	// tBeg/tEnd bound the monitoring window during which the file events in
+	// this packet occurred. These are the actual event timestamps; the header
+	// ServerStart is only the server's boot time and must not be used for
+	// per-operation timing. Extract the window once and apply it to every file
+	// record in the packet.
+	windowBeg, windowEnd := extractFileWindow(packet.FileRecords)
+
 	// Process all file records and collect any complete records
 	var records []*CollectorRecord
 	for _, rec := range packet.FileRecords {
 		switch r := rec.(type) {
 		case parser.FileOpenRecord:
-			result, err := c.handleFileOpen(r, packet, serverID)
+			result, err := c.handleFileOpen(r, packet, serverID, windowBeg)
 			if err != nil {
 				return records, err
 			}
@@ -288,7 +296,7 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 				records = append(records, result)
 			}
 		case parser.FileCloseRecord:
-			result, err := c.handleFileClose(r, packet, serverID)
+			result, err := c.handleFileClose(r, packet, serverID, windowBeg, windowEnd)
 			if err != nil {
 				return records, err
 			}
@@ -296,13 +304,8 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 				records = append(records, result)
 			}
 		case parser.FileTimeRecord:
-			result, err := c.handleTimeRecord(r, packet, serverID)
-			if err != nil {
-				return records, err
-			}
-			if result != nil {
-				records = append(records, result)
-			}
+			// The window was already extracted above; the FileTOD record itself
+			// does not correlate to a file operation.
 		case parser.FileDisconnectRecord:
 			c.handleDisconnect(r, serverID)
 			// Disconnect doesn't generate a record, just cleanup
@@ -702,8 +705,11 @@ func normalizeVO(raw string) string {
 	return strings.Join(unique, " ")
 }
 
-// handleFileOpen handles a file open event
-func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Packet, serverID string) (*CollectorRecord, error) {
+// handleFileOpen handles a file open event.
+// windowBeg is the tBeg of the packet's FileTOD record — the begin of the
+// monitoring window during which the open occurred — and is stored as the
+// operation start time for use when the matching close arrives.
+func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Packet, serverID string, windowBeg int64) (*CollectorRecord, error) {
 	// Filename may come from Lfn field OR from dictid lookup
 	filename := string(rec.Lfn)
 	if filename == "" && rec.Header.FileId != 0 {
@@ -722,10 +728,15 @@ func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Pa
 		userId = rec.User
 	}
 
+	openTime := windowBeg
+	if openTime <= 0 {
+		openTime = time.Now().Unix()
+	}
+
 	state := &FileState{
 		FileID:    rec.Header.FileId,
 		UserID:    userId,
-		OpenTime:  int64(packet.Header.ServerStart),
+		OpenTime:  openTime,
 		FileSize:  rec.FileSize,
 		Filename:  filename,
 		ServerID:  serverID,
@@ -739,8 +750,11 @@ func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Pa
 	return nil, nil
 }
 
-// handleFileClose handles a file close event
-func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.Packet, serverID string) (*CollectorRecord, error) {
+// handleFileClose handles a file close event.
+// windowBeg/windowEnd are the tBeg/tEnd of the packet's FileTOD record. The
+// close occurred within this window, so windowEnd is used as the operation end
+// time; windowBeg is the start-time fallback when no matching open was seen.
+func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.Packet, serverID string, windowBeg, windowEnd int64) (*CollectorRecord, error) {
 	// Key is only serverID + fileID (matches the key used in handleFileOpen)
 	key := BuildFileKey(serverID, rec.Header.FileId)
 
@@ -751,7 +765,7 @@ func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.
 	if !exists {
 		c.logger.Debugf("No open record found for file close: serverID=%s, fileID=%d - creating standalone record", serverID, rec.Header.FileId)
 		// No open record found, create a standalone close record
-		return c.createStandaloneCloseRecord(rec, packet), nil
+		return c.createStandaloneCloseRecord(rec, packet, windowBeg, windowEnd), nil
 	}
 
 	state, ok := val.(*FileState)
@@ -760,7 +774,7 @@ func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.
 	}
 
 	// Create correlated record
-	record := c.createCorrelatedRecord(state, rec, packet)
+	record := c.createCorrelatedRecord(state, rec, packet, windowEnd)
 
 	// Remove from state map
 	c.stateMap.Delete(key)
@@ -768,21 +782,17 @@ func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.
 	return record, nil
 }
 
-// handleTimeRecord handles a time record
-func (c *Correlator) handleTimeRecord(rec parser.FileTimeRecord, packet *parser.Packet, serverID string) (*CollectorRecord, error) {
-	// Time records can be used to update state or create timing records
-	// For now, we'll store them for potential correlation
-	key := BuildTimeKey(serverID, rec.Header.FileId, rec.SID)
-	state := &FileState{
-		FileID:    rec.Header.FileId,
-		UserID:    rec.Header.UserId,
-		OpenTime:  int64(rec.TBeg),
-		ServerID:  serverID,
-		StreamID:  rec.SID,
-		CreatedAt: time.Now(),
+// extractFileWindow returns the tBeg/tEnd of the FileTOD (isTime) record that
+// leads an f-stream packet. These Unix timestamps bound the monitoring window
+// during which the packet's file events occurred and are the basis for the
+// operation start/end times. Returns (0, 0) when no time record is present.
+func extractFileWindow(fileRecords []interface{}) (windowBeg, windowEnd int64) {
+	for _, rec := range fileRecords {
+		if tr, ok := rec.(parser.FileTimeRecord); ok {
+			return int64(tr.TBeg), int64(tr.TEnd)
+		}
 	}
-	c.stateMap.Set(key, state)
-	return nil, nil
+	return 0, 0
 }
 
 // handleServerInfo stores server identification information
@@ -1035,9 +1045,23 @@ func extractDirnames(filename string) (dirname1, dirname2, logicalDirname string
 	return dirname1, dirname2, logicalDirname
 }
 
-// createCorrelatedRecord creates a collector record from correlated state
-func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileCloseRecord, packet *parser.Packet) *CollectorRecord {
+// createCorrelatedRecord creates a collector record from correlated state.
+// windowEnd is the tEnd of the close packet's FileTOD record — the end of the
+// monitoring window in which the file closed — and is used as the operation
+// end time. It falls back to the current time if the packet carried no window.
+func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileCloseRecord, packet *parser.Packet, windowEnd int64) *CollectorRecord {
 	now := time.Now()
+
+	// Operation start/end come from the XRootD FileTOD window, not the server
+	// boot time. Fall back to wall-clock time only when a packet lacks a window.
+	startTime := state.OpenTime
+	if startTime <= 0 {
+		startTime = now.Unix()
+	}
+	endTime := windowEnd
+	if endTime <= 0 {
+		endTime = now.Unix()
+	}
 
 	// Calculate averages
 	var readAvg, readSingleAvg, readVectorAvg, writeAvg int64
@@ -1192,9 +1216,9 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 
 	return &CollectorRecord{
 		Timestamp:              now,
-		StartTime:              state.OpenTime,
-		EndTime:                now.Unix(),
-		OperationTime:          now.Unix() - state.OpenTime,
+		StartTime:              startTime,
+		EndTime:                endTime,
+		OperationTime:          endTime - startTime,
 		ServerID:               BuildServerID(packet.Header.ServerStart, packet.RemoteAddr),
 		ServerHostname:         serverHostname,
 		Server:                 serverIP,
@@ -1253,19 +1277,21 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	}
 }
 
-// createStandaloneCloseRecord creates a record from just a close event
-func (c *Correlator) createStandaloneCloseRecord(rec parser.FileCloseRecord, packet *parser.Packet) *CollectorRecord {
+// createStandaloneCloseRecord creates a record from just a close event.
+// With no matching open, the best available start time is the begin of the
+// close packet's monitoring window (windowBeg); windowEnd is the end time.
+func (c *Correlator) createStandaloneCloseRecord(rec parser.FileCloseRecord, packet *parser.Packet, windowBeg, windowEnd int64) *CollectorRecord {
 	// Use the same serverID format as getServerID()
 	serverID := c.getServerID(packet)
 
 	state := &FileState{
 		FileID:   rec.Header.FileId,
 		UserID:   rec.Header.UserId,
-		OpenTime: int64(packet.Header.ServerStart),
+		OpenTime: windowBeg,
 		Filename: "unknown",
 		ServerID: serverID,
 	}
-	return c.createCorrelatedRecord(state, rec, packet)
+	return c.createCorrelatedRecord(state, rec, packet, windowEnd)
 }
 
 // ToJSON converts a collector record to JSON

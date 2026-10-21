@@ -402,7 +402,7 @@ func TestDNSEnrichment_Integration(t *testing.T) {
 	}
 
 	// Create correlated record - with new async API, cache miss means record won't have userDomain yet
-	record := c.createCorrelatedRecord(fileState, closeRec, packet)
+	record := c.createCorrelatedRecord(fileState, closeRec, packet, time.Now().Unix())
 
 	// Check if record needs async enrichment
 	if record.NeedsEnrichment() {

@@ -159,10 +159,59 @@ func TestCorrelator_TimeRecord(t *testing.T) {
 	// Process time record
 	recs, err := correlator.ProcessPacket(timePacket)
 	require.NoError(t, err)
-	assert.Nil(t, recs) // Time records don't produce output immediately
+	assert.Nil(t, recs) // A FileTOD record alone produces no output
 
-	// State should be stored
-	assert.Equal(t, 1, correlator.GetStateSize())
+	// A FileTOD record on its own does not create any file state; it only
+	// supplies the monitoring window for the file records that accompany it.
+	assert.Equal(t, 0, correlator.GetStateSize())
+}
+
+// TestCorrelator_StartTimeFromWindow verifies that start_time/end_time come
+// from the FileTOD window (tBeg/tEnd) rather than the server start time, and
+// that operation_time is the transfer duration spanning open and close windows.
+func TestCorrelator_StartTimeFromWindow(t *testing.T) {
+	correlator := NewCorrelator(5*time.Second, 0, nil)
+	defer correlator.Stop()
+
+	const serverStart = int32(500) // server boot time — must NOT leak into timing
+
+	// Open packet: FileTOD window [1000, 1030] with the file open.
+	openPacket := &parser.Packet{
+		Header: parser.Header{Code: parser.PacketTypeFStat, ServerStart: serverStart},
+		FileRecords: []interface{}{
+			parser.FileTimeRecord{Header: parser.FileHeader{RecType: parser.RecTypeTime}, TBeg: 1000, TEnd: 1030},
+			parser.FileOpenRecord{
+				Header:   parser.FileHeader{RecType: parser.RecTypeOpen, FileId: 7, UserId: 3},
+				FileSize: 1024,
+				Lfn:      []byte("/store/file.root"),
+			},
+		},
+	}
+	recs, err := correlator.ProcessPacket(openPacket)
+	require.NoError(t, err)
+	assert.Nil(t, recs)
+
+	// Close packet in a later window [1060, 1090] with the matching close.
+	closePacket := &parser.Packet{
+		Header: parser.Header{Code: parser.PacketTypeFStat, ServerStart: serverStart},
+		FileRecords: []interface{}{
+			parser.FileTimeRecord{Header: parser.FileHeader{RecType: parser.RecTypeTime}, TBeg: 1060, TEnd: 1090},
+			parser.FileCloseRecord{
+				Header: parser.FileHeader{RecType: parser.RecTypeClose, FileId: 7, UserId: 3},
+				Xfr:    parser.StatXFR{Read: 2048},
+			},
+		},
+	}
+	recs, err = correlator.ProcessPacket(closePacket)
+	require.NoError(t, err)
+	require.Len(t, recs, 1)
+	rec := recs[0]
+
+	// start_time is the open window's tBeg, end_time is the close window's tEnd.
+	assert.Equal(t, int64(1000), rec.StartTime, "start_time should be the open FileTOD tBeg, not server start")
+	assert.Equal(t, int64(1090), rec.EndTime, "end_time should be the close FileTOD tEnd")
+	assert.Equal(t, int64(90), rec.OperationTime, "operation_time should be end_time - start_time")
+	assert.NotEqual(t, int64(serverStart), rec.StartTime, "server start time must not be used as start_time")
 }
 
 func TestCorrelator_XMLPacket(t *testing.T) {
@@ -398,7 +447,7 @@ func TestCorrelator_UserRecordWithIPv6(t *testing.T) {
 		RemoteAddr: "127.0.0.1:9930", // Set RemoteAddr to match serverID
 	}
 
-	record := correlator.createCorrelatedRecord(state, closeRec, packet)
+	record := correlator.createCorrelatedRecord(state, closeRec, packet, 2000)
 
 	// Verify IPv6 flag is set
 	assert.True(t, record.IPv6)
@@ -447,7 +496,7 @@ func TestCorrelator_UserDomainFromIP(t *testing.T) {
 		RemoteAddr: "127.0.0.1:9930",
 	}
 
-	record := correlator.createCorrelatedRecord(state, closeRec, packet)
+	record := correlator.createCorrelatedRecord(state, closeRec, packet, 2000)
 
 	// Verify the record was created
 	assert.Equal(t, "testuser", record.User)
@@ -1276,7 +1325,7 @@ func TestCreateCorrelatedRecord_NormalizesVO(t *testing.T) {
 	packet := &parser.Packet{Header: parser.Header{ServerStart: 1000}, RemoteAddr: "192.0.2.10:1094"}
 	closeRec := parser.FileCloseRecord{Header: parser.FileHeader{FileId: 1, UserId: 42}}
 
-	record := correlator.createCorrelatedRecord(state, closeRec, packet)
+	record := correlator.createCorrelatedRecord(state, closeRec, packet, 2000)
 	require.NotNil(t, record)
 	assert.Equal(t, "cms", record.VO)
 }

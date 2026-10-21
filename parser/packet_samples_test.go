@@ -76,9 +76,14 @@ func TestRealWorldPackets(t *testing.T) {
 				assert.NotNil(t, packet.MapRecord, "Map/Dict packet should have MapRecord")
 				t.Logf("  Map/Dict: DictID=%d, Info length=%d",
 					packet.MapRecord.DictId, len(packet.MapRecord.Info))
-			case PacketTypeFStat, PacketTypeTrace:
+			case PacketTypeFStat:
 				assert.NotEmpty(t, packet.FileRecords, "File packet should have FileRecords")
 				t.Logf("  File records: %d", len(packet.FileRecords))
+			case PacketTypeTrace:
+				// t-stream packets use a different binary layout (fixed 16-byte
+				// entries); the parser must not extract file records from them.
+				// See issue #100 (opensciencegrid/xrootd-monitoring-shoveler).
+				assert.Empty(t, packet.FileRecords, "Trace packet must not produce FileRecords")
 			}
 		})
 	}

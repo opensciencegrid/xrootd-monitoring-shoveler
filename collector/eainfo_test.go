@@ -231,7 +231,7 @@ func TestCorrelator_EAInfoInCorrelatedRecord(t *testing.T) {
 		},
 		RemoteAddr: remoteAddr,
 	}
-	_, err := correlator.handleFileOpen(openRec, openPacket, serverID)
+	_, err := correlator.handleFileOpen(openRec, openPacket, serverID, 1639505700)
 	require.NoError(t, err)
 
 	// Create file close
@@ -257,7 +257,7 @@ func TestCorrelator_EAInfoInCorrelatedRecord(t *testing.T) {
 		RemoteAddr: remoteAddr,
 	}
 
-	record, err := correlator.handleFileClose(closeRec, closePacket, serverID)
+	record, err := correlator.handleFileClose(closeRec, closePacket, serverID, 1639505800, 1639505900)
 	require.NoError(t, err)
 	require.NotNil(t, record)
 

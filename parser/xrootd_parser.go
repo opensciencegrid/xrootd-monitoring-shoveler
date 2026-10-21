@@ -329,9 +329,9 @@ func ParsePacket(b []byte) (*Packet, error) {
 			return nil, fmt.Errorf("failed to parse token record: %w", err)
 		}
 		packet.UserRecord = userRec
-	case PacketTypeFStat, PacketTypeTrace:
-		// f-stream (fstat) and t-stream (files/io/iov) contain file records
-		// These have embedded file records with recType determining the record type
+	case PacketTypeFStat:
+		// f-stream (fstat) packets contain variable-length file records, each
+		// prefixed by an XrdXrootdMonFileHdr (recType/recFlag/recSize)
 		fileRecs, err := parseFileRecords(header, b, header.Code)
 		if err != nil {
 			// Don't fail the entire packet if we can't parse file records
@@ -340,6 +340,17 @@ func ParsePacket(b []byte) (*Packet, error) {
 		} else {
 			packet.FileRecords = fileRecs
 		}
+	case PacketTypeTrace:
+		// t-stream (files/io/iov) packets are fixed 16-byte XrdXrootdMonTrace
+		// entries with no recType/recFlag/recSize header (xrd_monitoring doc section 3.7.1).
+		// Walking them with the f-stream record layout misaligns the reader and
+		// can fabricate file-close records whose 64-bit byte counters are splices
+		// of dictids/timestamps (observed as PB/EiB-scale transfer spikes in WLCG validation).
+		// Accept the packet (RawData is still shoveled, metrics still count it)
+		// but extract no file records until a real t-stream parser exists.
+		//
+		// See issue #100 (opensciencegrid/xrootd-monitoring-shoveler) for
+		// more details.
 	case PacketTypeDictID:
 		// 'd' packets are dictionary mappings for paths
 		// Parse as map record for use in correlator
