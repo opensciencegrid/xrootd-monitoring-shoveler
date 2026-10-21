@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -118,6 +119,12 @@ type Config struct {
 	OAuthScopes             []string // amqp.oauth.scopes (optional; the registry may ignore them)
 	OAuthClientName         string   // amqp.oauth.client_name
 }
+
+// OAuthStateDir is where OAuth mode keeps what the shoveler writes itself (its
+// private key, registration state and access token) by default. The packages
+// create it for the service user, and the systemd unit declares it as the
+// StateDirectory.
+const OAuthStateDir = "/var/lib/xrootd-monitoring-shoveler"
 
 func (c *Config) ReadConfig() {
 	c.ReadConfigWithPathAndPrefix("", "SHOVELER")
@@ -239,7 +246,14 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		viper.SetDefault("amqp.exchange_cache", "xrd-cache-events")
 		viper.SetDefault("amqp.exchange_tcp", "xrd-tcp-events")
 		viper.SetDefault("amqp.exchange_tpc", "xrd-tpc-events")
-		viper.SetDefault("amqp.token_location", "/etc/xrootd-monitoring-shoveler/token")
+		// With OAuth the shoveler writes the token itself, so it defaults to
+		// the service's writable state directory. Otherwise an external
+		// process maintains it in /etc.
+		if viper.GetBool("amqp.oauth.enabled") {
+			viper.SetDefault("amqp.token_location", filepath.Join(OAuthStateDir, "token"))
+		} else {
+			viper.SetDefault("amqp.token_location", "/etc/xrootd-monitoring-shoveler/token")
+		}
 
 		// Get the AMQP URL
 		c.AmqpURL, err = url.Parse(viper.GetString("amqp.url"))
@@ -293,11 +307,11 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 			c.OAuthRegistrationURL = viper.GetString("amqp.oauth.registration_url")
 			log.Debugln("AMQP OAuth Registration URL:", c.OAuthRegistrationURL)
 
-			viper.SetDefault("amqp.oauth.private_key_file", "/etc/xrootd-monitoring-shoveler/oauth/private.pem")
+			viper.SetDefault("amqp.oauth.private_key_file", filepath.Join(OAuthStateDir, "oauth", "private.pem"))
 			c.OAuthPrivateKeyFile = viper.GetString("amqp.oauth.private_key_file")
 			log.Debugln("AMQP OAuth Private Key File:", c.OAuthPrivateKeyFile)
 
-			viper.SetDefault("amqp.oauth.state_file", "/etc/xrootd-monitoring-shoveler/oauth/registration.json")
+			viper.SetDefault("amqp.oauth.state_file", filepath.Join(OAuthStateDir, "oauth", "registration.json"))
 			c.OAuthStateFile = viper.GetString("amqp.oauth.state_file")
 			log.Debugln("AMQP OAuth State File:", c.OAuthStateFile)
 

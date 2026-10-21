@@ -220,7 +220,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_EXCHANGE_WLCG` - WLCG formatted events exchange (default: `xrd-wlcg-events`)
 * `<PREFIX>_AMQP_EXCHANGE_WLCG_CACHE` - WLCG formatted cache events exchange (default: `xrd-wlcg-cache-events`)
 * `<PREFIX>_AMQP_EXCHANGE_WLCG_TPC` - WLCG formatted TPC events exchange (default: `xrd-wlcg-tpc-events`)
-* `<PREFIX>_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`)
+* `<PREFIX>_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`, or `/var/lib/xrootd-monitoring-shoveler/token` when OAuth is enabled)
 * `<PREFIX>_AMQP_PUBLISH_WORKERS` - Number of concurrent publishing workers for collector mode (default: `10`, forced to `1` in shoveler mode)
 
 **AMQP OAuth2 Self-Registration (optional; shoveler: `SHOVELER_AMQP_OAUTH_*`, collector: `COLLECTOR_AMQP_OAUTH_*`):**
@@ -229,8 +229,8 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_OAUTH_REGISTRATION_URL` - Dynamic client registration endpoint
 * `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN` - One-time registration token from the registry, inline (optional: without one the shoveler waits for approval)
 * `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN_FILE` - File holding the one-time registration token (preferred; wins over inline)
-* `<PREFIX>_AMQP_OAUTH_PRIVATE_KEY_FILE` - Generated private key path (default: `/etc/xrootd-monitoring-shoveler/oauth/private.pem`)
-* `<PREFIX>_AMQP_OAUTH_STATE_FILE` - Persisted registration state path (default: `/etc/xrootd-monitoring-shoveler/oauth/registration.json`)
+* `<PREFIX>_AMQP_OAUTH_PRIVATE_KEY_FILE` - Generated private key path (default: `/var/lib/xrootd-monitoring-shoveler/oauth/private.pem`)
+* `<PREFIX>_AMQP_OAUTH_STATE_FILE` - Persisted registration state path (default: `/var/lib/xrootd-monitoring-shoveler/oauth/registration.json`)
 * `<PREFIX>_AMQP_OAUTH_CLIENT_NAME` - Client name sent at registration for display in the registry (default: `shoveler@<hostname>`)
 * `<PREFIX>_AMQP_OAUTH_SCOPES` - Optional scopes to request at token time (Shoveler-registry ignores them and issues the site's standard permissions)
 
@@ -276,8 +276,8 @@ the wire. The protocol between the shoveler and the registry is specified in
 There are two ways to onboard:
 
 * **With a registration token (instant).** A site owner logs in to the registry and creates a one-time registration
-  token for their site. The registry shows it once, with a ready-to-paste config block. Write the token to
-  `bootstrap_token_file` (mode `0600`); the shoveler is active as soon as it starts.
+  token for their site. The registry shows it once, with a ready-to-paste config block. Save the token to
+  `bootstrap_token_file`, readable by the service user (see below); the shoveler is active as soon as it starts.
 * **Without a token (approval).** Leave `bootstrap_token_file` out and just start the shoveler. It registers
   itself and waits, queuing packets on disk, until a registry admin or site manager approves it on the dashboard
   and assigns its site. The shoveler logs its key fingerprint (also shown in the registry) so the approver can
@@ -288,15 +288,26 @@ The config is the same either way, minus `bootstrap_token_file` (see `config/con
 ```yaml
 amqp:
   url: amqps://broker.example.com:5671/vhost
-  token_location: /etc/xrootd-monitoring-shoveler/token
   oauth:
     enabled: true
     token_url: https://registry.example.org/token
     registration_url: https://registry.example.org/register
-    bootstrap_token_file: /etc/xrootd-monitoring-shoveler/oauth/bootstrap.token
+    bootstrap_token_file: /var/lib/xrootd-monitoring-shoveler/bootstrap.token
 ```
 
 Copy `token_url` exactly as the registry shows it: the registry checks it character for character.
+
+The shoveler runs as the `xrootd-monitoring-shoveler` user, so save the registration token as that user, for
+example (with the token in `token.txt`):
+
+```bash
+sudo install -o xrootd-monitoring-shoveler -g xrootd-monitoring-shoveler -m 0600 token.txt /var/lib/xrootd-monitoring-shoveler/bootstrap.token
+```
+
+Everything the shoveler writes in OAuth mode (its private key, `state_file` and the access token) lives in
+`/var/lib/xrootd-monitoring-shoveler/` by default. The RPM and DEB packages create it for the service user, and the
+systemd units declare it as their `StateDirectory`. It must survive restarts and redeploys: in a container, mount a
+persistent volume there.
 
 How it works end to end:
 
@@ -311,8 +322,6 @@ How it works end to end:
    atomically to `token_location`, AMQP starts (or the existing token-file watcher rotates its connections), and
    the token is refreshed at ~50% of its lifetime. Registry outages and rate limiting are retried and never crash
    the shoveler; packets keep going into the on-disk queue in the meantime.
-
-The `oauth/` directory holding the key and `state_file` must survive restarts and redeploys.
 
 If the registry rejects the registration (for example an expired, revoked or already-used registration token, or no
 token on a registry that requires one), the shoveler exits with an error. If `bootstrap_token_file` is set but can't

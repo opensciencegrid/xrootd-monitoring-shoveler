@@ -8,6 +8,9 @@ ExecStart=/usr/bin/xrootd-monitoring-shoveler
 EnvironmentFile=-/etc/sysconfig/xrootd-monitoring-shoveler
 User=xrootd-monitoring-shoveler
 Group=xrootd-monitoring-shoveler
+# /var/lib/xrootd-monitoring-shoveler: OAuth key, registration state and token
+StateDirectory=xrootd-monitoring-shoveler
+StateDirectoryMode=0700
 
 [Install]
 WantedBy=multi-user.target

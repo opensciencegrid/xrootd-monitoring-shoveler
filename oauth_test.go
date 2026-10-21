@@ -618,3 +618,42 @@ func requireFileMode(t *testing.T, path string, want os.FileMode) {
 	require.NoError(t, err)
 	assert.Equal(t, want, info.Mode().Perm(), "unexpected permissions on %s", path)
 }
+
+func TestOAuthDefaultPathsUseStateDir(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		oauth     string
+		tokenLine string
+		wantToken string
+	}{
+		{"oauth defaults to the state dir", "true", "", "/var/lib/xrootd-monitoring-shoveler/token"},
+		{"explicit token_location wins", "true", "  token_location: /srv/token\n", "/srv/token"},
+		{"without oauth the token stays in /etc", "false", "", "/etc/xrootd-monitoring-shoveler/token"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+
+			dir := t.TempDir()
+			configFile := filepath.Join(dir, "config.yaml")
+			yaml := "" +
+				"mq: amqp\n" +
+				"amqp:\n" +
+				"  url: amqps://example.com/vhost\n" +
+				tc.tokenLine +
+				"  oauth:\n" +
+				"    enabled: " + tc.oauth + "\n" +
+				"    token_url: https://registry.example.org/token\n" +
+				"    registration_url: https://registry.example.org/register\n"
+			require.NoError(t, os.WriteFile(configFile, []byte(yaml), 0644))
+
+			c := &Config{}
+			c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER")
+			assert.Equal(t, tc.wantToken, c.AmqpToken)
+			if c.OAuthEnabled {
+				assert.Equal(t, "/var/lib/xrootd-monitoring-shoveler/oauth/private.pem", c.OAuthPrivateKeyFile)
+				assert.Equal(t, "/var/lib/xrootd-monitoring-shoveler/oauth/registration.json", c.OAuthStateFile)
+			}
+		})
+	}
+}

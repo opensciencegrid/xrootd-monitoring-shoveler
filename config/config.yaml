@@ -32,7 +32,13 @@ amqp:
   # in the registry) makes the shoveler active right away. Without one, it
   # registers anyway and waits, queuing packets, until a registry admin or
   # site manager approves it; it logs its key fingerprint so the approver can
-  # check it. The oauth/ directory below must survive restarts.
+  # check it.
+  #
+  # By default everything the shoveler writes lives in
+  # /var/lib/xrootd-monitoring-shoveler/ (created by the packages), including
+  # the access token: with oauth enabled, token_location defaults to
+  # /var/lib/xrootd-monitoring-shoveler/token. That directory must survive
+  # restarts.
   #
   # oauth:
   #   enabled: true
@@ -43,12 +49,13 @@ amqp:
   #   # approval instead. It is only used on the FIRST run; once registration
   #   # succeeds the state_file below is sufficient and this may be removed.
   #   # Supplying it via a file is recommended (the file wins if both are set):
-  #   bootstrap_token_file: /etc/xrootd-monitoring-shoveler/oauth/bootstrap.token
+  #   # It must be readable by the xrootd-monitoring-shoveler user.
+  #   bootstrap_token_file: /var/lib/xrootd-monitoring-shoveler/bootstrap.token
   #   # bootstrap_token: paste-one-time-token-here
   #
   #   # Where the generated private key and registration state are persisted.
-  #   private_key_file: /etc/xrootd-monitoring-shoveler/oauth/private.pem
-  #   state_file: /etc/xrootd-monitoring-shoveler/oauth/registration.json
+  #   private_key_file: /var/lib/xrootd-monitoring-shoveler/oauth/private.pem
+  #   state_file: /var/lib/xrootd-monitoring-shoveler/oauth/registration.json
   #
   #   # Name shown in the registry (default: shoveler@<hostname>).
   #   # client_name: shoveler@xrootd.example.edu

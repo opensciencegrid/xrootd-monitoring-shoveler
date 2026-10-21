@@ -233,12 +233,14 @@ A client stops getting tokens (401 `invalid_client`) when it is disabled:
 
 | Path (default) | Contents |
 |---|---|
-| `/etc/xrootd-monitoring-shoveler/oauth/bootstrap.token` | the registration token, if one is used; can be deleted after the first successful start |
-| `/etc/xrootd-monitoring-shoveler/oauth/private.pem` | RSA private key (PKCS#1, mode 0600); never leaves the host |
-| `/etc/xrootd-monitoring-shoveler/oauth/registration.json` | `{"client_id": "..."}` (mode 0600) |
-| `amqp.token_location` | current access token, rewritten atomically on each refresh |
+| `/var/lib/xrootd-monitoring-shoveler/bootstrap.token` (no default; set `bootstrap_token_file`) | the registration token, if one is used; must be readable by the service user; can be deleted after the first successful start |
+| `/var/lib/xrootd-monitoring-shoveler/oauth/private.pem` | RSA private key (PKCS#1, mode 0600); never leaves the host |
+| `/var/lib/xrootd-monitoring-shoveler/oauth/registration.json` | `{"client_id": "..."}` (mode 0600) |
+| `/var/lib/xrootd-monitoring-shoveler/token` (`amqp.token_location`) | current access token, rewritten atomically on each refresh |
 
-The `oauth/` directory must survive restarts and redeploys. If the state file
+These all live in the service's state directory, `/var/lib/xrootd-monitoring-shoveler/`,
+which the packages create for the `xrootd-monitoring-shoveler` user. It must
+survive restarts and redeploys. If the state file
 exists, the shoveler skips registration. If only the key exists, it registers
 again with that same key. If both are lost, it registers as a new client:
 with a new registration token, or without one and waits for approval again.
