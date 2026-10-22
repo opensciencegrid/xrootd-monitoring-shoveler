@@ -340,6 +340,11 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 			if c.OAuthTokenURL == "" || c.OAuthRegistrationURL == "" {
 				log.Panicln("amqp.oauth.enabled is true but amqp.oauth.token_url and amqp.oauth.registration_url are both required")
 			}
+			// StartAMQP uses credentials in the URL instead of the token
+			// file, which would silently bypass the OAuth tokens.
+			if c.AmqpURL != nil && c.AmqpURL.User != nil {
+				log.Panicln("amqp.oauth.enabled is true but amqp.url contains credentials; remove them so the OAuth access token is used")
+			}
 
 			// Health reports go to the registry that issues the tokens, by
 			// default at its report endpoint beside the token endpoint.

@@ -672,3 +672,26 @@ func TestOAuthDefaultPathsUseStateDir(t *testing.T) {
 		})
 	}
 }
+
+func TestOAuthConfigRejectsCredentialsInURL(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.yaml")
+	yaml := "" +
+		"mq: amqp\n" +
+		"amqp:\n" +
+		"  url: amqps://user:pass@example.com/vhost\n" +
+		"  oauth:\n" +
+		"    enabled: true\n" +
+		"    token_url: https://registry.example.org/token\n" +
+		"    registration_url: https://registry.example.org/register\n" +
+		"    state_file: " + filepath.Join(dir, "registration.json") + "\n"
+	require.NoError(t, os.WriteFile(configFile, []byte(yaml), 0644))
+
+	c := &Config{}
+	assert.Panics(t, func() {
+		c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER")
+	}, "URL credentials would bypass the OAuth token")
+}
