@@ -17,6 +17,7 @@ import (
 // and the test acks or nacks them by tag.
 type fakeChannel struct {
 	mu        sync.Mutex
+	attempts  int // publish calls, including ones on a closed channel
 	published []string
 	tags      uint64
 	confirmCh chan amqp.Confirmation
@@ -30,6 +31,7 @@ func newFakeChannel() *fakeChannel {
 func (f *fakeChannel) publish(exchange string, data []byte) (uint64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.attempts++
 	if f.closed {
 		return 0, errors.New("channel closed")
 	}
@@ -280,6 +282,34 @@ func TestStuckChannelIsReplaced(t *testing.T) {
 	eventuallyPublished(t, ch1, []string{"m1", "m2"})
 	require.Eventually(t, ch1.isClosed, time.Second, time.Millisecond, "a silent channel must be dropped")
 	assert.Equal(t, []string{"m1", "m2"}, ch1.bodies(), "no resend on the stuck channel")
+
+	ch2 := newFakeChannel()
+	h.source.set(ch2)
+	eventuallyPublished(t, ch2, []string{"m1", "m2"})
+}
+
+func (f *fakeChannel) publishAttempts() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.attempts
+}
+
+// Right after the worker drops a channel the session may still offer it
+// until it notices the close; the worker must wait for a different channel
+// rather than spin publishing on the dead one.
+func TestDroppedChannelIsNotRetried(t *testing.T) {
+	h := newWindowHarness(t, 8)
+	ch1 := newFakeChannel()
+	h.source.set(ch1)
+	h.worker.Start()
+	h.enqueue("m1", "m2")
+	eventuallyPublished(t, ch1, []string{"m1", "m2"})
+
+	ch1.confirm(1, false) // nack: the worker drops ch1, but the source still offers it
+	require.Eventually(t, ch1.isClosed, time.Second, time.Millisecond)
+	attempts := ch1.publishAttempts()
+	time.Sleep(10 * channelPoll)
+	assert.Equal(t, attempts, ch1.publishAttempts(), "no publishing on the dropped channel")
 
 	ch2 := newFakeChannel()
 	h.source.set(ch2)

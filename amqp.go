@@ -349,7 +349,8 @@ type inflight struct {
 // the worker is stopped, unconfirmed messages are handed back in order.
 func (w *PublishWorker) publishLoop() {
 	var pending []inflight
-	var ch confirmChannel // the channel pending was published on
+	var ch confirmChannel      // the channel pending was published on
+	var dropped confirmChannel // the last channel given up on
 	var lastProgress time.Time
 	watchdog := time.NewTicker(confirmTimeout / 4)
 	defer watchdog.Stop()
@@ -360,7 +361,10 @@ func (w *PublishWorker) publishLoop() {
 		if ch != nil {
 			log.Warningf("Worker %d: %s; republishing %d unconfirmed messages on a new channel",
 				w.id, reason, len(pending))
-			ch.close()
+			// Closing waits for the broker's reply, which can take a while;
+			// don't hold up the worker for it.
+			go ch.close()
+			dropped = ch
 		}
 		ch = nil
 		for i := range pending {
@@ -390,7 +394,9 @@ func (w *PublishWorker) publishLoop() {
 
 		if ch == nil {
 			cur := w.session.current()
-			if cur == nil {
+			// Until the session notices the close it may still offer the
+			// channel just given up on; wait for a new one.
+			if cur == nil || cur == dropped {
 				if !sleepCtx(w.ctx, channelPoll) {
 					continue
 				}
