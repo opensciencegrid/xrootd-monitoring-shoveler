@@ -58,8 +58,11 @@ type PublishWorker struct {
 	wg            sync.WaitGroup
 }
 
-// defaultConfirmWindow is the default amqp.confirm_window.
-const defaultConfirmWindow = 256
+// defaultConfirmWindow is the default amqp.confirm_window. A worker's
+// throughput is capped at about window / broker round-trip time, so 4096
+// allows ~40,000 msg/s at 100 ms: large enough not to need tuning. Messages
+// are only held while unconfirmed (a few MB at typical packet sizes).
+const defaultConfirmWindow = 4096
 
 // confirmTimeout is how long a worker waits without any confirm while
 // messages are in flight before it treats the channel as stuck and replaces

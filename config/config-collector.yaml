@@ -69,7 +69,7 @@ amqp:
   topic:
   # Messages published ahead of the broker's confirms (per worker). Larger
   # values keep throughput up on high-latency links to the broker.
-  # confirm_window: 256
+  # confirm_window: 4096
   token_location: /etc/xrootd-monitoring-shoveler/token
 
 # If using stomp protocol please configure the following commented lines as needed
