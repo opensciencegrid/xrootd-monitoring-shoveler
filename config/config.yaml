@@ -16,7 +16,11 @@ amqp:
   url: amqps://username:password@example.com/vhost
   exchange: shoveled-xrd
   topic:
-  token_location: /etc/xrootd-monitoring-shoveler/token
+  # File holding the JWT used as the AMQP password. Defaults to
+  # /etc/xrootd-monitoring-shoveler/token, or to
+  # /var/lib/xrootd-monitoring-shoveler/token when oauth is enabled below (the
+  # shoveler then writes it itself, so it must be in a writable directory).
+  # token_location: /etc/xrootd-monitoring-shoveler/token
 
   # OAuth2 self-registration + private_key_jwt (optional).
   #

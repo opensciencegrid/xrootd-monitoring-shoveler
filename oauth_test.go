@@ -695,3 +695,26 @@ func TestOAuthConfigRejectsCredentialsInURL(t *testing.T) {
 		c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER")
 	}, "URL credentials would bypass the OAuth token")
 }
+
+// The packaged config.yaml must not pin token_location, or OAuth mode would
+// write the token under /etc, which the service user can't write.
+func TestShippedConfigLeavesTokenLocationDefault(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	data, err := os.ReadFile("config/config.yaml")
+	require.NoError(t, err)
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(configFile, data, 0644))
+
+	t.Setenv("SHOVELER_MQ", "amqp")
+	t.Setenv("SHOVELER_AMQP_URL", "amqps://broker.example.org/vhost")
+	t.Setenv("SHOVELER_AMQP_OAUTH_ENABLED", "true")
+	t.Setenv("SHOVELER_AMQP_OAUTH_TOKEN_URL", "https://registry.example.org/token")
+	t.Setenv("SHOVELER_AMQP_OAUTH_REGISTRATION_URL", "https://registry.example.org/register")
+
+	c := &Config{}
+	c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER")
+	assert.Equal(t, "/var/lib/xrootd-monitoring-shoveler/token", c.AmqpToken)
+}
