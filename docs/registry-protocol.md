@@ -76,7 +76,7 @@ shoveler gets `invalid_client` from then on; to try again, delete its
 
 Configured as `amqp.oauth.registration_url` (`<PORTAL_BASE_URL>/register`). If only `token_url` is set, it defaults to
 that URL with its final `/token` replaced by `/register`, so a registration token is only ever sent to the registry
-that issued it; if neither is set, it is the OSG registry, `https://shoveler-auth.osg-htc.org/register`.
+that issued it; if neither is set, it is the OSG registry, `https://xrd-shoveler-auth.osg-htc.org/register`.
 
 ```http
 POST /register
@@ -164,7 +164,7 @@ restart-loop and repeat the request.
 
 Configured as `amqp.oauth.token_url` (`<PORTAL_BASE_URL>/token`). If only `registration_url` is set, it defaults to
 that URL with `/register` replaced by `/token`; if neither is set, it is the OSG registry,
-`https://shoveler-auth.osg-htc.org/token`.
+`https://xrd-shoveler-auth.osg-htc.org/token`.
 
 ```http
 POST /token

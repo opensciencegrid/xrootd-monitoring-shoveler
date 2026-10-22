@@ -804,7 +804,7 @@ func TestOAuthDefaultRegistryURLs(t *testing.T) {
 		wantReg   string
 	}{
 		{"defaults to the OSG registry", "",
-			"https://shoveler-auth.osg-htc.org/token", "https://shoveler-auth.osg-htc.org/register"},
+			"https://xrd-shoveler-auth.osg-htc.org/token", "https://xrd-shoveler-auth.osg-htc.org/register"},
 		{"explicit URLs win", "" +
 			"    token_url: https://registry.example.org/token\n" +
 			"    registration_url: https://registry.example.org/register\n",

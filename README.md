@@ -226,8 +226,8 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 
 **AMQP OAuth2 Self-Registration (optional; shoveler: `SHOVELER_AMQP_OAUTH_*`, collector: `COLLECTOR_AMQP_OAUTH_*`):**
 * `<PREFIX>_AMQP_OAUTH_ENABLED` - Enable OAuth2 self-registration + token fetch: `true` or `false` (default: `false`)
-* `<PREFIX>_AMQP_OAUTH_TOKEN_URL` - Registry token endpoint (default: `https://shoveler-auth.osg-htc.org/token`)
-* `<PREFIX>_AMQP_OAUTH_REGISTRATION_URL` - Registry registration endpoint (default: `https://shoveler-auth.osg-htc.org/register`)
+* `<PREFIX>_AMQP_OAUTH_TOKEN_URL` - Registry token endpoint (default: `https://xrd-shoveler-auth.osg-htc.org/token`)
+* `<PREFIX>_AMQP_OAUTH_REGISTRATION_URL` - Registry registration endpoint (default: `https://xrd-shoveler-auth.osg-htc.org/register`)
 * `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN` - One-time registration token from the registry, inline (optional: without one the shoveler waits for approval)
 * `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN_FILE` - File holding the one-time registration token (preferred; wins over inline)
 * `<PREFIX>_AMQP_OAUTH_PRIVATE_KEY_FILE` - Generated private key path (default: `/var/lib/xrootd-monitoring-shoveler/oauth/private.pem`)
@@ -288,7 +288,7 @@ There are two ways to onboard:
   and assigns its site. The shoveler logs its key fingerprint (also shown in the registry) so the approver can
   check they are approving the right host. Your registry must support this mode.
 
-The shoveler uses the OSG registry, `https://shoveler-auth.osg-htc.org`, by default, so the config is just this,
+The shoveler uses the OSG registry, `https://xrd-shoveler-auth.osg-htc.org`, by default, so the config is just this,
 minus `bootstrap_token_file` when registering without a token (see `config/config.yaml` for every option):
 
 ```yaml

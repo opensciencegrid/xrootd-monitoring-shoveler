@@ -140,7 +140,7 @@ const OAuthStateDir = "/var/lib/xrootd-monitoring-shoveler"
 // and /register endpoints unless amqp.oauth.token_url / registration_url are
 // set. token_url is used as the client assertion's audience, which the
 // registry compares exactly.
-const DefaultRegistryURL = "https://shoveler-auth.osg-htc.org"
+const DefaultRegistryURL = "https://xrd-shoveler-auth.osg-htc.org"
 
 // legacyTokenLocation is where an external process kept the AMQP token before
 // OAuth mode, and what config.yaml shipped pinned until 2.3. The service user
