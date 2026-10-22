@@ -739,14 +739,23 @@ func (session *Session) handleReInit(conn *amqp.Connection) bool {
 	for {
 		session.setReady(false)
 
+		if conn.IsClosed() {
+			log.Warningln("Connection closed. Reconnecting...")
+			return false
+		}
 		err := session.init(conn)
 
 		if err != nil {
-			log.Warningln("Failed to initialize channel. Retrying...")
+			log.Warningln("Failed to initialize channel. Retrying...", err)
 
+			// Watch the connection while waiting: if it closed, retrying
+			// the channel on it can never succeed.
 			select {
 			case <-session.done:
 				return true
+			case err := <-session.notifyConnClose:
+				log.Warningln("Connection closed. Reconnecting...", err)
+				return false
 			case <-time.After(reInitDelay):
 			}
 			continue
@@ -791,7 +800,10 @@ func (session *Session) changeConnection(connection *amqp.Connection) {
 	session.mu.Lock()
 	session.connection = connection
 	session.mu.Unlock()
-	session.notifyConnClose = make(chan *amqp.Error)
+	// Buffered: the library blocks delivering the close notice until it is
+	// received, and while it is blocked the connection can't finish closing,
+	// so a channel being opened on it waits forever (seen as a stuck shoveler).
+	session.notifyConnClose = make(chan *amqp.Error, 1)
 	connection.NotifyClose(session.notifyConnClose)
 }
 
@@ -805,7 +817,7 @@ func (session *Session) setReady(ready bool) {
 // changeChannel takes a new channel to the queue,
 // and updates the channel listeners to reflect this.
 func (session *Session) changeChannel(channel *amqp.Channel) {
-	session.notifyChanClose = make(chan *amqp.Error)
+	session.notifyChanClose = make(chan *amqp.Error, 1) // buffered, as notifyConnClose
 	// The worker reads confirms as they come; the buffer keeps the
 	// channel's reader from blocking while the worker is publishing.
 	confirms := make(chan amqp.Confirmation, session.confirmBuffer)
