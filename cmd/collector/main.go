@@ -69,12 +69,21 @@ func main() {
 	var cq *shoveler.ConfirmationQueue
 	if config.Output.Type == "" || config.Output.Type == "mq" || config.Output.Type == "both" {
 		cq = shoveler.NewConfirmationQueue(&config)
+		// On SIGTERM/SIGINT, save messages not yet confirmed by the broker
+		// to the queue before exiting, so a restart sends them.
+		shoveler.ShutdownOnSignal(cq)
 		switch config.MQ {
 		case "amqp":
 			// Only start AMQP if URL is configured
 			if config.AmqpURL != nil && config.AmqpURL.String() != "" {
-				// Start the AMQP go func
-				go shoveler.StartAMQP(&config, cq)
+				if config.OAuthEnabled {
+					// Registers on first run, then starts AMQP once the registry
+					// issues a token; packets queue on disk until then.
+					shoveler.StartAMQPWithOAuth(&config, cq)
+				} else {
+					// Start the AMQP go func
+					go shoveler.StartAMQP(&config, cq)
+				}
 			} else {
 				logger.Warnln("Output type is 'mq' with AMQP but no amqp.url configured - skipping AMQP output")
 			}
@@ -540,7 +549,7 @@ func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputC
 
 	exchange := ""    // Can be added to config if needed
 	routingKey := "#" // Can be added to config if needed
-	tokenPath := config.AmqpToken
+	tokenPath := config.Input.TokenLocation
 
 	reader := input.NewRabbitMQReader(brokerURL, queueName, exchange, routingKey, tokenPath, logger)
 	if err := reader.Start(); err != nil {

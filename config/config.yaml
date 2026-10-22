@@ -16,7 +16,73 @@ amqp:
   url: amqps://username:password@example.com/vhost
   exchange: shoveled-xrd
   topic:
-  token_location: /etc/xrootd-monitoring-shoveler/token
+  # Messages published ahead of the broker's confirms (per worker). Larger
+  # values keep throughput up on high-latency links to the broker.
+  # confirm_window: 4096
+  # File holding the JWT used as the AMQP password. Defaults to
+  # /etc/xrootd-monitoring-shoveler/token, or to
+  # /var/lib/xrootd-monitoring-shoveler/token when oauth is enabled below (the
+  # shoveler then writes it itself, so it must be in a writable directory).
+  # token_location: /etc/xrootd-monitoring-shoveler/token
+
+  # OAuth2 self-registration + private_key_jwt (optional).
+  #
+  # When enabled, the shoveler onboards itself with a shoveler registry: on
+  # first run it generates an RSA keypair and registers its PUBLIC key, then
+  # fetches access tokens via private_key_jwt.
+  # Each fetched token is written to `token_location` above and rotated
+  # automatically by the existing token-file watcher. The private key never
+  # leaves the host and no long-lived shared secret ever exists. Protocol
+  # details: docs/registry-protocol.md
+  #
+  # Registering with a one-time registration token (created by a site owner
+  # in the registry) makes the shoveler active right away. Without one, it
+  # registers anyway and waits, queuing packets, until a registry admin or
+  # site manager approves it; it logs its key fingerprint so the approver can
+  # check it.
+  #
+  # By default everything the shoveler writes lives in
+  # /var/lib/xrootd-monitoring-shoveler/ (created by the packages), including
+  # the access token: with oauth enabled, token_location defaults to
+  # /var/lib/xrootd-monitoring-shoveler/token. That directory must survive
+  # restarts.
+  #
+  # oauth:
+  #   enabled: true
+  #   # The registry's endpoints. They default to the OSG registry
+  #   # (https://xrd-shoveler-auth.osg-htc.org/token and /register); set them only
+  #   # for a different registry, copying token_url exactly as it shows it.
+  #   # token_url: https://xrd-shoveler-auth.osg-htc.org/token
+  #   # registration_url: https://xrd-shoveler-auth.osg-htc.org/register
+  #
+  #   # The optional one-time registration token; leave it out to wait for
+  #   # approval instead. It is only used on the FIRST run; once registration
+  #   # succeeds the state_file below is sufficient and this may be removed.
+  #   # Supplying it via a file is recommended (the file wins if both are set):
+  #   # It must be readable by the xrootd-monitoring-shoveler user.
+  #   bootstrap_token_file: /var/lib/xrootd-monitoring-shoveler/bootstrap.token
+  #   # bootstrap_token: paste-one-time-token-here
+  #
+  #   # Where the generated private key and registration state are persisted.
+  #   private_key_file: /var/lib/xrootd-monitoring-shoveler/oauth/private.pem
+  #   state_file: /var/lib/xrootd-monitoring-shoveler/oauth/registration.json
+  #
+  #   # Name shown in the registry (default: shoveler@<hostname>).
+  #   # client_name: shoveler@xrootd.example.edu
+  #
+  #   # Optional scopes to request at token time. Shoveler-registry ignores
+  #   # them and always issues the site's standard permissions.
+  #   # scopes:
+  #   #   - my_rabbit_server.write:xrd-mon/shoveled-xrd
+  #
+  #   # Health reports (on by default): once it has a token, the shoveler
+  #   # sends its packet counts and queue size to the registry every
+  #   # report_interval seconds, so the registry can show whether it is
+  #   # running correctly. report_url defaults to token_url with its final
+  #   # /token replaced by /report.
+  #   # report_health: true
+  #   # report_interval: 60
+  #   # report_url: https://registry.example.org/report
 
 # If using stomp protocol please configure the following commented lines as needed
 #stomp:
@@ -51,6 +117,10 @@ metrics:
 # it will store messages over the 100 in memory onto disk into this directory.  Once the connection has been re-established
 # the queue will be emptied.  The queue on disk is persistent between restarts, so a persistent directory should be used.
 queue_directory: /var/spool/xrootd-monitoring-shoveler/queue
+# Drop the oldest queued messages beyond this many, so a long broker outage
+# (or, with amqp.oauth, a registration awaiting approval) can't fill the disk.
+# Default: no limit, or 1000000 when amqp.oauth is enabled.
+# queue_max_messages: 1000000
 
 # Mapping configuration
 # If map.all is set, all messages will be mapped to the configured origin.

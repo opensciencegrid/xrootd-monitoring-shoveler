@@ -51,11 +51,22 @@ func main() {
 
 	// Start the message queue
 	cq := shoveler.NewConfirmationQueue(&config)
+	// On SIGTERM/SIGINT, save messages not yet confirmed by the broker to
+	// the queue before exiting, so a restart sends them.
+	shoveler.ShutdownOnSignal(cq)
 
 	switch config.MQ {
 	case "amqp":
-		// Start the AMQP go func
-		go shoveler.StartAMQP(&config, cq)
+		if config.OAuthEnabled {
+			// Registers on first run, then starts AMQP once the registry
+			// issues a token; packets queue on disk until then.
+			ready := shoveler.StartAMQPWithOAuth(&config, cq)
+			// From then on, also report health to the registry.
+			shoveler.StartReporter(&config, ready)
+		} else {
+			// Start the AMQP go func
+			go shoveler.StartAMQP(&config, cq)
+		}
 	case "stomp":
 		// Start the STOMP go func
 		go shoveler.StartStomp(&config, cq)

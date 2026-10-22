@@ -8,6 +8,9 @@ ExecStart=/usr/bin/xrootd-monitoring-collector
 EnvironmentFile=-/etc/sysconfig/xrootd-monitoring-collector
 User=xrootd-monitoring-shoveler
 Group=xrootd-monitoring-shoveler
+# /var/lib/xrootd-monitoring-shoveler: OAuth key, registration state and token
+StateDirectory=xrootd-monitoring-shoveler
+StateDirectoryMode=0700
 Restart=on-failure
 RestartSec=5
 

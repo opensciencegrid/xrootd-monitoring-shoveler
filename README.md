@@ -186,6 +186,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_INPUT_PORT` - Input port number
 * `<PREFIX>_INPUT_BUFFER_SIZE` - Buffer size for UDP packets (default: `65536`)
 * `<PREFIX>_INPUT_BROKER_URL` - Message broker URL (for rabbitmq input)
+* `<PREFIX>_INPUT_TOKEN_LOCATION` - Token for the rabbitmq input when its broker URL has no credentials (default: the AMQP `token_location`; required, or credentials in `broker_url`, when `amqp.oauth` is enabled, because the OAuth token only grants publishing)
 * `<PREFIX>_INPUT_TOPIC` - Message broker topic/queue name
 * `<PREFIX>_INPUT_QUEUE` - Alias for topic (RabbitMQ)
 * `<PREFIX>_INPUT_SUBSCRIPTION` - Subscription name (for message bus)
@@ -220,8 +221,23 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_EXCHANGE_WLCG` - WLCG formatted events exchange (default: `xrd-wlcg-events`)
 * `<PREFIX>_AMQP_EXCHANGE_WLCG_CACHE` - WLCG formatted cache events exchange (default: `xrd-wlcg-cache-events`)
 * `<PREFIX>_AMQP_EXCHANGE_WLCG_TPC` - WLCG formatted TPC events exchange (default: `xrd-wlcg-tpc-events`)
-* `<PREFIX>_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`)
+* `<PREFIX>_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`, or `/var/lib/xrootd-monitoring-shoveler/token` when OAuth is enabled)
 * `<PREFIX>_AMQP_PUBLISH_WORKERS` - Number of concurrent publishing workers for collector mode (default: `10`, forced to `1` in shoveler mode)
+* `<PREFIX>_AMQP_CONFIRM_WINDOW` - Messages each worker publishes ahead of the broker's confirms (default: `4096`; throughput per worker is capped at about window ÷ broker round-trip time)
+
+**AMQP OAuth2 Self-Registration (optional; shoveler: `SHOVELER_AMQP_OAUTH_*`, collector: `COLLECTOR_AMQP_OAUTH_*`):**
+* `<PREFIX>_AMQP_OAUTH_ENABLED` - Enable OAuth2 self-registration + token fetch: `true` or `false` (default: `false`)
+* `<PREFIX>_AMQP_OAUTH_TOKEN_URL` - Registry token endpoint (default: `https://xrd-shoveler-auth.osg-htc.org/token`)
+* `<PREFIX>_AMQP_OAUTH_REGISTRATION_URL` - Registry registration endpoint (default: `https://xrd-shoveler-auth.osg-htc.org/register`)
+* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN` - One-time registration token from the registry, inline (optional: without one the shoveler waits for approval)
+* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN_FILE` - File holding the one-time registration token (preferred; wins over inline)
+* `<PREFIX>_AMQP_OAUTH_PRIVATE_KEY_FILE` - Generated private key path (default: `/var/lib/xrootd-monitoring-shoveler/oauth/private.pem`)
+* `<PREFIX>_AMQP_OAUTH_STATE_FILE` - Persisted registration state path (default: `/var/lib/xrootd-monitoring-shoveler/oauth/registration.json`)
+* `<PREFIX>_AMQP_OAUTH_CLIENT_NAME` - Client name sent at registration for display in the registry (default: `shoveler@<hostname>`)
+* `<PREFIX>_AMQP_OAUTH_SCOPES` - Optional scopes to request at token time (Shoveler-registry ignores them and issues the site's standard permissions)
+* `SHOVELER_AMQP_OAUTH_REPORT_HEALTH` - Send health reports to the registry: `true` or `false` (default: `true`; shoveler binary only)
+* `SHOVELER_AMQP_OAUTH_REPORT_URL` - Registry endpoint for health reports (default: `token_url` with its final `/token` replaced by `/report`)
+* `SHOVELER_AMQP_OAUTH_REPORT_INTERVAL` - Seconds between health reports, 10 to 3600 (default: `60`)
 
 **STOMP Configuration (shoveler: `SHOVELER_STOMP_*`, collector: `COLLECTOR_STOMP_*`):**
 * `<PREFIX>_STOMP_USER` - STOMP username
@@ -244,6 +260,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 
 **Queue (Shoveler Mode only):**
 * `SHOVELER_QUEUE_DIRECTORY` - Persistent queue directory (default: `/var/spool/xrootd-monitoring-shoveler/queue`)
+* `SHOVELER_QUEUE_MAX_MESSAGES` - Drop the oldest queued messages beyond this many (default: no limit, or `1000000` when `amqp.oauth` is enabled)
 
 **IP Mapping (Shoveler Mode only):**
 * `SHOVELER_MAP_ALL` - Map all IPs to a single address
@@ -254,6 +271,109 @@ When running using AMQP as the protocol to connect the shoveler uses a [JWT](htt
 automated process, but for now, long lived tokens are issued to sites. 
 
 On the other hand, if STOMP is the selected protocol user and password will need to be provided when configuring the shoveler.
+
+#### OAuth2 Self-Registration (private_key_jwt)
+
+Instead of a long-lived JWT pasted into the token file, the shoveler can onboard itself with a shoveler registry
+(such as Shoveler-registry) and keep its own access token fresh. No long-lived shared secret ever exists or crosses
+the wire. The protocol between the shoveler and the registry is specified in
+[docs/registry-protocol.md](docs/registry-protocol.md).
+
+There are two ways to onboard:
+
+* **With a registration token (instant).** A site owner logs in to the registry and creates a one-time registration
+  token for their site. The registry shows it once, with a ready-to-paste config block. Save the token to
+  `bootstrap_token_file`, readable by the service user (see below); the shoveler is active as soon as it starts.
+* **Without a token (approval).** Leave `bootstrap_token_file` out and just start the shoveler. It registers
+  itself and waits, queuing packets on disk, until a registry admin or site manager approves it on the dashboard
+  and assigns its site. The shoveler logs its key fingerprint (also shown in the registry) so the approver can
+  check they are approving the right host. Your registry must support this mode.
+
+The shoveler uses the OSG registry, `https://xrd-shoveler-auth.osg-htc.org`, by default, so the config is just this,
+minus `bootstrap_token_file` when registering without a token (see `config/config.yaml` for every option):
+
+```yaml
+amqp:
+  url: amqps://broker.example.com:5671/vhost
+  oauth:
+    enabled: true
+    bootstrap_token_file: /var/lib/xrootd-monitoring-shoveler/bootstrap.token
+```
+
+To use a different registry, set `token_url`, copying it exactly as that registry shows it: the registry checks it
+character for character. `registration_url` (and the health-report URL) then default to the same registry, with
+`/token` replaced by `/register` (or `/report`); set `registration_url` too if that registry is laid out differently.
+
+The shoveler runs as the `xrootd-monitoring-shoveler` user, so save the registration token as that user, for
+example (with the token in `token.txt`):
+
+```bash
+sudo install -o xrootd-monitoring-shoveler -g xrootd-monitoring-shoveler -m 0600 token.txt /var/lib/xrootd-monitoring-shoveler/bootstrap.token
+```
+
+Everything the shoveler writes in OAuth mode (its private key, `state_file` and the access token) lives in
+`/var/lib/xrootd-monitoring-shoveler/` by default. The RPM and DEB packages create it for the service user, and the
+systemd units declare it as their `StateDirectory`. It must survive restarts and redeploys: in a container, mount a
+persistent volume there.
+
+How it works end to end:
+
+1. **Registration (first run only).** The shoveler generates a 2048-bit RSA keypair (`private_key_file`, mode
+   `0600`; the private key **never leaves the host**) and registers its public key with the registry, using the
+   registration token, if any, as a bearer. With a token the new client is active immediately (creating the token
+   was the site owner's approval) and the token file can be deleted afterwards. Without one, the shoveler logs a
+   warning with its key fingerprint, repeated hourly, and polls every minute until the client is approved. Either
+   way the returned `client_id` is saved to `state_file` (mode `0600`).
+2. **Steady state (every run).** If `state_file` exists, registration is skipped. The shoveler signs a short-lived
+   client assertion with its private key and exchanges it at `token_url` for an access token. That token is written
+   atomically to `token_location`, AMQP starts (or the existing token-file watcher rotates its connections), and
+   the token is refreshed at ~50% of its lifetime. After a restart, a still-valid token from the previous run is
+   used straight away, so a registry outage doesn't hold up publishing. Registry outages and rate limiting are
+   retried and never crash the shoveler; packets keep going into the on-disk queue in the meantime, which is capped
+   at `queue_max_messages` (1,000,000 by default in OAuth mode; the oldest are dropped beyond that).
+
+If the registry rejects the registration (for example an expired, revoked or already-used registration token, or no
+token on a registry that requires one), the shoveler logs the error and keeps running: it re-reads the registration
+token every 10 minutes, so writing a new token to `bootstrap_token_file` is enough, with no restart. If
+`bootstrap_token_file` is set but can't be read, or is empty, the shoveler refuses to start rather than falling back
+to waiting for approval. If a pending registration is denied or expires, delete `state_file` and restart to register
+again. If the client is later disabled in the registry, the shoveler logs an error, keeps queuing, and retries every
+minute: a client disabled by its owner or for being idle starts working again once the owner re-enables it. A client
+revoked by a registry admin can't be re-enabled; delete `state_file` and restart the shoveler, with a new
+registration token or to wait for approval. It then generates a new key, so a key that may have leaked is never
+registered again.
+
+An existing config that still sets `token_location: /etc/xrootd-monitoring-shoveler/token` (as config.yaml did
+before 2.3) is ignored in OAuth mode, with a warning, because the service user can't write there.
+
+RabbitMQ must trust the registry's signing keys (via `rabbitmq_auth_backend_oauth2`) so that the permissions in the
+issued tokens map to the expected exchange.
+
+#### Health Reports
+
+Once the registry has issued it a token, the shoveler also reports its health to the registry, so the registry's
+admins can see whether it is running correctly: right away, then every `report_interval` seconds (default 60), it
+POSTs its counters since it started (packets received, packets that failed validation, messages published, message
+bus reconnects) and its queue size, authenticated with that token. The registry keeps about a day of reports and
+flags a shoveler that stops reporting, receives no packets, or stops publishing. The wire format is in
+[docs/registry-protocol.md](docs/registry-protocol.md#health-report-endpoint).
+
+This is on by default with OAuth. Reports go to `token_url` with its final `/token` replaced by `/report`
+(Shoveler-registry's layout); set `report_url` for a registry laid out differently, or `report_health: false` to
+stop sending them:
+
+```yaml
+amqp:
+  oauth:
+    # ...
+    report_health: true      # the default
+    report_interval: 60      # seconds, 10 to 3600
+    # report_url: https://registry.example.org/report
+```
+
+A shoveler awaiting approval sends nothing until it is approved. A failed report is logged once, as a warning, until
+reports succeed again (a registry with no report endpoint is asked again hourly), and never affects shoveling. Only
+the shoveler binary reports; the collector does not.
 
 ### Packet Verification
 
@@ -468,6 +588,20 @@ The system uses a configurable pool of concurrent worker goroutines for publishi
 - **Context-Based Cancellation**: Clean shutdown using Go contexts
 - **Automatic Token Rotation**: Workers restart with new credentials when JWT tokens are updated
 
+#### Publisher Confirms
+
+Every message is published with RabbitMQ publisher confirms, and counted in `shoveler_messages_published` only once
+the broker acknowledges it. Each worker keeps up to `amqp.confirm_window` (default 4096) messages in flight, so
+throughput isn't limited to one message per round trip to the broker: it is capped at about window ÷ round-trip
+time, about 40,000 messages per second at 100 ms with the default, so it shouldn't need tuning. If the broker refuses a message, closes the
+channel, or stops confirming for 30 seconds, the worker opens a new channel and republishes every unconfirmed
+message, in order, before anything new; the same happens across token rotations. Delivery is therefore
+at-least-once: a message can occasionally arrive twice, but none is dropped.
+
+On SIGTERM or SIGINT (e.g. `systemctl stop`, or a pod being deleted) the shoveler stops publishing and saves every
+message it has taken from the queue but the broker hasn't confirmed to `<queue_directory>-inflight`, then exits.
+After a restart those messages are sent first, in their original order, ahead of the rest of the queue.
+
 #### Mode-Specific Behavior
 
 **Collector Mode (Default: 10 workers)**
@@ -591,6 +725,8 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_packets_received` - Total packets received
 - `shoveler_validations_failed` - Packets that failed validation
 - `shoveler_queue_size` - Current queue size
+- `shoveler_queue_dropped` - Oldest messages dropped because the queue reached `queue_max_messages`
+- `shoveler_messages_published` - Messages the message bus confirmed receiving (refused messages are kept and retried)
 - `shoveler_rabbitmq_reconnects` - MQ reconnection count
 
 **Collector Binary (additional):**

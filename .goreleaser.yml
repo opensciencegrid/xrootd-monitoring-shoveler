@@ -133,6 +133,13 @@ nfpms:
           mode: 0700
           owner: xrootd-monitoring-shoveler
           group: xrootd-monitoring-shoveler
+      # OAuth mode's private key, registration state and access token
+      - dst: /var/lib/xrootd-monitoring-shoveler
+        type: dir
+        file_info:
+          mode: 0700
+          owner: xrootd-monitoring-shoveler
+          group: xrootd-monitoring-shoveler
     overrides:
       rpm:
         file_name_template: >-
