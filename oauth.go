@@ -36,6 +36,11 @@ const (
 	// Lower bound on how soon we re-fetch an access token.
 	oauthRefreshFloor = 30 * time.Second
 
+	// Shortest token lifetime the shoveler accepts: refreshed at half its
+	// lifetime (but not before oauthRefreshFloor), and picked up by the AMQP
+	// token watcher within 10 s, it is replaced well before it expires.
+	oauthMinTokenLifetime = 2 * oauthRefreshFloor
+
 	// Used when the token response carries no usable expiry information.
 	oauthRefreshFallback = 10 * time.Minute
 
@@ -325,6 +330,7 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 	lastProblem := ""             // error code of the current failure streak, to avoid log spam
 	var lastPendingWarn time.Time // when the "awaiting approval" warning was last logged
 	for {
+		fetchedAt := time.Now()
 		token, lifetime, err := m.fetchToken(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -386,12 +392,24 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 			log.Debugln("OAuth: refreshed access token at", m.config.AmqpToken)
 		}
 
-		interval := nextRefreshInterval(lifetime)
+		// Refresh on the schedule set when the token was fetched, so time
+		// spent retrying the write counts against it.
+		interval := refreshDelay(fetchedAt, lifetime, time.Now())
 		log.Debugln("OAuth: next token refresh in", interval)
 		if !sleepCtx(ctx, interval) {
 			return nil
 		}
 	}
+}
+
+// refreshDelay is how long to wait at now before refreshing a token fetched
+// at fetchedAt with the given lifetime; 0 if that refresh is already due.
+func refreshDelay(fetchedAt time.Time, lifetime time.Duration, now time.Time) time.Duration {
+	delay := fetchedAt.Add(nextRefreshInterval(lifetime)).Sub(now)
+	if delay < 0 {
+		return 0
+	}
+	return delay
 }
 
 // writeToken writes the access token to the token file. When the write fails
@@ -599,6 +617,11 @@ func (m *oauthManager) fetchToken(ctx context.Context) (string, time.Duration, e
 	lifetime := time.Duration(tr.ExpiresIn) * time.Second
 	if lifetime <= 0 {
 		lifetime = lifetimeFromJWT(tr.AccessToken)
+	}
+	if lifetime > 0 && lifetime < oauthMinTokenLifetime {
+		// It would expire before the connections could rotate to the next one.
+		return "", 0, fmt.Errorf("the registry issued a token valid for only %s; the shoveler needs at least %s to refresh it in time",
+			lifetime, oauthMinTokenLifetime)
 	}
 	return tr.AccessToken, lifetime, nil
 }

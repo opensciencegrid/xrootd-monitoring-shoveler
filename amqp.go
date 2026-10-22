@@ -3,6 +3,7 @@ package shoveler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net/url"
 	"os"
@@ -15,8 +16,12 @@ import (
 
 // WorkerPool manages multiple publishing workers
 type WorkerPool struct {
-	config   *Config
-	queue    *ConfirmationQueue
+	config *Config
+	queue  *ConfirmationQueue
+	// url is the broker URL with the current credentials. It is kept here,
+	// not written back to config.AmqpURL, so other readers of the config
+	// (e.g. the collector's input) never see the output's token.
+	url      *url.URL
 	workers  []*PublishWorker
 	tokenAge time.Time
 	useToken bool
@@ -55,25 +60,8 @@ type PublishWorker struct {
 // This should run in a new go co-routine.
 func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	pool := newWorkerPool(config, queue)
-
-	// Check if we need to use tokens
-	if config.AmqpURL.User == nil {
-		pool.useToken = true
-		tokenStat, err := os.Stat(config.AmqpToken)
-		if err != nil {
-			log.Fatalln("Failed to stat token file:", err)
-		}
-		pool.tokenAge = tokenStat.ModTime()
-		tokenContents, err := readToken(config.AmqpToken)
-		if err != nil {
-			log.Fatalln("Failed to read token, cannot recover")
-		}
-		// Set the username/password in a copy of the URL
-		amqpURL := copyURL(config.AmqpURL)
-		amqpURL.User = url.UserPassword("shoveler", tokenContents)
-		config.AmqpURL = amqpURL
-	} else {
-		log.Debugln("Using credentials from AMQP URL, skipping token file")
+	if err := pool.loadCredentials(); err != nil {
+		log.Fatalln(err)
 	}
 
 	// Start worker pool
@@ -89,11 +77,33 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	<-pool.ctx.Done()
 }
 
+// loadCredentials puts the token from config.AmqpToken into the pool's URL,
+// unless config.AmqpURL already carries credentials.
+func (p *WorkerPool) loadCredentials() error {
+	if p.url.User != nil {
+		log.Debugln("Using credentials from AMQP URL, skipping token file")
+		return nil
+	}
+	p.useToken = true
+	tokenStat, err := os.Stat(p.config.AmqpToken)
+	if err != nil {
+		return fmt.Errorf("failed to stat token file: %w", err)
+	}
+	p.tokenAge = tokenStat.ModTime()
+	tokenContents, err := readToken(p.config.AmqpToken)
+	if err != nil {
+		return fmt.Errorf("failed to read token, cannot recover: %w", err)
+	}
+	p.url.User = url.UserPassword("shoveler", tokenContents)
+	return nil
+}
+
 // newWorkerPool creates a pool; Start launches its workers and feeder.
 func newWorkerPool(config *Config, queue *ConfirmationQueue) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
 		config:        config,
+		url:           copyURL(config.AmqpURL),
 		queue:         queue,
 		workers:       make([]*PublishWorker, 0, config.AmqpPublishWorkers),
 		ctx:           ctx,
@@ -112,8 +122,8 @@ func (p *WorkerPool) workerCount() int {
 	return p.config.AmqpPublishWorkers
 }
 
-// startWorkers starts a new generation of workers using the current
-// p.config.AmqpURL. The caller holds p.mu (or has exclusive access).
+// startWorkers starts a new generation of workers using the current p.url.
+// The caller holds p.mu (or has exclusive access).
 func (p *WorkerPool) startWorkers() {
 	ctx, cancel := context.WithCancel(p.ctx)
 	p.workersCancel = cancel
@@ -122,7 +132,7 @@ func (p *WorkerPool) startWorkers() {
 		worker := &PublishWorker{
 			id:            i,
 			config:        p.config,
-			amqpURL:       *copyURL(p.config.AmqpURL),
+			amqpURL:       *copyURL(p.url),
 			messagesQueue: p.messagesQueue, // Share the pool's channel
 			retry:         p.retry,
 			ctx:           ctx,
@@ -190,8 +200,7 @@ func (p *WorkerPool) Restart(newURL *url.URL) {
 
 	p.stopWorkers()
 
-	// Update config URL
-	p.config.AmqpURL = newURL
+	p.url = newURL
 
 	// Start new workers with updated credentials
 	p.startWorkers()
@@ -256,7 +265,7 @@ func (p *WorkerPool) CheckTokenFile() {
 				}
 
 				// Create new URL with updated credentials
-				newURL := copyURL(p.config.AmqpURL)
+				newURL := copyURL(p.url)
 				newURL.User = url.UserPassword("shoveler", tokenContents)
 
 				// Restart workers with new credentials
@@ -345,7 +354,7 @@ func (w *PublishWorker) publishMessage(msgStruct *MessageStruct) {
 			w.handBack(msgStruct)
 			return
 		default:
-			err := w.session.Push(exchange, msgStruct.Message)
+			err := w.session.Push(w.ctx, exchange, msgStruct.Message)
 			if err != nil {
 				log.Warningf("Worker %d: Failed to push message: %v", w.id, err)
 				// Random backoff between 1-5 seconds
@@ -397,12 +406,12 @@ type Session struct {
 	url             url.URL
 	connection      *amqp.Connection
 	channel         *amqp.Channel
+	pub             *publisher // the channel's confirm tracking
 	done            chan bool
 	notifyConnClose chan *amqp.Error
 	notifyChanClose chan *amqp.Error
-	notifyConfirm   chan amqp.Confirmation
 	isReady         bool
-	mu              sync.Mutex // guards isReady, connection, channel, notifyConfirm
+	mu              sync.Mutex // guards isReady, connection, channel, pub
 	closeOnce       sync.Once
 	stopped         chan struct{} // closed when handleReconnect returns
 }
@@ -554,62 +563,23 @@ func (session *Session) changeChannel(channel *amqp.Channel) {
 	channel.NotifyPublish(confirms)
 	session.mu.Lock()
 	session.channel = channel
-	session.notifyConfirm = confirms
+	session.pub = &publisher{channel: channel, confirms: confirms}
 	session.mu.Unlock()
 }
 
-// errNotConfirmed means the broker refused the message (nack) or closed the
-// channel before confirming it, e.g. a missing exchange or no permission.
-var errNotConfirmed = errors.New("message not confirmed by the broker")
-
-// Push publishes data and waits for the broker to confirm it. If no confirm
-// arrives within resendDelay the message is re-sent. It returns an error if
-// the broker refuses the message or the channel closes, so the caller keeps
-// the message and retries instead of counting it as published.
-func (session *Session) Push(exchange string, data []byte) error {
-	session.mu.Lock()
-	ready, confirms := session.isReady, session.notifyConfirm
-	session.mu.Unlock()
-	if !ready {
-		return errors.New("failed to push push: not connected")
-	}
-	for {
-		err := session.UnsafePush(exchange, data)
-		if err != nil {
-			log.Warningln("Push failed. Retrying...")
-			select {
-			case <-session.done:
-				return errShutdown
-			case <-time.After(resendDelay):
-			}
-			continue
-		}
-		select {
-		case confirm, ok := <-confirms:
-			if !ok || !confirm.Ack {
-				return errNotConfirmed
-			}
-			return nil
-		case <-session.done:
-			return errShutdown
-		case <-time.After(resendDelay):
-			log.Warningln("Push didn't confirm. Retrying...")
-		}
-	}
+// publisher is one confirm-mode channel and the delivery tags assigned on it.
+// The broker numbers a channel's publishes 1, 2, 3, ... and confirms them by
+// that tag; lastTag mirrors the count. Only the session's single publishing
+// goroutine (its worker) uses it.
+type publisher struct {
+	channel  *amqp.Channel
+	confirms chan amqp.Confirmation
+	lastTag  uint64
 }
 
-// UnsafePush will push to the queue without checking for
-// confirmation. It returns an error if it fails to connect.
-// No guarantees are provided for whether the server will
-// recieve the message.
-func (session *Session) UnsafePush(exchange string, data []byte) error {
-	session.mu.Lock()
-	ready, channel := session.isReady, session.channel
-	session.mu.Unlock()
-	if !ready {
-		return errNotConnected
-	}
-	return channel.Publish(
+// publish sends one message and records its delivery tag in lastTag.
+func (p *publisher) publish(exchange string, data []byte) error {
+	err := p.channel.Publish(
 		exchange, // Exchange
 		"",       // Routing key
 		false,    // Mandatory
@@ -619,6 +589,82 @@ func (session *Session) UnsafePush(exchange string, data []byte) error {
 			Body:        data,
 		},
 	)
+	if err == nil {
+		p.lastTag++
+	}
+	return err
+}
+
+// errConfirmTimeout means no confirm arrived in time; the message is resent.
+var errConfirmTimeout = errors.New("no confirm from the broker")
+
+// awaitConfirm waits for the confirm of one of tags: this message's
+// publishes, including resends. Confirms for other tags belong to earlier
+// messages (e.g. a late ack of a resend) and are skipped, so they can never
+// confirm this one.
+func awaitConfirm(ctx context.Context, done <-chan bool, confirms <-chan amqp.Confirmation,
+	tags map[uint64]bool, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case confirm, ok := <-confirms:
+			if !ok {
+				return errNotConfirmed // the channel closed
+			}
+			if !tags[confirm.DeliveryTag] {
+				continue
+			}
+			if !confirm.Ack {
+				return errNotConfirmed
+			}
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-done:
+			return errShutdown
+		case <-timer.C:
+			return errConfirmTimeout
+		}
+	}
+}
+
+// errNotConfirmed means the broker refused the message (nack) or closed the
+// channel before confirming it, e.g. a missing exchange or no permission.
+var errNotConfirmed = errors.New("message not confirmed by the broker")
+
+// Push publishes data and waits for the broker to confirm it. If no confirm
+// arrives within resendDelay the message is re-sent. It returns an error if
+// the broker refuses the message, the channel closes, or ctx is cancelled
+// (e.g. the worker is being replaced on a token rotation), so the caller
+// keeps the message and retries instead of counting it as published.
+func (session *Session) Push(ctx context.Context, exchange string, data []byte) error {
+	session.mu.Lock()
+	ready, pub := session.isReady, session.pub
+	session.mu.Unlock()
+	if !ready {
+		return errNotConnected
+	}
+	tags := map[uint64]bool{}
+	for {
+		if err := pub.publish(exchange, data); err != nil {
+			log.Warningln("Push failed. Retrying...")
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-session.done:
+				return errShutdown
+			case <-time.After(resendDelay):
+			}
+			continue
+		}
+		tags[pub.lastTag] = true
+		err := awaitConfirm(ctx, session.done, pub.confirms, tags, resendDelay)
+		if !errors.Is(err, errConfirmTimeout) {
+			return err
+		}
+		log.Warningln("Push didn't confirm. Retrying...")
+	}
 }
 
 // Close will cleanly shutdown the channel and connection.

@@ -1003,3 +1003,43 @@ func TestParseBrokerURLHidesCredentials(t *testing.T) {
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "s3cret")
 }
+
+func TestRefreshDelay(t *testing.T) {
+	now := time.Now()
+	assert.Equal(t, 150*time.Second, refreshDelay(now, 300*time.Second, now))
+	// The write took 100 s of retries: 50 s are left before the planned refresh.
+	assert.Equal(t, 50*time.Second, refreshDelay(now.Add(-100*time.Second), 300*time.Second, now))
+	// The write took longer than the refresh interval: refresh now.
+	assert.Equal(t, time.Duration(0), refreshDelay(now.Add(-240*time.Second), 300*time.Second, now))
+}
+
+// A token too short-lived to rotate connections before it expires is not
+// installed; the shoveler keeps asking until the registry issues a usable one.
+func TestOAuthRejectsTooShortLivedTokens(t *testing.T) {
+	shortOAuthDelays(t)
+	fr := newFakeRegistry(t)
+	fr.expiresIn = 10
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		fr.mu.Lock()
+		defer fr.mu.Unlock()
+		return fr.tokenCount >= 3
+	}, 5*time.Second, 5*time.Millisecond)
+	select {
+	case <-ready:
+		t.Fatal("a 10 s token must not be installed")
+	default:
+	}
+	assert.NoFileExists(t, config.AmqpToken)
+
+	fr.mu.Lock()
+	fr.expiresIn = 300
+	fr.mu.Unlock()
+	waitReady(t, ready)
+}
