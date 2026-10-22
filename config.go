@@ -267,7 +267,7 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		if err != nil {
 			panic(fmt.Errorf("fatal error parsing AMQP URL: %w", err))
 		}
-		log.Debugln("AMQP URL:", c.AmqpURL.String())
+		log.Debugln("AMQP URL:", c.AmqpURL.Redacted())
 
 		// Get the AMQP Exchanges
 		c.AmqpExchange = viper.GetString("amqp.exchange")
@@ -405,7 +405,7 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		if err != nil {
 			panic(fmt.Errorf("fatal error parsing STOMP URL: %w", err))
 		}
-		log.Debugln("STOMP URL:", c.StompURL.String())
+		log.Debugln("STOMP URL:", c.StompURL.Redacted())
 
 		c.StompTopic = viper.GetString("stomp.topic")
 		log.Debugln("STOMP Topic:", c.StompTopic)

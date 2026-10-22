@@ -391,7 +391,7 @@ func (session *Session) handleReconnect() {
 
 // connect will create a new AMQP connection
 func (session *Session) connect() (*amqp.Connection, error) {
-	log.Debugln("Connecting to URL:", session.url.String())
+	log.Debugln("Connecting to URL:", session.url.Redacted())
 	conn, err := amqp.Dial(session.url.String())
 
 	if err != nil {
