@@ -18,10 +18,17 @@ type MessageStruct struct {
 
 type ConfirmationQueue struct {
 	diskQueue *dque.DQue
-	mutex     sync.Mutex
-	emptyCond *sync.Cond
-	memQueue  *list.List
-	usingDisk bool
+	// inflight holds messages saved at shutdown that had been taken from
+	// the queue but not confirmed by the broker. They are older than
+	// everything in diskQueue and memQueue, so they are dequeued first.
+	inflight *dque.DQue
+	// interrupted makes a Dequeue on an empty queue return ErrInterrupted
+	// instead of waiting (set by Wake, for shutdown).
+	interrupted bool
+	mutex       sync.Mutex
+	emptyCond   *sync.Cond
+	memQueue    *list.List
+	usingDisk   bool
 	// maxMessages caps the queue; beyond it the oldest messages are dropped
 	// (0 = no limit).
 	maxMessages int
@@ -30,9 +37,10 @@ type ConfirmationQueue struct {
 }
 
 var (
-	ErrEmpty     = errors.New("queue is empty")
-	MaxInMemory  = 100
-	LowWaterMark = 50
+	ErrEmpty       = errors.New("queue is empty")
+	ErrInterrupted = errors.New("queue wait interrupted for shutdown")
+	MaxInMemory    = 100
+	LowWaterMark   = 50
 )
 
 // NewConfirmationQueue returns an initialized list.
@@ -66,6 +74,15 @@ func (cq *ConfirmationQueue) Init(config *Config) *ConfirmationQueue {
 		cq.usingDisk = true
 	}
 
+	// Messages saved at the last shutdown before the broker confirmed them.
+	cq.inflight, err = dque.NewOrOpen(qName+"-inflight", qDir, segmentSize, ItemBuilder)
+	if err != nil {
+		log.Panicln("Failed to create the in-flight queue:", err)
+	}
+	if n := cq.inflight.Size(); n > 0 {
+		log.Infoln(n, "messages saved at the last shutdown will be sent first")
+	}
+
 	cq.maxMessages = config.QueueMaxMessages
 	cq.emptyCond = sync.NewCond(&cq.mutex)
 
@@ -84,11 +101,11 @@ func (cq *ConfirmationQueue) Size() int {
 
 // sizeLocked is Size for callers that hold the mutex.
 func (cq *ConfirmationQueue) sizeLocked() int {
+	size := cq.inflight.SizeUnsafe()
 	if cq.usingDisk {
-		return cq.diskQueue.SizeUnsafe()
-	} else {
-		return cq.memQueue.Len()
+		return size + cq.diskQueue.SizeUnsafe()
 	}
+	return size + cq.memQueue.Len()
 }
 
 // queueMetrics updates the queue size prometheus metric
@@ -178,6 +195,14 @@ func (cq *ConfirmationQueue) enforceMaxLocked() {
 
 // dequeueLocked dequeues a message, assuming the queue has already been locked
 func (cq *ConfirmationQueue) dequeueLocked() (*MessageStruct, error) {
+	// Messages saved in flight at the last shutdown are the oldest.
+	if cq.inflight.SizeUnsafe() > 0 {
+		item, err := cq.inflight.Dequeue()
+		if err != nil {
+			return nil, err
+		}
+		return item.(*MessageStruct), nil
+	}
 	// Check if we have a message available in the queue
 	if !cq.usingDisk && cq.memQueue.Len() == 0 {
 		return nil, ErrEmpty
@@ -216,6 +241,9 @@ func (cq *ConfirmationQueue) Dequeue() (*MessageStruct, error) {
 	for {
 		msg, err := cq.dequeueLocked()
 		if err == ErrEmpty {
+			if cq.interrupted {
+				return nil, ErrInterrupted
+			}
 			cq.emptyCond.Wait()
 			// Wait() atomically unlocks mutexEmptyCond and suspends execution of the calling goroutine.
 			// Receiving the signal does not guarantee an item is available, let's loop and check again.
@@ -227,9 +255,58 @@ func (cq *ConfirmationQueue) Dequeue() (*MessageStruct, error) {
 	}
 }
 
-// Close will close the on-disk files
+// SaveInFlight puts messages that were taken from the queue but not
+// confirmed by the broker back at the front, in order, on disk, so they are
+// sent first (also after a restart). Messages saved earlier and still
+// waiting stay behind them: they were taken from the front later.
+func (cq *ConfirmationQueue) SaveInFlight(msgs []*MessageStruct) {
+	if len(msgs) == 0 {
+		return
+	}
+	cq.mutex.Lock()
+	defer cq.mutex.Unlock()
+	var earlier []*MessageStruct
+	for cq.inflight.SizeUnsafe() > 0 {
+		item, err := cq.inflight.Dequeue()
+		if err != nil {
+			log.Errorln("Failed to read the in-flight queue:", err)
+			break
+		}
+		earlier = append(earlier, item.(*MessageStruct))
+	}
+	for _, m := range append(msgs, earlier...) {
+		if err := cq.inflight.Enqueue(m); err != nil {
+			log.Errorln("Failed to save an in-flight message:", err)
+		}
+	}
+	cq.emptyCond.Broadcast()
+}
+
+// Wake makes Dequeue return ErrInterrupted instead of waiting on an empty
+// queue, so a shutdown isn't stuck behind it.
+func (cq *ConfirmationQueue) Wake() {
+	cq.mutex.Lock()
+	cq.interrupted = true
+	cq.mutex.Unlock()
+	cq.emptyCond.Broadcast()
+}
+
+// Close writes any messages held in memory to disk and closes the on-disk
+// queues.
 func (cq *ConfirmationQueue) Close() error {
 	cq.mutex.Lock()
 	defer cq.mutex.Unlock()
-	return cq.diskQueue.Close()
+	// Below MaxInMemory messages live only in memQueue (diskQueue is then
+	// empty), so writing them out in order keeps them across a restart.
+	for !cq.usingDisk && cq.memQueue.Len() > 0 {
+		m := cq.memQueue.Remove(cq.memQueue.Front()).(*MessageStruct)
+		if err := cq.diskQueue.Enqueue(m); err != nil {
+			log.Errorln("Failed to save a queued message:", err)
+		}
+	}
+	errInflight := cq.inflight.Close()
+	if err := cq.diskQueue.Close(); err != nil {
+		return err
+	}
+	return errInflight
 }

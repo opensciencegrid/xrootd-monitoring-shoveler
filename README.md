@@ -598,6 +598,10 @@ channel, or stops confirming for 30 seconds, the worker opens a new channel and 
 message, in order, before anything new; the same happens across token rotations. Delivery is therefore
 at-least-once: a message can occasionally arrive twice, but none is dropped.
 
+On SIGTERM or SIGINT (e.g. `systemctl stop`, or a pod being deleted) the shoveler stops publishing and saves every
+message it has taken from the queue but the broker hasn't confirmed to `<queue_directory>-inflight`, then exits.
+After a restart those messages are sent first, in their original order, ahead of the rest of the queue.
+
 #### Mode-Specific Behavior
 
 **Collector Mode (Default: 10 workers)**

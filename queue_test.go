@@ -3,6 +3,7 @@ package shoveler
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -124,4 +125,87 @@ func TestQueueMaxMessagesDropsOldest(t *testing.T) {
 	msg, err := cq.Dequeue()
 	require.NoError(t, err)
 	assert.Equal(t, "50", string(msg.Message), "the oldest messages are the ones dropped")
+}
+
+func drainBodies(t *testing.T, cq *ConfirmationQueue) []string {
+	t.Helper()
+	var out []string
+	for cq.Size() > 0 {
+		m, err := cq.Dequeue()
+		require.NoError(t, err)
+		out = append(out, string(m.Message))
+	}
+	return out
+}
+
+func msgs(bodies ...string) []*MessageStruct {
+	var out []*MessageStruct
+	for _, b := range bodies {
+		out = append(out, &MessageStruct{Message: []byte(b)})
+	}
+	return out
+}
+
+// Messages saved as in-flight are older than anything still queued, so they
+// come out first, also after a restart.
+func TestSaveInFlightComesFirstAcrossRestart(t *testing.T) {
+	config := &Config{QueueDir: filepath.Join(t.TempDir(), "queue")}
+	cq := NewConfirmationQueue(config)
+	cq.Enqueue([]byte("q1"))
+	cq.Enqueue([]byte("q2"))
+	cq.SaveInFlight(msgs("f1", "f2"))
+	assert.Equal(t, 4, cq.Size())
+	require.NoError(t, cq.Close())
+
+	cq = NewConfirmationQueue(config)
+	assert.Equal(t, []string{"f1", "f2", "q1", "q2"}, drainBodies(t, cq))
+	require.NoError(t, cq.Close())
+}
+
+// Saving again while earlier in-flight messages are still queued puts the
+// newly saved ones (taken from the front earlier) ahead of them.
+func TestSaveInFlightAheadOfEarlierSaved(t *testing.T) {
+	config := &Config{QueueDir: filepath.Join(t.TempDir(), "queue")}
+	cq := NewConfirmationQueue(config)
+	cq.SaveInFlight(msgs("a", "b", "c", "d"))
+	first, err := cq.Dequeue()
+	require.NoError(t, err)
+	second, err := cq.Dequeue()
+	require.NoError(t, err)
+	cq.SaveInFlight([]*MessageStruct{first, second})
+	assert.Equal(t, []string{"a", "b", "c", "d"}, drainBodies(t, cq))
+	require.NoError(t, cq.Close())
+}
+
+// The first MaxInMemory messages live in memory; Close writes them to disk
+// so a clean shutdown keeps them.
+func TestCloseKeepsInMemoryMessages(t *testing.T) {
+	config := &Config{QueueDir: filepath.Join(t.TempDir(), "queue")}
+	cq := NewConfirmationQueue(config)
+	cq.Enqueue([]byte("m1"))
+	cq.Enqueue([]byte("m2"))
+	require.NoError(t, cq.Close())
+
+	cq = NewConfirmationQueue(config)
+	assert.Equal(t, []string{"m1", "m2"}, drainBodies(t, cq))
+	require.NoError(t, cq.Close())
+}
+
+// Wake makes a Dequeue blocked on an empty queue return, for shutdown.
+func TestWakeInterruptsDequeue(t *testing.T) {
+	cq := NewConfirmationQueue(&Config{QueueDir: filepath.Join(t.TempDir(), "queue")})
+	done := make(chan error)
+	go func() {
+		_, err := cq.Dequeue()
+		done <- err
+	}()
+	time.Sleep(20 * time.Millisecond)
+	cq.Wake()
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, ErrInterrupted)
+	case <-time.After(time.Second):
+		t.Fatal("Dequeue still blocked after Wake")
+	}
+	require.NoError(t, cq.Close())
 }

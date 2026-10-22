@@ -69,6 +69,9 @@ func main() {
 	var cq *shoveler.ConfirmationQueue
 	if config.Output.Type == "" || config.Output.Type == "mq" || config.Output.Type == "both" {
 		cq = shoveler.NewConfirmationQueue(&config)
+		// On SIGTERM/SIGINT, save messages not yet confirmed by the broker
+		// to the queue before exiting, so a restart sends them.
+		shoveler.ShutdownOnSignal(cq)
 		switch config.MQ {
 		case "amqp":
 			// Only start AMQP if URL is configured

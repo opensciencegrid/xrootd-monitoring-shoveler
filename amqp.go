@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/streadway/amqp"
@@ -42,6 +44,12 @@ type WorkerPool struct {
 	// loses nor reorders them. It holds every worker's whole window.
 	retry chan *MessageStruct
 	wg    sync.WaitGroup
+
+	// held is a message the feeder had taken from the queue when the pool
+	// stopped; saved on shutdown.
+	held *MessageStruct
+	// newSource opens a worker's AMQP session (tests replace it).
+	newSource func(url.URL, int) channelSource
 }
 
 // PublishWorker handles publishing messages to AMQP
@@ -49,11 +57,12 @@ type PublishWorker struct {
 	id            int
 	config        *Config
 	amqpURL       url.URL
-	session       channelSource        // its own AMQP session; created in run unless set
-	window        int                  // most unconfirmed messages in flight
-	messagesQueue chan *MessageStruct  // Reference to shared channel
-	retry         chan *MessageStruct  // Reference to the pool's retry channel
-	requeue       func(*MessageStruct) // last resort if retry is full
+	session       channelSource                    // its own AMQP session; created in run unless set
+	window        int                              // most unconfirmed messages in flight
+	messagesQueue chan *MessageStruct              // Reference to shared channel
+	retry         chan *MessageStruct              // Reference to the pool's retry channel
+	requeue       func(*MessageStruct)             // last resort if retry is full
+	newSource     func(url.URL, int) channelSource // nil: newSession
 	ctx           context.Context
 	wg            sync.WaitGroup
 }
@@ -89,6 +98,9 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	if err := pool.loadCredentials(); err != nil {
 		log.Fatalln(err)
 	}
+	if !registerPool(pool) {
+		return // shutting down
+	}
 
 	// Start worker pool
 	pool.Start()
@@ -101,6 +113,94 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	// Keep the main routine running. Only Stop ends the pool; a token
 	// rotation replaces the workers without touching pool.ctx.
 	<-pool.ctx.Done()
+}
+
+// running holds the started worker pools so StopAMQP can save their
+// in-flight messages on shutdown.
+var running struct {
+	sync.Mutex
+	pools    []*WorkerPool
+	stopping bool
+}
+
+// registerPool records a started pool; false if shutdown has begun.
+func registerPool(p *WorkerPool) bool {
+	running.Lock()
+	defer running.Unlock()
+	if running.stopping {
+		return false
+	}
+	running.pools = append(running.pools, p)
+	return true
+}
+
+// StopAMQP stops every AMQP worker pool and saves the messages they hold
+// (taken from the queue but not yet confirmed by the broker) back to the
+// front of the queue, so they are sent first after a restart. Each pool gets
+// up to timeout. Close the queue after it returns.
+func StopAMQP(timeout time.Duration) {
+	running.Lock()
+	running.stopping = true
+	pools := running.pools
+	running.Unlock()
+	for _, p := range pools {
+		p.saveAndStop(timeout)
+	}
+}
+
+// ShutdownOnSignal waits for SIGTERM or SIGINT, then stops AMQP publishing,
+// saves in-flight messages to the queue, closes the queue and exits, so a
+// restart loses nothing that was queued.
+func ShutdownOnSignal(queue *ConfirmationQueue) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, os.Interrupt)
+	go func() {
+		sig := <-signals
+		log.Warningln("Received", sig.String()+"; saving queued messages and exiting")
+		StopAMQP(10 * time.Second)
+		if queue != nil {
+			if err := queue.Close(); err != nil {
+				log.Errorln("Failed to close the queue:", err)
+			}
+		}
+		os.Exit(0)
+	}()
+}
+
+// saveAndStop stops the pool and saves, in order, the messages its workers
+// handed back, those in the shared channel, and the one the feeder held.
+func (p *WorkerPool) saveAndStop(timeout time.Duration) {
+	p.cancel()
+	p.queue.Wake() // a feeder waiting on an empty queue returns
+	done := make(chan struct{})
+	go func() {
+		p.mu.Lock()
+		p.stopWorkers()
+		p.mu.Unlock()
+		p.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		log.Warningln("Timed out stopping the AMQP workers; saving the messages handed back so far")
+	}
+
+	var saved []*MessageStruct
+	for len(p.retry) > 0 {
+		saved = append(saved, <-p.retry)
+	}
+	for len(p.messagesQueue) > 0 {
+		saved = append(saved, <-p.messagesQueue)
+	}
+	if p.held != nil {
+		saved = append(saved, p.held)
+		p.held = nil
+	}
+	if len(saved) > 0 {
+		log.Infoln("Saving", len(saved), "unconfirmed messages to the queue")
+		p.queue.SaveInFlight(saved)
+	}
 }
 
 // loadCredentials puts the token from config.AmqpToken into the pool's URL,
@@ -171,9 +271,10 @@ func (p *WorkerPool) startWorkers() {
 			messagesQueue: p.messagesQueue, // Share the pool's channel
 			retry:         p.retry,
 			requeue: func(m *MessageStruct) {
-				p.queue.EnqueueToExchange(m.Message, m.Exchange)
+				p.queue.SaveInFlight([]*MessageStruct{m})
 			},
-			ctx: ctx,
+			newSource: p.newSource,
+			ctx:       ctx,
 		}
 		p.workers = append(p.workers, worker)
 		worker.Start()
@@ -256,6 +357,9 @@ func (p *WorkerPool) feedMessages() {
 			return
 		default:
 			msgStruct, err := p.queue.Dequeue()
+			if errors.Is(err, ErrInterrupted) {
+				return
+			}
 			if err != nil {
 				log.Errorln("Failed to read from queue:", err)
 				time.Sleep(100 * time.Millisecond)
@@ -267,8 +371,8 @@ func (p *WorkerPool) feedMessages() {
 			case p.messagesQueue <- msgStruct:
 				// Message sent successfully
 			case <-p.ctx.Done():
-				// Shutting down: keep the message on disk for next time.
-				p.queue.EnqueueToExchange(msgStruct.Message, msgStruct.Exchange)
+				// Shutting down: saveAndStop saves it after the others.
+				p.held = msgStruct
 				return
 			}
 		}
@@ -332,12 +436,21 @@ func (w *PublishWorker) run() {
 
 	// Create own AMQP session
 	if w.session == nil {
-		w.session = newSession(w.amqpURL, w.window)
-	}
-	defer func() {
-		if err := w.session.Close(); err != nil {
-			log.Debugf("Worker %d: Error closing session: %v", w.id, err)
+		if w.newSource != nil {
+			w.session = w.newSource(w.amqpURL, w.window)
+		} else {
+			w.session = newSession(w.amqpURL, w.window)
 		}
+	}
+	// Closing waits for the broker's reply; by then this worker has handed
+	// back its messages, so don't hold up a rotation or shutdown for it.
+	defer func() {
+		session := w.session
+		go func() {
+			if err := session.Close(); err != nil {
+				log.Debugf("Worker %d: Error closing session: %v", w.id, err)
+			}
+		}()
 	}()
 
 	w.publishLoop()

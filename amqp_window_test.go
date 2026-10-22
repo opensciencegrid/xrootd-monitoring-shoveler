@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -366,4 +368,35 @@ func TestRefusalsBackOff(t *testing.T) {
 	// waits it is at most about 7.
 	assert.LessOrEqual(t, src.count(), 8)
 	assert.GreaterOrEqual(t, src.count(), 3, "it keeps retrying")
+}
+
+// On shutdown the pool saves every message it took from the queue but the
+// broker hasn't confirmed (in the workers' windows and the shared channel)
+// back to the front of the queue, in order, so a restart sends them first.
+func TestPoolSaveAndStopKeepsInFlightMessages(t *testing.T) {
+	brokerURL, err := url.Parse("amqp://user:pw@broker.example.org/vhost")
+	require.NoError(t, err)
+	config := &Config{Mode: "shoveler", AmqpURL: brokerURL, AmqpExchange: "test", AmqpPublishWorkers: 1,
+		AmqpConfirmWindow: 4, QueueDir: filepath.Join(t.TempDir(), "queue")}
+	cq := NewConfirmationQueue(config)
+	src := &fakeSource{}
+	ch := newFakeChannel() // never confirms
+	src.set(ch)
+	pool := newWorkerPool(config, cq)
+	pool.newSource = func(url.URL, int) channelSource { return src }
+	pool.Start()
+
+	for _, b := range seq("m", 1, 10) {
+		cq.Enqueue([]byte(b))
+	}
+	// The window of 4 is published; the rest wait in the shared channel.
+	eventuallyPublished(t, ch, seq("m", 1, 4))
+	require.Eventually(t, func() bool { return cq.Size() == 0 }, time.Second, time.Millisecond)
+
+	pool.saveAndStop(5 * time.Second)
+	require.NoError(t, cq.Close())
+
+	cq = NewConfirmationQueue(config)
+	assert.Equal(t, seq("m", 1, 10), drainBodies(t, cq))
+	require.NoError(t, cq.Close())
 }
