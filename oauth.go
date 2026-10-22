@@ -24,6 +24,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 )
 
 // The wire protocol spoken here is documented in docs/registry-protocol.md.
@@ -36,9 +37,10 @@ const (
 	// Lower bound on how soon we re-fetch an access token.
 	oauthRefreshFloor = 30 * time.Second
 
-	// Shortest token lifetime the shoveler accepts: refreshed at half its
-	// lifetime (but not before oauthRefreshFloor), and picked up by the AMQP
-	// token watcher within 10 s, it is replaced well before it expires.
+	// Shortest token lifetime that rotates cleanly: refreshed at half its
+	// lifetime and picked up by the AMQP token watcher within 10 s, it is
+	// replaced well before it expires. Shorter tokens are used, with a
+	// warning, but connections may briefly hold an expired one.
 	oauthMinTokenLifetime = 2 * oauthRefreshFloor
 
 	// Used when the token response carries no usable expiry information.
@@ -149,9 +151,11 @@ type oauthManager struct {
 	config         *Config
 	privateKey     *rsa.PrivateKey
 	kid            string
-	clientID       string // empty until registered
-	resumed        bool   // registered on an earlier run
-	bootstrapToken string // the registration token, read when registering
+	clientID       string             // empty until registered
+	resumed        bool               // registered on an earlier run
+	warnedLifetime time.Duration      // last too-short token lifetime warned about
+	log            logrus.FieldLogger // nil means the package logger (tests set it)
+	bootstrapToken string             // the registration token, read when registering
 	httpClient     *http.Client
 }
 
@@ -372,6 +376,7 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 			continue
 		}
 		lastProblem = ""
+		m.warnShortLifetime(lifetime)
 
 		expiry := time.Now().Add(lifetime)
 		if lifetime <= 0 {
@@ -400,6 +405,22 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 			return nil
 		}
 	}
+}
+
+// warnShortLifetime warns, once per lifetime value, when tokens are too
+// short-lived to rotate connections before they expire.
+func (m *oauthManager) warnShortLifetime(lifetime time.Duration) {
+	if lifetime <= 0 || lifetime >= oauthMinTokenLifetime || lifetime == m.warnedLifetime {
+		return
+	}
+	m.warnedLifetime = lifetime
+	logger := m.log
+	if logger == nil {
+		logger = log
+	}
+	logger.Warningln("OAuth: the registry issues tokens valid for only", lifetime.String()+",",
+		"less than the", oauthMinTokenLifetime.String(), "needed to rotate connections in time;",
+		"connections may briefly use an expired token on each rotation. Raise TOKEN_TTL_SECONDS on the registry.")
 }
 
 // refreshDelay is how long to wait at now before refreshing a token fetched
@@ -618,11 +639,6 @@ func (m *oauthManager) fetchToken(ctx context.Context) (string, time.Duration, e
 	if lifetime <= 0 {
 		lifetime = lifetimeFromJWT(tr.AccessToken)
 	}
-	if lifetime > 0 && lifetime < oauthMinTokenLifetime {
-		// It would expire before the connections could rotate to the next one.
-		return "", 0, fmt.Errorf("the registry issued a token valid for only %s; the shoveler needs at least %s to refresh it in time",
-			lifetime, oauthMinTokenLifetime)
-	}
 	return tr.AccessToken, lifetime, nil
 }
 
@@ -664,16 +680,18 @@ func lifetimeFromJWT(tokenString string) time.Duration {
 	return remaining
 }
 
-// nextRefreshInterval returns when to fetch the next token: ~half of the
-// token's lifetime, never below the floor, and a fallback when no expiry is
-// known.
+// nextRefreshInterval returns when to fetch the next token: half of the
+// token's lifetime, and a fallback when no expiry is known.
 func nextRefreshInterval(lifetime time.Duration) time.Duration {
 	if lifetime <= 0 {
 		return oauthRefreshFallback
 	}
+	// Half the lifetime: at least oauthRefreshFloor for any token of
+	// oauthMinTokenLifetime or more. A shorter token is still refreshed at
+	// half-life (not after it expires), but no more than once a second.
 	half := lifetime / 2
-	if half < oauthRefreshFloor {
-		return oauthRefreshFloor
+	if half < time.Second {
+		return time.Second
 	}
 	return half
 }

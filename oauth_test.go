@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -506,11 +508,12 @@ func TestRSAThumbprintRFC7638(t *testing.T) {
 }
 
 func TestNextRefreshInterval(t *testing.T) {
-	// ~half of the lifetime.
+	// Half of the lifetime.
 	assert.Equal(t, 150*time.Second, nextRefreshInterval(300*time.Second))
-	// Floor at 30s when half would be smaller.
-	assert.Equal(t, oauthRefreshFloor, nextRefreshInterval(40*time.Second))
-	assert.Equal(t, oauthRefreshFloor, nextRefreshInterval(10*time.Second))
+	assert.Equal(t, oauthRefreshFloor, nextRefreshInterval(oauthMinTokenLifetime))
+	// Short-lived tokens are still refreshed at half-life, at most once a second.
+	assert.Equal(t, 5*time.Second, nextRefreshInterval(10*time.Second))
+	assert.Equal(t, time.Second, nextRefreshInterval(time.Second))
 	// Fallback when no expiry is known.
 	assert.Equal(t, oauthRefreshFallback, nextRefreshInterval(0))
 }
@@ -1013,10 +1016,9 @@ func TestRefreshDelay(t *testing.T) {
 	assert.Equal(t, time.Duration(0), refreshDelay(now.Add(-240*time.Second), 300*time.Second, now))
 }
 
-// A token too short-lived to rotate connections before it expires is not
-// installed; the shoveler keeps asking until the registry issues a usable one.
-func TestOAuthRejectsTooShortLivedTokens(t *testing.T) {
-	shortOAuthDelays(t)
+// A token shorter-lived than oauthMinTokenLifetime is still installed and
+// used, so the shoveler keeps publishing while the registry is fixed.
+func TestOAuthInstallsShortLivedTokens(t *testing.T) {
 	fr := newFakeRegistry(t)
 	fr.expiresIn = 10
 	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
@@ -1025,21 +1027,28 @@ func TestOAuthRejectsTooShortLivedTokens(t *testing.T) {
 	defer cancel()
 	ready, err := StartOAuthManager(ctx, config)
 	require.NoError(t, err)
-
-	require.Eventually(t, func() bool {
-		fr.mu.Lock()
-		defer fr.mu.Unlock()
-		return fr.tokenCount >= 3
-	}, 5*time.Second, 5*time.Millisecond)
-	select {
-	case <-ready:
-		t.Fatal("a 10 s token must not be installed")
-	default:
-	}
-	assert.NoFileExists(t, config.AmqpToken)
-
-	fr.mu.Lock()
-	fr.expiresIn = 300
-	fr.mu.Unlock()
 	waitReady(t, ready)
+
+	tokenData, err := os.ReadFile(config.AmqpToken)
+	require.NoError(t, err)
+	assert.Equal(t, "fake-access-token", string(tokenData))
+}
+
+// The short-lifetime warning is logged once per lifetime value, not on
+// every refresh.
+func TestOAuthWarnsOncePerShortLifetime(t *testing.T) {
+	logger, hook := logtest.NewNullLogger()
+	m := &oauthManager{log: logger}
+
+	m.warnShortLifetime(10 * time.Second)
+	m.warnShortLifetime(10 * time.Second)
+	require.Len(t, hook.AllEntries(), 1)
+	entry := hook.LastEntry()
+	assert.Equal(t, logrus.WarnLevel, entry.Level)
+	assert.Contains(t, entry.Message, "TOKEN_TTL_SECONDS")
+
+	m.warnShortLifetime(20 * time.Second) // a different lifetime: warn again
+	m.warnShortLifetime(time.Hour)        // long enough: no warning
+	m.warnShortLifetime(0)                // unknown: no warning
+	assert.Len(t, hook.AllEntries(), 2)
 }
