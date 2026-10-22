@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -21,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 )
 
@@ -58,12 +59,23 @@ var (
 	// How often the "awaiting approval" warning is repeated, so it stays
 	// visible in logs at the default (warning) level.
 	oauthPendingReminder = time.Hour
+
+	// After the registry rejects a registration (a bad or used token, or bad
+	// metadata): how often to re-read the registration token and try again.
+	oauthRejectedInterval = 10 * time.Minute
 )
 
 // registrationState is the persisted result of registration: everything the
 // shoveler needs to authenticate on later runs without the bootstrap token.
 type registrationState struct {
 	ClientID string `json:"client_id"`
+}
+
+// pendingRegistration marks a registration in progress. A retry after a crash
+// with the same registration token reuses the key, so the registry can return
+// the same client; any other registration gets a new key.
+type pendingRegistration struct {
+	TokenSHA256 string `json:"token_sha256"`
 }
 
 // registrationResponse is the registry's reply to a registration request.
@@ -105,6 +117,13 @@ func (e *endpointError) permanent() bool {
 		e.Status != http.StatusRequestTimeout && e.Status != http.StatusTooManyRequests
 }
 
+// rejected reports whether the registry itself refused the request: a
+// permanent 4xx carrying an OAuth error body. A bare 4xx (e.g. a proxy's 404
+// page while the registry is redeployed) is treated as transient.
+func (e *endpointError) rejected() bool {
+	return e.Code != "" && e.permanent()
+}
+
 // newEndpointError builds an endpointError from a non-2xx response body.
 func newEndpointError(status int, body []byte) *endpointError {
 	e := &endpointError{Status: status}
@@ -122,11 +141,13 @@ func newEndpointError(status int, body []byte) *endpointError {
 // via private_key_jwt. It deliberately writes to config.AmqpToken so the
 // existing file-watch/restart machinery in amqp.go handles connection rotation.
 type oauthManager struct {
-	config     *Config
-	privateKey *rsa.PrivateKey
-	kid        string
-	clientID   string // empty until registered
-	httpClient *http.Client
+	config         *Config
+	privateKey     *rsa.PrivateKey
+	kid            string
+	clientID       string // empty until registered
+	resumed        bool   // registered on an earlier run
+	bootstrapToken string // the registration token, read when registering
+	httpClient     *http.Client
 }
 
 // StartAMQPWithOAuth starts the OAuth manager and launches StartAMQP once the
@@ -150,8 +171,8 @@ func StartAMQPWithOAuth(config *Config, queue *ConfirmationQueue) <-chan struct{
 // StartOAuthManager loads (or creates) the shoveler's key and registration
 // state, then launches the registration + token fetch loop in a goroutine. The
 // returned channel is closed once the first access token has been written to
-// config.AmqpToken. Errors returned here are local (unreadable key or state);
-// a registry that permanently rejects the registration is fatal.
+// config.AmqpToken. Errors returned here are local (unreadable key, state or
+// registration token); registry rejections are logged and retried.
 func StartOAuthManager(ctx context.Context, config *Config) (<-chan struct{}, error) {
 	m, err := newOAuthManager(config)
 	if err != nil {
@@ -174,43 +195,103 @@ func newOAuthManager(config *Config) (*oauthManager, error) {
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 
-	if fileExists(config.OAuthStateFile) {
-		state, err := loadRegistrationState(config.OAuthStateFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load OAuth state file %s: %w", config.OAuthStateFile, err)
+	registered, err := pathExists(config.OAuthStateFile)
+	if err != nil {
+		// Not "absent": re-registering would replace a working client.
+		return nil, fmt.Errorf("can't check OAuth state file %s: %w", config.OAuthStateFile, err)
+	}
+	if !registered {
+		if err := m.prepareRegistration(); err != nil {
+			return nil, err
 		}
-		key, err := loadPrivateKey(config.OAuthPrivateKeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load OAuth private key %s: %w", config.OAuthPrivateKeyFile, err)
-		}
-		m.clientID = state.ClientID
-		m.privateKey = key
-		log.Infoln("OAuth: resuming from persisted registration, client_id:", state.ClientID)
-	} else {
-		// Reuse an existing key so a registration retried after a crash
-		// presents the same public key (and the registry can treat it as
-		// idempotent).
-		if fileExists(config.OAuthPrivateKeyFile) {
-			key, err := loadPrivateKey(config.OAuthPrivateKeyFile)
-			if err != nil {
-				return nil, fmt.Errorf("failed to load existing private key: %w", err)
-			}
+		return m, nil
+	}
+	state, err := loadRegistrationState(config.OAuthStateFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load OAuth state file %s: %w", config.OAuthStateFile, err)
+	}
+	key, err := loadPrivateKey(config.OAuthPrivateKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load OAuth private key %s: %w", config.OAuthPrivateKeyFile, err)
+	}
+	m.clientID = state.ClientID
+	m.resumed = true
+	m.privateKey = key
+	m.kid = jwkThumbprint(&key.PublicKey)
+	log.Infoln("OAuth: resuming from persisted registration, client_id:", state.ClientID)
+	return m, nil
+}
+
+// prepareRegistration reads the registration token and picks the key to
+// register: the existing key only when retrying an interrupted registration
+// with the same token, otherwise a new one. A key whose client was revoked
+// (perhaps because it leaked) is therefore never registered again.
+func (m *oauthManager) prepareRegistration() error {
+	token, err := m.readBootstrapToken()
+	if err != nil {
+		return err
+	}
+	m.bootstrapToken = token
+	digest := tokenDigest(token)
+
+	m.privateKey = nil
+	if pending, err := loadPendingRegistration(m.pendingFile()); err == nil && pending.TokenSHA256 == digest {
+		if key, err := loadPrivateKey(m.config.OAuthPrivateKeyFile); err == nil {
 			m.privateKey = key
-			log.Infoln("OAuth: reusing existing private key at", config.OAuthPrivateKeyFile)
-		} else {
-			key, err := rsa.GenerateKey(rand.Reader, 2048)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate RSA key: %w", err)
-			}
-			if err := savePrivateKey(config.OAuthPrivateKeyFile, key); err != nil {
-				return nil, fmt.Errorf("failed to persist private key: %w", err)
-			}
-			m.privateKey = key
-			log.Infoln("OAuth: generated new private key at", config.OAuthPrivateKeyFile)
+			log.Infoln("OAuth: retrying an interrupted registration with the key at", m.config.OAuthPrivateKeyFile)
 		}
 	}
+	if m.privateKey == nil {
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return fmt.Errorf("failed to generate RSA key: %w", err)
+		}
+		if err := savePrivateKey(m.config.OAuthPrivateKeyFile, key); err != nil {
+			return fmt.Errorf("failed to persist private key: %w", err)
+		}
+		m.privateKey = key
+		log.Infoln("OAuth: generated new private key at", m.config.OAuthPrivateKeyFile)
+	}
 	m.kid = jwkThumbprint(&m.privateKey.PublicKey)
-	return m, nil
+	if err := savePendingRegistration(m.pendingFile(), digest); err != nil {
+		return fmt.Errorf("failed to persist %s: %w", m.pendingFile(), err)
+	}
+	if token == "" {
+		log.Warningln("OAuth: no registration token configured; the shoveler will register and wait for a registry admin to approve it")
+	}
+	return nil
+}
+
+// readBootstrapToken returns the registration token from bootstrap_token_file
+// (which wins) or bootstrap_token; "" means register without one. A configured
+// file that is unreadable or empty is an error, never a silent switch to
+// waiting for approval.
+func (m *oauthManager) readBootstrapToken() (string, error) {
+	path := m.config.OAuthBootstrapTokenFile
+	if path == "" {
+		return m.config.OAuthBootstrapToken, nil
+	}
+	const fix = "fix it, or remove bootstrap_token_file to register without a token and wait for approval"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("can't read bootstrap_token_file %s (%s): %w", path, fix, err)
+	}
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return "", fmt.Errorf("bootstrap_token_file %s is empty (%s)", path, fix)
+	}
+	return token, nil
+}
+
+// pendingFile marks an in-progress registration; see pendingRegistration.
+func (m *oauthManager) pendingFile() string {
+	return m.config.OAuthStateFile + ".pending"
+}
+
+// tokenDigest identifies a registration token without storing it.
+func tokenDigest(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // run registers (if needed) and then runs the steady-state fetch loop: fetch
@@ -229,6 +310,18 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 	}
 
 	first := true
+	// After a restart, a token from the previous run that is still valid
+	// lets AMQP start at once, even if the registry is unreachable.
+	if m.resumed {
+		if remaining := m.tokenOnDiskLifetime(); remaining > 2*oauthRefreshFloor {
+			close(ready)
+			first = false
+			log.Infoln("OAuth: using the access token on disk, valid for", remaining.Round(time.Second))
+			if !sleepCtx(ctx, nextRefreshInterval(remaining)) {
+				return nil
+			}
+		}
+	}
 	lastProblem := ""             // error code of the current failure streak, to avoid log spam
 	var lastPendingWarn time.Time // when the "awaiting approval" warning was last logged
 	for {
@@ -274,12 +367,15 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 		}
 		lastProblem = ""
 
-		if err := writeFileAtomic(m.config.AmqpToken, []byte(token), 0600); err != nil {
-			log.Warningln("OAuth: failed to write token file, will retry:", err)
-			if !sleepCtx(ctx, oauthRetryBackoff) {
+		expiry := time.Now().Add(lifetime)
+		if lifetime <= 0 {
+			expiry = time.Now().Add(oauthRefreshFallback)
+		}
+		if !m.writeToken(ctx, token, expiry) {
+			if ctx.Err() != nil {
 				return nil
 			}
-			continue
+			continue // the token expired before it could be written; fetch another
 		}
 
 		if first {
@@ -298,21 +394,77 @@ func (m *oauthManager) run(ctx context.Context, ready chan struct{}) error {
 	}
 }
 
-// registerWithRetry registers with the registry, retrying transient failures,
-// and persists the resulting client_id.
-func (m *oauthManager) registerWithRetry(ctx context.Context) error {
+// writeToken writes the access token to the token file. When the write fails
+// it retries only the write, not the fetch, until the token is about to
+// expire. It reports whether the token was written.
+func (m *oauthManager) writeToken(ctx context.Context, token string, expiry time.Time) bool {
+	logged := false
 	for {
+		err := writeFileAtomic(m.config.AmqpToken, []byte(token), 0600)
+		if err == nil {
+			return true
+		}
+		if !logged {
+			log.Errorln("OAuth: can't write the access token (the shoveler must be able to write",
+				"the token_location directory), will retry:", err)
+			logged = true
+		}
+		if time.Until(expiry) < 2*oauthRetryBackoff || !sleepCtx(ctx, oauthRetryBackoff) {
+			return false
+		}
+	}
+}
+
+// tokenOnDiskLifetime returns how long the access token in the token file
+// remains valid, or 0 if there is none or it wasn't issued to this client.
+func (m *oauthManager) tokenOnDiskLifetime() time.Duration {
+	data, err := os.ReadFile(m.config.AmqpToken)
+	if err != nil {
+		return 0
+	}
+	var claims jwt.RegisteredClaims
+	if _, _, err := new(jwt.Parser).ParseUnverified(strings.TrimSpace(string(data)), &claims); err != nil {
+		return 0
+	}
+	if claims.Subject != m.clientID || claims.ExpiresAt == nil {
+		return 0
+	}
+	return time.Until(claims.ExpiresAt.Time)
+}
+
+// registerWithRetry registers with the registry and persists the resulting
+// client_id. Transient failures are retried. When the registry rejects the
+// registration (e.g. an expired or used token), retrying the same request
+// can't help and exiting would only restart-loop, so it logs the rejection and
+// re-reads the registration token every oauthRejectedInterval, so a new token
+// takes effect without a restart. It returns an error only if the state
+// can't be saved.
+func (m *oauthManager) registerWithRetry(ctx context.Context) error {
+	lastRejection := ""
+	reprepare := false
+	for {
+		if reprepare {
+			if err := m.prepareRegistration(); err != nil {
+				log.Errorln("OAuth:", err)
+				if !sleepCtx(ctx, oauthRejectedInterval) {
+					return nil
+				}
+				continue
+			}
+			reprepare = false
+		}
 		clientID, err := m.doRegister(ctx)
 		if err == nil {
 			state := &registrationState{ClientID: clientID}
 			if err := saveRegistrationState(m.config.OAuthStateFile, state); err != nil {
-				// The registry has our key; a restart re-registers with the
-				// same key and registration token.
+				// The registry has our key and the pending marker remains,
+				// so a restart retries with the same key and token.
 				return fmt.Errorf("registered as client_id %s but failed to persist %s: %w",
 					clientID, m.config.OAuthStateFile, err)
 			}
+			_ = os.Remove(m.pendingFile())
 			m.clientID = clientID
-			if m.config.OAuthBootstrapToken == "" {
+			if m.bootstrapToken == "" {
 				log.Warningln("OAuth: registered without a registration token as client_id", clientID,
 					"with key fingerprint", m.kid, "- a registry admin must approve it")
 			} else {
@@ -324,11 +476,21 @@ func (m *oauthManager) registerWithRetry(ctx context.Context) error {
 			return nil
 		}
 		var ee *endpointError
-		if errors.As(err, &ee) && ee.permanent() {
-			if m.config.OAuthBootstrapToken == "" {
-				return fmt.Errorf("registry rejected registration without a registration token (it may require one; check registration_url): %w", err)
+		if errors.As(err, &ee) && ee.rejected() {
+			if msg := err.Error(); msg != lastRejection {
+				hint := "supply a new registration token"
+				if m.bootstrapToken == "" {
+					hint = "this registry may require a registration token; supply one"
+				}
+				log.Errorln("OAuth: the registry rejected the registration:", err, "-", hint,
+					"(the shoveler re-reads it every", oauthRejectedInterval.String()+"); check registration_url too")
+				lastRejection = msg
 			}
-			return fmt.Errorf("registry rejected registration (check the registration token and registration_url): %w", err)
+			reprepare = true
+			if !sleepCtx(ctx, oauthRejectedInterval) {
+				return nil
+			}
+			continue
 		}
 		log.Warningln("OAuth: registration failed, will retry:", err)
 		if !sleepCtx(ctx, oauthRetryBackoff) {
@@ -362,8 +524,8 @@ func (m *oauthManager) doRegister(ctx context.Context) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	// Without a token the registration is open and the client waits for
 	// approval in the registry.
-	if m.config.OAuthBootstrapToken != "" {
-		req.Header.Set("Authorization", "Bearer "+m.config.OAuthBootstrapToken)
+	if m.bootstrapToken != "" {
+		req.Header.Set("Authorization", "Bearer "+m.bootstrapToken)
 	}
 
 	resp, err := m.httpClient.Do(req)
@@ -445,13 +607,15 @@ func (m *oauthManager) fetchToken(ctx context.Context) (string, time.Duration, e
 // registered private key, in the style of cmd/createtoken/main.go.
 func buildClientAssertion(clientID, tokenURL, kid string, key *rsa.PrivateKey) (string, error) {
 	now := time.Now()
-	claims := jwt.StandardClaims{
-		Issuer:    clientID,
-		Subject:   clientID,
-		Audience:  tokenURL,
-		IssuedAt:  now.Unix(),
-		ExpiresAt: now.Add(oauthAssertionTTL).Unix(),
-		Id:        uuid.NewString(),
+	// MapClaims keeps aud a single string, as docs/registry-protocol.md
+	// specifies (RegisteredClaims would encode it as an array).
+	claims := jwt.MapClaims{
+		"iss": clientID,
+		"sub": clientID,
+		"aud": tokenURL,
+		"iat": now.Unix(),
+		"exp": now.Add(oauthAssertionTTL).Unix(),
+		"jti": uuid.NewString(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = kid
@@ -462,14 +626,15 @@ func buildClientAssertion(clientID, tokenURL, kid string, key *rsa.PrivateKey) (
 // claim without verifying its signature. Returns 0 if no usable exp is present.
 func lifetimeFromJWT(tokenString string) time.Duration {
 	parser := new(jwt.Parser)
-	var claims jwt.StandardClaims
+	// RegisteredClaims accepts an array aud and a fractional exp.
+	var claims jwt.RegisteredClaims
 	if _, _, err := parser.ParseUnverified(tokenString, &claims); err != nil {
 		return 0
 	}
-	if claims.ExpiresAt == 0 {
+	if claims.ExpiresAt == nil {
 		return 0
 	}
-	remaining := time.Until(time.Unix(claims.ExpiresAt, 0))
+	remaining := time.Until(claims.ExpiresAt.Time)
 	if remaining <= 0 {
 		return 0
 	}
@@ -604,13 +769,40 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmpName, path)
 }
 
-// fileExists reports whether a path exists (and is statable).
-func fileExists(path string) bool {
-	if path == "" {
-		return false
-	}
+// pathExists reports whether path exists. Errors other than "not found"
+// (e.g. permission denied) are returned rather than read as "absent".
+func pathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
-	return err == nil
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, os.ErrNotExist):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// loadPendingRegistration reads the in-progress registration marker.
+func loadPendingRegistration(path string) (*pendingRegistration, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var p pendingRegistration
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// savePendingRegistration writes the in-progress registration marker.
+func savePendingRegistration(path, digest string) error {
+	data, err := json.Marshal(pendingRegistration{TokenSHA256: digest})
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(path, data, 0600)
 }
 
 // sleepCtx waits for d or until ctx is cancelled. It returns false if the

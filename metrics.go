@@ -30,6 +30,11 @@ var (
 		Help: "The total number of reconnections to rabbitmq bus",
 	})
 
+	QueueDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_queue_dropped",
+		Help: "The oldest queued messages dropped because the queue reached queue_max_messages",
+	})
+
 	QueueSize = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "shoveler_queue_size",
 		Help: "The number of messages in the queue",

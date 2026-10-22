@@ -27,7 +27,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -176,7 +176,7 @@ func TestRegistryContract(t *testing.T) {
 	})
 
 	t.Run("used token with a different key is a permanent error", func(t *testing.T) {
-		other := &oauthManager{config: config, httpClient: m.httpClient}
+		other := &oauthManager{config: config, httpClient: m.httpClient, bootstrapToken: config.OAuthBootstrapToken}
 		key, err := generateTestKey()
 		require.NoError(t, err)
 		other.privateKey, other.kid = key, jwkThumbprint(&key.PublicKey)
@@ -187,7 +187,7 @@ func TestRegistryContract(t *testing.T) {
 	t.Run("garbage bootstrap token is a permanent error", func(t *testing.T) {
 		bad := *config
 		bad.OAuthBootstrapToken = "not-a-real-token"
-		other := &oauthManager{config: &bad, httpClient: m.httpClient}
+		other := &oauthManager{config: &bad, httpClient: m.httpClient, bootstrapToken: bad.OAuthBootstrapToken}
 		key, err := generateTestKey()
 		require.NoError(t, err)
 		other.privateKey, other.kid = key, jwkThumbprint(&key.PublicKey)
@@ -197,7 +197,7 @@ func TestRegistryContract(t *testing.T) {
 
 	t.Run("weak key is rejected permanently", func(t *testing.T) {
 		cfg2 := registryContractConfig(t, base, bootstrap2)
-		weak := &oauthManager{config: cfg2, httpClient: m.httpClient}
+		weak := &oauthManager{config: cfg2, httpClient: m.httpClient, bootstrapToken: cfg2.OAuthBootstrapToken}
 		key, err := rsaKey(1024)
 		require.NoError(t, err)
 		weak.privateKey, weak.kid = key, jwkThumbprint(&key.PublicKey)
@@ -306,10 +306,9 @@ func contractReporter(t *testing.T, tokenURL, tokenFile string, client *http.Cli
 
 func requirePermanent(t *testing.T, err error) {
 	t.Helper()
-	require.Error(t, err)
-	ee, ok := err.(*endpointError)
-	require.True(t, ok, "expected an HTTP error response, got %v", err)
-	assert.True(t, ee.permanent(), "expected a permanent (4xx) rejection, got %v", ee)
+	var ee *endpointError
+	require.ErrorAs(t, err, &ee, "expected an HTTP error response")
+	assert.True(t, ee.rejected(), "expected the registry to reject it (a 4xx with an OAuth error), got %v", ee)
 }
 
 func rsaKey(bits int) (*rsa.PrivateKey, error) {

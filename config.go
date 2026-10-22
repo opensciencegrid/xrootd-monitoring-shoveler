@@ -1,6 +1,7 @@
 package shoveler
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -42,6 +43,7 @@ type InputConfig struct {
 	Base64Encoded bool
 	Path          string // File path for "file" input type
 	Follow        bool   // Follow mode (tail-like) for "file" input type
+	TokenLocation string // Token for the "rabbitmq" input when broker_url has no credentials
 }
 
 type StateConfig struct {
@@ -100,6 +102,7 @@ type Config struct {
 	StompCert             string
 	StompCertKey          string
 	QueueDir              string
+	QueueMaxMessages      int // queue_max_messages: drop the oldest beyond this (0 = no limit)
 	IpMapAll              string
 	IpMap                 map[string]string
 	Filter                FilterConfig
@@ -138,6 +141,34 @@ const OAuthStateDir = "/var/lib/xrootd-monitoring-shoveler"
 // set. token_url is used as the client assertion's audience, which the
 // registry compares exactly.
 const DefaultRegistryURL = "https://shoveler-auth.osg-htc.org"
+
+// legacyTokenLocation is where an external process kept the AMQP token before
+// OAuth mode, and what config.yaml shipped pinned until 2.3. The service user
+// can't write there, so OAuth mode moves the token to OAuthStateDir.
+const legacyTokenLocation = "/etc/xrootd-monitoring-shoveler/token"
+
+// parseBrokerURL parses a broker URL without echoing it in the error:
+// url.Error includes the raw URL, password and all.
+func parseBrokerURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return nil, fmt.Errorf("%w (URL not shown, it may contain credentials)", ue.Err)
+	}
+	return u, err
+}
+
+// siblingURL returns u with its final path element from replaced by to
+// (e.g. .../token → .../register), or "" if u doesn't end in from.
+func siblingURL(u, from, to string) string {
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.Host == "" || !strings.HasSuffix(parsed.Path, from) {
+		return ""
+	}
+	parsed.Path = strings.TrimSuffix(parsed.Path, from) + to
+	parsed.RawPath, parsed.RawQuery, parsed.Fragment = "", "", ""
+	return parsed.String()
+}
 
 func (c *Config) ReadConfig() {
 	c.ReadConfigWithPathAndPrefix("", "SHOVELER")
@@ -265,11 +296,11 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		if viper.GetBool("amqp.oauth.enabled") {
 			viper.SetDefault("amqp.token_location", filepath.Join(OAuthStateDir, "token"))
 		} else {
-			viper.SetDefault("amqp.token_location", "/etc/xrootd-monitoring-shoveler/token")
+			viper.SetDefault("amqp.token_location", legacyTokenLocation)
 		}
 
 		// Get the AMQP URL
-		c.AmqpURL, err = url.Parse(viper.GetString("amqp.url"))
+		c.AmqpURL, err = parseBrokerURL(viper.GetString("amqp.url"))
 		if err != nil {
 			panic(fmt.Errorf("fatal error parsing AMQP URL: %w", err))
 		}
@@ -314,11 +345,38 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		c.OAuthEnabled = viper.GetBool("amqp.oauth.enabled")
 		log.Debugln("AMQP OAuth Enabled:", c.OAuthEnabled)
 		if c.OAuthEnabled {
-			viper.SetDefault("amqp.oauth.token_url", DefaultRegistryURL+"/token")
+			// Upgraded installs keep the old config.yaml (config|noreplace),
+			// which pinned the legacy path the service user can't write.
+			if c.AmqpToken == legacyTokenLocation {
+				c.AmqpToken = filepath.Join(OAuthStateDir, "token")
+				log.Warningln("amqp.oauth: ignoring token_location", legacyTokenLocation,
+					"(the shoveler can't write there); using", c.AmqpToken,
+					"- remove token_location from the config to silence this")
+			}
+
+			// The endpoints default to the OSG registry. Setting just one of
+			// them points the other at the same registry, so a token meant
+			// for one registry is never sent to another.
+			defaultToken, defaultRegistration := DefaultRegistryURL+"/token", DefaultRegistryURL+"/register"
+			tokenSet := viper.IsSet("amqp.oauth.token_url")
+			registrationSet := viper.IsSet("amqp.oauth.registration_url")
+			switch {
+			case tokenSet && !registrationSet:
+				defaultRegistration = siblingURL(viper.GetString("amqp.oauth.token_url"), "/token", "/register")
+				if defaultRegistration == "" {
+					log.Panicln("amqp.oauth.token_url doesn't end in /token, so set amqp.oauth.registration_url too")
+				}
+			case registrationSet && !tokenSet:
+				defaultToken = siblingURL(viper.GetString("amqp.oauth.registration_url"), "/register", "/token")
+				if defaultToken == "" {
+					log.Panicln("amqp.oauth.registration_url doesn't end in /register, so set amqp.oauth.token_url too")
+				}
+			}
+			viper.SetDefault("amqp.oauth.token_url", defaultToken)
 			c.OAuthTokenURL = viper.GetString("amqp.oauth.token_url")
 			log.Debugln("AMQP OAuth Token URL:", c.OAuthTokenURL)
 
-			viper.SetDefault("amqp.oauth.registration_url", DefaultRegistryURL+"/register")
+			viper.SetDefault("amqp.oauth.registration_url", defaultRegistration)
 			c.OAuthRegistrationURL = viper.GetString("amqp.oauth.registration_url")
 			log.Debugln("AMQP OAuth Registration URL:", c.OAuthRegistrationURL)
 
@@ -376,30 +434,12 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 				"every", c.OAuthReportInterval, "s")
 
 			// The bootstrap (registration) token may be supplied inline or via
-			// a file; the file is preferred and wins when both are set. It is
-			// optional: without one, the first run registers anyway and waits
-			// for an admin to approve it in the registry. It is only read on
-			// the first run (no state file yet).
-			firstRun := !fileExists(c.OAuthStateFile)
-			c.OAuthBootstrapToken = viper.GetString("amqp.oauth.bootstrap_token")
+			// a file; the file wins when both are set. It is optional: without
+			// one, the shoveler registers anyway and waits for an admin to
+			// approve it. Only the OAuth manager reads the file, when it
+			// registers, so tools sharing this config never need it.
+			c.OAuthBootstrapToken = strings.TrimSpace(viper.GetString("amqp.oauth.bootstrap_token"))
 			c.OAuthBootstrapTokenFile = viper.GetString("amqp.oauth.bootstrap_token_file")
-			if c.OAuthBootstrapTokenFile != "" {
-				data, readErr := os.ReadFile(c.OAuthBootstrapTokenFile)
-				switch {
-				case readErr == nil:
-					c.OAuthBootstrapToken = strings.TrimSpace(string(data))
-				case firstRun:
-					// A configured but unreadable token must not silently
-					// turn into a registration that waits for approval.
-					log.Panicln("amqp.oauth: unable to read bootstrap_token_file", c.OAuthBootstrapTokenFile, readErr,
-						"- fix it, or remove bootstrap_token_file to register without a token and wait for approval")
-				default:
-					log.Debugln("OAuth bootstrap token file not readable (not needed after registration):", readErr)
-				}
-			}
-			if firstRun && c.OAuthBootstrapToken == "" {
-				log.Warningln("amqp.oauth: no registration token configured; the shoveler will register and wait for a registry admin to approve it")
-			}
 		}
 	case "stomp":
 		viper.SetDefault("stomp.topic", "xrootd.shoveler")
@@ -409,7 +449,7 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		c.StompPassword = viper.GetString("stomp.password")
 
 		// Get the STOMP URL
-		c.StompURL, err = url.Parse(viper.GetString("stomp.url"))
+		c.StompURL, err = parseBrokerURL(viper.GetString("stomp.url"))
 		if err != nil {
 			panic(fmt.Errorf("fatal error parsing STOMP URL: %w", err))
 		}
@@ -466,6 +506,13 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	viper.SetDefault("queue_directory", "/var/spool/xrootd-monitoring-shoveler/queue")
 	c.QueueDir = viper.GetString("queue_directory")
 
+	// Cap the queue so a long outage can't fill the disk. In OAuth mode a new
+	// registration can wait days for approval, so the cap is on by default.
+	if c.OAuthEnabled {
+		viper.SetDefault("queue_max_messages", 1000000)
+	}
+	c.QueueMaxMessages = viper.GetInt("queue_max_messages")
+
 	// Configure the mapper
 	// First, check for the map environment variable
 	c.IpMapAll = viper.GetString("map.all")
@@ -483,4 +530,33 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	// Record drop filter (collector mode only); defaults to drop nothing.
 	c.Filter.DropPathPrefixes = viper.GetStringSlice("filter.drop_path_prefixes")
 	c.Filter.DropVOs = viper.GetStringSlice("filter.drop_vos")
+
+	c.readInputToken()
+}
+
+// readInputToken sets the token the "rabbitmq" input consumes with when its
+// broker URL has no credentials. It defaults to the AMQP output's token file;
+// in OAuth mode that file holds the registry's publish token, which the input
+// can't use (it's written later and lacks consume permission), so the input
+// then needs its own credentials.
+func (c *Config) readInputToken() {
+	c.Input.TokenLocation = viper.GetString("input.token_location")
+	if !viper.IsSet("input.token_location") && !c.OAuthEnabled {
+		c.Input.TokenLocation = c.AmqpToken
+	}
+	if !c.OAuthEnabled || (c.Input.Type != "rabbitmq" && c.Input.Type != "amqp") {
+		return
+	}
+	broker := c.Input.BrokerURL
+	if broker == "" && c.AmqpURL != nil {
+		broker = c.AmqpURL.String()
+	}
+	u, err := parseBrokerURL(broker)
+	if err != nil {
+		panic(fmt.Errorf("fatal error parsing the input broker URL: %w", err))
+	}
+	if u.User == nil && c.Input.TokenLocation == "" {
+		log.Panicln("amqp.oauth is enabled, so the rabbitmq input can't use the OAuth publish token:",
+			"put credentials in input.broker_url or set input.token_location")
+	}
 }

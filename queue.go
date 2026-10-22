@@ -22,6 +22,11 @@ type ConfirmationQueue struct {
 	emptyCond *sync.Cond
 	memQueue  *list.List
 	usingDisk bool
+	// maxMessages caps the queue; beyond it the oldest messages are dropped
+	// (0 = no limit).
+	maxMessages int
+	// dropping is true while the queue is at its cap, to warn once per episode.
+	dropping bool
 }
 
 var (
@@ -61,6 +66,7 @@ func (cq *ConfirmationQueue) Init(config *Config) *ConfirmationQueue {
 		cq.usingDisk = true
 	}
 
+	cq.maxMessages = config.QueueMaxMessages
 	cq.emptyCond = sync.NewCond(&cq.mutex)
 
 	// Start the metrics goroutine
@@ -73,6 +79,11 @@ func (cq *ConfirmationQueue) Init(config *Config) *ConfirmationQueue {
 func (cq *ConfirmationQueue) Size() int {
 	cq.mutex.Lock()
 	defer cq.mutex.Unlock()
+	return cq.sizeLocked()
+}
+
+// sizeLocked is Size for callers that hold the mutex.
+func (cq *ConfirmationQueue) sizeLocked() int {
 	if cq.usingDisk {
 		return cq.diskQueue.SizeUnsafe()
 	} else {
@@ -138,7 +149,31 @@ func (cq *ConfirmationQueue) EnqueueToExchange(msg []byte, exchange string) {
 			log.Errorln("Failed to enqueue message:", err)
 		}
 	}
+	cq.enforceMaxLocked()
 	cq.emptyCond.Broadcast()
+}
+
+// enforceMaxLocked drops the oldest messages beyond maxMessages.
+func (cq *ConfirmationQueue) enforceMaxLocked() {
+	if cq.maxMessages <= 0 {
+		return
+	}
+	over := cq.sizeLocked() - cq.maxMessages
+	if over <= 0 {
+		cq.dropping = false
+		return
+	}
+	if !cq.dropping {
+		log.Warningln("Queue is full at", cq.maxMessages,
+			"messages (queue_max_messages); dropping the oldest until it drains")
+		cq.dropping = true
+	}
+	for ; over > 0; over-- {
+		if _, err := cq.dequeueLocked(); err != nil {
+			return
+		}
+		QueueDropped.Inc()
+	}
 }
 
 // dequeueLocked dequeues a message, assuming the queue has already been locked

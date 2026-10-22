@@ -74,8 +74,9 @@ shoveler gets `invalid_client` from then on; to try again, delete its
 
 ## Registration endpoint
 
-Configured as `amqp.oauth.registration_url` (`<PORTAL_BASE_URL>/register`); defaults to the OSG registry,
-`https://shoveler-auth.osg-htc.org/register`.
+Configured as `amqp.oauth.registration_url` (`<PORTAL_BASE_URL>/register`). If only `token_url` is set, it defaults to
+that URL with its final `/token` replaced by `/register`, so a registration token is only ever sent to the registry
+that issued it; if neither is set, it is the OSG registry, `https://shoveler-auth.osg-htc.org/register`.
 
 ```http
 POST /register
@@ -129,33 +130,40 @@ No `registration_access_token` is issued; RFC 7592 client management isn't
 offered.
 
 **Idempotent retry.** If the response is lost, the shoveler retries with the
-same token and the same key (it saves the key before registering). The
-registry returns the original client as long as the token hasn't expired or
-been revoked. The same token with a different key is rejected. A retried
-registration without a token may create a second pending client; the extra
-one is never approved and expires.
+same token and the same key: before registering it saves the key and a marker
+holding a hash of the token, and reuses the key only when that marker matches
+the current token. The registry returns the original client as long as the
+token hasn't expired or been revoked. The same token with a different key is
+rejected. Any other registration (a new token, or after the client was
+revoked) uses a new key. A retried registration without a token may create a
+second pending client; the extra one is never approved and expires.
 
 **A bad token is never downgraded.** If an `Authorization` header is present
 but the token is unknown, expired, revoked or used, the answer is `401
 invalid_token`, never a pending registration. The shoveler only omits the
 header when no token is configured, and refuses to start if a configured
-token file can't be read.
+token file can't be read or is empty.
 
 **Errors:**
 
 | Status | `error` | When | Shoveler behavior |
 |---|---|---|---|
-| 401 | `invalid_token` | token unknown, expired, revoked, or used with a different key; or no token, on a registry that requires one | logs the error and exits |
-| 400 | `invalid_client_metadata` | the request fails validation (the token is not spent) | logs the error and exits |
+| 401 | `invalid_token` | token unknown, expired, revoked, or used with a different key; or no token, on a registry that requires one | logs the error, keeps running, and re-reads the registration token every 10 min |
+| 400 | `invalid_client_metadata` | the request fails validation (the token is not spent) | logs the error, keeps running, and retries every 10 min |
 | 429 | `invalid_request` | per-IP rate limit (`Retry-After` set) | retries every 15 s |
 | 503 | `temporarily_unavailable` | too many clients already pending approval | retries every 15 s |
 | 5xx or network error | | | retries every 15 s |
 
-The shoveler treats every 4xx except 408 and 429 as permanent.
+The shoveler treats a 4xx other than 408 and 429 as the registry rejecting the
+registration only when it carries an OAuth error body; a bare 4xx (such as a
+proxy's 404 page while the registry is being redeployed) is retried every
+15 s. It never exits on a registry error: under systemd that would only
+restart-loop and repeat the request.
 
 ## Token endpoint
 
-Configured as `amqp.oauth.token_url` (`<PORTAL_BASE_URL>/token`); defaults to the OSG registry,
+Configured as `amqp.oauth.token_url` (`<PORTAL_BASE_URL>/token`). If only `registration_url` is set, it defaults to
+that URL with `/register` replaced by `/token`; if neither is set, it is the OSG registry,
 `https://shoveler-auth.osg-htc.org/token`.
 
 ```http
@@ -311,6 +319,9 @@ A client stops getting tokens (401 `invalid_client`) when it is disabled:
 These all live in the service's state directory, `/var/lib/xrootd-monitoring-shoveler/`,
 which the packages create for the `xrootd-monitoring-shoveler` user. It must
 survive restarts and redeploys. If the state file
-exists, the shoveler skips registration. If only the key exists, it registers
-again with that same key. If both are lost, it registers as a new client:
-with a new registration token, or without one and waits for approval again.
+exists, the shoveler skips registration, and if the token file holds a token
+issued to this client that is still valid, AMQP starts with it at once. If
+the state file is missing, the key is reused only to retry an interrupted
+registration with the same token (see Idempotent retry); otherwise the
+shoveler registers as a new client with a new key: with a new registration
+token, or without one and waits for approval again.

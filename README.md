@@ -186,6 +186,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_INPUT_PORT` - Input port number
 * `<PREFIX>_INPUT_BUFFER_SIZE` - Buffer size for UDP packets (default: `65536`)
 * `<PREFIX>_INPUT_BROKER_URL` - Message broker URL (for rabbitmq input)
+* `<PREFIX>_INPUT_TOKEN_LOCATION` - Token for the rabbitmq input when its broker URL has no credentials (default: the AMQP `token_location`; required, or credentials in `broker_url`, when `amqp.oauth` is enabled, because the OAuth token only grants publishing)
 * `<PREFIX>_INPUT_TOPIC` - Message broker topic/queue name
 * `<PREFIX>_INPUT_QUEUE` - Alias for topic (RabbitMQ)
 * `<PREFIX>_INPUT_SUBSCRIPTION` - Subscription name (for message bus)
@@ -258,6 +259,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 
 **Queue (Shoveler Mode only):**
 * `SHOVELER_QUEUE_DIRECTORY` - Persistent queue directory (default: `/var/spool/xrootd-monitoring-shoveler/queue`)
+* `SHOVELER_QUEUE_MAX_MESSAGES` - Drop the oldest queued messages beyond this many (default: no limit, or `1000000` when `amqp.oauth` is enabled)
 
 **IP Mapping (Shoveler Mode only):**
 * `SHOVELER_MAP_ALL` - Map all IPs to a single address
@@ -297,8 +299,9 @@ amqp:
     bootstrap_token_file: /var/lib/xrootd-monitoring-shoveler/bootstrap.token
 ```
 
-To use a different registry, set `token_url` and `registration_url` too, copying `token_url` exactly as that registry
-shows it: the registry checks it character for character.
+To use a different registry, set `token_url`, copying it exactly as that registry shows it: the registry checks it
+character for character. `registration_url` (and the health-report URL) then default to the same registry, with
+`/token` replaced by `/register` (or `/report`); set `registration_url` too if that registry is laid out differently.
 
 The shoveler runs as the `xrootd-monitoring-shoveler` user, so save the registration token as that user, for
 example (with the token in `token.txt`):
@@ -323,16 +326,24 @@ How it works end to end:
 2. **Steady state (every run).** If `state_file` exists, registration is skipped. The shoveler signs a short-lived
    client assertion with its private key and exchanges it at `token_url` for an access token. That token is written
    atomically to `token_location`, AMQP starts (or the existing token-file watcher rotates its connections), and
-   the token is refreshed at ~50% of its lifetime. Registry outages and rate limiting are retried and never crash
-   the shoveler; packets keep going into the on-disk queue in the meantime.
+   the token is refreshed at ~50% of its lifetime. After a restart, a still-valid token from the previous run is
+   used straight away, so a registry outage doesn't hold up publishing. Registry outages and rate limiting are
+   retried and never crash the shoveler; packets keep going into the on-disk queue in the meantime, which is capped
+   at `queue_max_messages` (1,000,000 by default in OAuth mode; the oldest are dropped beyond that).
 
 If the registry rejects the registration (for example an expired, revoked or already-used registration token, or no
-token on a registry that requires one), the shoveler exits with an error. If `bootstrap_token_file` is set but can't
-be read on the first run, the shoveler refuses to start rather than falling back to waiting for approval. If a pending
-registration is denied or expires, delete `state_file` and restart to register again. If the client is later disabled in the registry, the shoveler
-logs an error, keeps queuing, and retries every minute: a client disabled by its owner or for being idle starts
-working again once the owner re-enables it. A client revoked by a registry admin can't be re-enabled; delete
-`state_file` and restart the shoveler, with a new registration token or to wait for approval.
+token on a registry that requires one), the shoveler logs the error and keeps running: it re-reads the registration
+token every 10 minutes, so writing a new token to `bootstrap_token_file` is enough, with no restart. If
+`bootstrap_token_file` is set but can't be read, or is empty, the shoveler refuses to start rather than falling back
+to waiting for approval. If a pending registration is denied or expires, delete `state_file` and restart to register
+again. If the client is later disabled in the registry, the shoveler logs an error, keeps queuing, and retries every
+minute: a client disabled by its owner or for being idle starts working again once the owner re-enables it. A client
+revoked by a registry admin can't be re-enabled; delete `state_file` and restart the shoveler, with a new
+registration token or to wait for approval. It then generates a new key, so a key that may have leaked is never
+registered again.
+
+An existing config that still sets `token_location: /etc/xrootd-monitoring-shoveler/token` (as config.yaml did
+before 2.3) is ignored in OAuth mode, with a warning, because the service user can't write there.
 
 RabbitMQ must trust the registry's signing keys (via `rabbitmq_auth_backend_oauth2`) so that the permissions in the
 issued tokens map to the expected exchange.
@@ -699,7 +710,8 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_packets_received` - Total packets received
 - `shoveler_validations_failed` - Packets that failed validation
 - `shoveler_queue_size` - Current queue size
-- `shoveler_messages_published` - Messages published to the message bus
+- `shoveler_queue_dropped` - Oldest messages dropped because the queue reached `queue_max_messages`
+- `shoveler_messages_published` - Messages the message bus confirmed receiving (refused messages are kept and retried)
 - `shoveler_rabbitmq_reconnects` - MQ reconnection count
 
 **Collector Binary (additional):**

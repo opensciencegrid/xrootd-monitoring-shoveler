@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,9 +40,11 @@ func oauthTestConfig(t *testing.T, tokenURL, regURL string) *Config {
 // shortOAuthDelays shrinks the retry and pending intervals for the test.
 func shortOAuthDelays(t *testing.T) {
 	t.Helper()
-	oldRetry, oldPending := oauthRetryBackoff, oauthPendingInterval
-	oauthRetryBackoff, oauthPendingInterval = 10*time.Millisecond, 10*time.Millisecond
-	t.Cleanup(func() { oauthRetryBackoff, oauthPendingInterval = oldRetry, oldPending })
+	oldRetry, oldPending, oldRejected := oauthRetryBackoff, oauthPendingInterval, oauthRejectedInterval
+	oauthRetryBackoff, oauthPendingInterval, oauthRejectedInterval = 10*time.Millisecond, 10*time.Millisecond, 10*time.Millisecond
+	t.Cleanup(func() {
+		oauthRetryBackoff, oauthPendingInterval, oauthRejectedInterval = oldRetry, oldPending, oldRejected
+	})
 }
 
 // fakeRegistry is an httptest server with /register and /token handlers that
@@ -54,6 +57,8 @@ type fakeRegistry struct {
 	regBearer      string
 	regBody        map[string]interface{}
 	regStatuses    []int // statuses to return from /register before succeeding
+	regBare        bool  // send regStatuses with a plain HTML body, as a proxy would
+	regBearers     []string
 	tokenCount     int
 	tokenAssertion string
 	tokenGrantType string
@@ -80,11 +85,18 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 		defer fr.mu.Unlock()
 		fr.regCount++
 		fr.regBearer = r.Header.Get("Authorization")
+		fr.regBearers = append(fr.regBearers, fr.regBearer)
 		fr.regBody = nil
 		_ = json.NewDecoder(r.Body).Decode(&fr.regBody)
 		if len(fr.regStatuses) > 0 {
 			status := fr.regStatuses[0]
 			fr.regStatuses = fr.regStatuses[1:]
+			if fr.regBare {
+				w.Header().Set("Content-Type", "text/html")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte("<html>Not Found</html>"))
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)
 			_, _ = w.Write([]byte(`{"error":"invalid_token","error_description":"forced"}`))
@@ -207,7 +219,7 @@ func TestOAuthRegistrationAndTokenFetch(t *testing.T) {
 	require.NotEmpty(t, fr.tokenAssertion)
 	privKey, err := loadPrivateKey(config.OAuthPrivateKeyFile)
 	require.NoError(t, err)
-	var claims jwt.StandardClaims
+	var claims jwt.RegisteredClaims
 	parsed, err := jwt.ParseWithClaims(fr.tokenAssertion, &claims, func(token *jwt.Token) (interface{}, error) {
 		return &privKey.PublicKey, nil
 	})
@@ -215,8 +227,12 @@ func TestOAuthRegistrationAndTokenFetch(t *testing.T) {
 	require.True(t, parsed.Valid)
 	assert.Equal(t, "generated-client-id", claims.Issuer)
 	assert.Equal(t, "generated-client-id", claims.Subject)
-	assert.Equal(t, fr.tokenURL(), claims.Audience)
-	assert.NotEmpty(t, claims.Id, "assertion must carry a jti")
+	assert.Equal(t, jwt.ClaimStrings{fr.tokenURL()}, claims.Audience)
+	var raw jwt.MapClaims
+	_, _, err = new(jwt.Parser).ParseUnverified(fr.tokenAssertion, &raw)
+	require.NoError(t, err)
+	assert.IsType(t, "", raw["aud"], "aud must be a single string, per the protocol")
+	assert.NotEmpty(t, claims.ID, "assertion must carry a jti")
 	assert.Equal(t, key0["kid"], parsed.Header["kid"])
 }
 
@@ -244,25 +260,26 @@ func TestOAuthRegistrationSkippedWhenStateExists(t *testing.T) {
 	// The assertion must be signed with the pre-existing client_id and the
 	// key's thumbprint.
 	require.NotEmpty(t, fr.tokenAssertion)
-	var claims jwt.StandardClaims
+	var claims jwt.RegisteredClaims
 	parsed, _, err := new(jwt.Parser).ParseUnverified(fr.tokenAssertion, &claims)
 	require.NoError(t, err)
 	assert.Equal(t, "pre-existing-client", claims.Issuer)
 	assert.Equal(t, jwkThumbprint(&key.PublicKey), parsed.Header["kid"])
 }
 
-func TestOAuthRegistrationReusesExistingKey(t *testing.T) {
+// A key left by an interrupted registration with the same token is reused,
+// so the registry can return the same client.
+func TestOAuthRegistrationRetryReusesKey(t *testing.T) {
 	fr := newFakeRegistry(t)
 	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
 
-	// A key but no state: e.g. a previous run crashed after generating the key.
 	key, err := generateTestKey()
 	require.NoError(t, err)
 	require.NoError(t, savePrivateKey(config.OAuthPrivateKeyFile, key))
+	require.NoError(t, savePendingRegistration(config.OAuthStateFile+".pending", tokenDigest(config.OAuthBootstrapToken)))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	ready, err := StartOAuthManager(ctx, config)
 	require.NoError(t, err)
 	waitReady(t, ready)
@@ -271,7 +288,33 @@ func TestOAuthRegistrationReusesExistingKey(t *testing.T) {
 	defer fr.mu.Unlock()
 	require.Equal(t, 1, fr.regCount)
 	key0 := fr.regBody["jwks"].(map[string]interface{})["keys"].([]interface{})[0].(map[string]interface{})
-	assert.Equal(t, jwkThumbprint(&key.PublicKey), key0["kid"], "registration must present the existing key")
+	assert.Equal(t, jwkThumbprint(&key.PublicKey), key0["kid"], "a retried registration must present the same key")
+	assert.NoFileExists(t, config.OAuthStateFile+".pending", "the marker is removed once registered")
+}
+
+// Re-registering after the client was revoked (state removed, new token) must
+// not reuse the old key, which may have leaked.
+func TestOAuthNewRegistrationGetsNewKey(t *testing.T) {
+	fr := newFakeRegistry(t)
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+
+	oldKey, err := generateTestKey()
+	require.NoError(t, err)
+	require.NoError(t, savePrivateKey(config.OAuthPrivateKeyFile, oldKey))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+	waitReady(t, ready)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	key0 := fr.regBody["jwks"].(map[string]interface{})["keys"].([]interface{})[0].(map[string]interface{})
+	assert.NotEqual(t, jwkThumbprint(&oldKey.PublicKey), key0["kid"], "a new registration must use a new key")
+	newKey, err := loadPrivateKey(config.OAuthPrivateKeyFile)
+	require.NoError(t, err)
+	assert.Equal(t, jwkThumbprint(&newKey.PublicKey), key0["kid"])
 }
 
 func TestOAuthWaitsWhileAuthorizationPending(t *testing.T) {
@@ -359,24 +402,60 @@ func TestOAuthRegistrationRetriesTransientErrors(t *testing.T) {
 	assert.Equal(t, 3, fr.regCount)
 }
 
-func TestOAuthRegistrationPermanentErrorStops(t *testing.T) {
+// A registry rejection must not exit (systemd would restart-loop it); the
+// shoveler waits, re-reads the token file, and registers once it changes.
+func TestOAuthRejectedRegistrationWaitsForNewToken(t *testing.T) {
 	shortOAuthDelays(t)
 	fr := newFakeRegistry(t)
-	fr.regStatuses = []int{http.StatusUnauthorized}
+	fr.regStatuses = []int{http.StatusUnauthorized, http.StatusUnauthorized}
 	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+	tokenFile := filepath.Join(t.TempDir(), "bootstrap.token")
+	require.NoError(t, os.WriteFile(tokenFile, []byte("used-token\n"), 0600))
+	config.OAuthBootstrapToken = ""
+	config.OAuthBootstrapTokenFile = tokenFile
 
-	m, err := newOAuthManager(config)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready, err := StartOAuthManager(ctx, config)
 	require.NoError(t, err)
 
-	err = m.run(context.Background(), make(chan struct{}))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid_token")
-	assert.NoFileExists(t, config.OAuthStateFile)
+	// Rejected twice; the operator then supplies a new token.
+	require.Eventually(t, func() bool {
+		fr.mu.Lock()
+		defer fr.mu.Unlock()
+		return fr.regCount >= 2
+	}, 5*time.Second, 5*time.Millisecond)
+	require.NoError(t, os.WriteFile(tokenFile, []byte("new-token\n"), 0600))
+	waitReady(t, ready)
 
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
-	assert.Equal(t, 1, fr.regCount, "a 4xx must not be retried")
-	assert.Equal(t, 0, fr.tokenCount)
+	assert.Equal(t, "Bearer used-token", fr.regBearers[0])
+	assert.Equal(t, "Bearer new-token", fr.regBearers[len(fr.regBearers)-1])
+	state, err := loadRegistrationState(config.OAuthStateFile)
+	require.NoError(t, err)
+	assert.Equal(t, "generated-client-id", state.ClientID)
+}
+
+// A bare 4xx (e.g. a proxy's 404 page while the registry is redeployed) is
+// not the registry rejecting the request, so it is retried.
+func TestOAuthRegistrationRetriesProxyErrors(t *testing.T) {
+	shortOAuthDelays(t)
+	oauthRejectedInterval = time.Hour // must not be used
+	fr := newFakeRegistry(t)
+	fr.regStatuses = []int{http.StatusNotFound, http.StatusForbidden}
+	fr.regBare = true
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+	waitReady(t, ready)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	assert.Equal(t, 3, fr.regCount)
 }
 
 func TestOAuthRunStopsOnCancel(t *testing.T) {
@@ -524,46 +603,60 @@ func TestOAuthConfigAllowsFirstRunWithoutToken(t *testing.T) {
 	assert.Empty(t, c.OAuthBootstrapToken)
 }
 
-func TestOAuthConfigUnreadableTokenFile(t *testing.T) {
+// A configured token file that can't be used must stop startup, never turn
+// into a registration that waits for approval; once registered it isn't read.
+func TestOAuthBootstrapTokenFileProblems(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
-		stateFile  bool
-		wantsPanic bool
+		contents   *string
+		registered bool
+		wantErr    string
 	}{
-		{"first run fails fast", false, true},
-		{"ignored once registered", true, false},
+		{"missing on first run", nil, false, "can't read bootstrap_token_file"},
+		{"empty on first run", ptr(" \n"), false, "is empty"},
+		{"missing once registered", nil, true, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			viper.Reset()
-			t.Cleanup(viper.Reset)
-
-			dir := t.TempDir()
-			stateFile := filepath.Join(dir, "registration.json")
-			if tc.stateFile {
-				require.NoError(t, saveRegistrationState(stateFile, &registrationState{ClientID: "c"}))
+			config := oauthTestConfig(t, "https://r.example.org/token", "https://r.example.org/register")
+			config.OAuthBootstrapToken = "inline-token"
+			config.OAuthBootstrapTokenFile = filepath.Join(t.TempDir(), "bootstrap.token")
+			if tc.contents != nil {
+				require.NoError(t, os.WriteFile(config.OAuthBootstrapTokenFile, []byte(*tc.contents), 0600))
 			}
-			configFile := filepath.Join(dir, "config.yaml")
-			yaml := "" +
-				"mq: amqp\n" +
-				"amqp:\n" +
-				"  url: amqps://example.com/vhost\n" +
-				"  oauth:\n" +
-				"    enabled: true\n" +
-				"    token_url: https://registry.example.org/token\n" +
-				"    registration_url: https://registry.example.org/register\n" +
-				"    bootstrap_token_file: " + filepath.Join(dir, "missing.token") + "\n" +
-				"    state_file: " + stateFile + "\n"
-			require.NoError(t, os.WriteFile(configFile, []byte(yaml), 0644))
-
-			c := &Config{}
-			read := func() { c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER") }
-			if tc.wantsPanic {
-				assert.Panics(t, read, "a configured but unreadable token must not fall back to approval mode")
+			if tc.registered {
+				key, err := generateTestKey()
+				require.NoError(t, err)
+				require.NoError(t, savePrivateKey(config.OAuthPrivateKeyFile, key))
+				require.NoError(t, saveRegistrationState(config.OAuthStateFile, &registrationState{ClientID: "c"}))
+			}
+			_, err := newOAuthManager(config)
+			if tc.wantErr == "" {
+				assert.NoError(t, err)
 			} else {
-				assert.NotPanics(t, read)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
 			}
 		})
 	}
+}
+
+func ptr(s string) *string { return &s }
+
+// A state file that can't be checked (e.g. permission denied) is an error,
+// not a first run: re-registering would replace a working client.
+func TestOAuthStateFileStatErrorIsNotFirstRun(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	config := oauthTestConfig(t, "https://r.example.org/token", "https://r.example.org/register")
+	dir := filepath.Dir(config.OAuthStateFile)
+	require.NoError(t, os.MkdirAll(dir, 0700))
+	require.NoError(t, os.Chmod(dir, 0))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+
+	_, err := newOAuthManager(config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "can't check OAuth state file")
 }
 
 func TestOAuthConfigValidationSucceedsWithStateFileOnly(t *testing.T) {
@@ -595,30 +688,14 @@ func TestOAuthConfigValidationSucceedsWithStateFileOnly(t *testing.T) {
 }
 
 func TestOAuthBootstrapTokenFileWins(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
+	config := oauthTestConfig(t, "https://r.example.org/token", "https://r.example.org/register")
+	config.OAuthBootstrapToken = "inline-bootstrap"
+	config.OAuthBootstrapTokenFile = filepath.Join(t.TempDir(), "bootstrap.token")
+	require.NoError(t, os.WriteFile(config.OAuthBootstrapTokenFile, []byte("  file-bootstrap\n"), 0600))
 
-	dir := t.TempDir()
-	tokenFile := filepath.Join(dir, "bootstrap.token")
-	require.NoError(t, os.WriteFile(tokenFile, []byte("  file-bootstrap\n"), 0600))
-
-	configFile := filepath.Join(dir, "config.yaml")
-	yaml := "" +
-		"mq: amqp\n" +
-		"amqp:\n" +
-		"  url: amqps://example.com/vhost\n" +
-		"  oauth:\n" +
-		"    enabled: true\n" +
-		"    token_url: https://kc.example.org/token\n" +
-		"    registration_url: https://kc.example.org/register\n" +
-		"    bootstrap_token: inline-bootstrap\n" +
-		"    bootstrap_token_file: " + tokenFile + "\n" +
-		"    state_file: " + filepath.Join(dir, "registration.json") + "\n"
-	require.NoError(t, os.WriteFile(configFile, []byte(yaml), 0644))
-
-	c := &Config{}
-	c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER")
-	assert.Equal(t, "file-bootstrap", c.OAuthBootstrapToken, "bootstrap_token_file must win and be trimmed")
+	m, err := newOAuthManager(config)
+	require.NoError(t, err)
+	assert.Equal(t, "file-bootstrap", m.bootstrapToken, "bootstrap_token_file must win and be trimmed")
 }
 
 // generateTestKey produces a small RSA key for tests.
@@ -756,4 +833,173 @@ func TestOAuthDefaultRegistryURLs(t *testing.T) {
 			assert.Equal(t, defaultReportURL(tc.wantToken), c.OAuthReportURL, "health reports follow the token URL")
 		})
 	}
+}
+
+// testAccessToken builds an (unverified) access token for sub expiring in d.
+func testAccessToken(t *testing.T, sub string, d time.Duration) string {
+	t.Helper()
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Subject:   sub,
+		Audience:  jwt.ClaimStrings{"my_rabbit_server", "other"},
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(d)),
+	}).SignedString([]byte("test"))
+	require.NoError(t, err)
+	return tok
+}
+
+// registeredConfig returns a config with a saved registration for client.
+func registeredConfig(t *testing.T, fr *fakeRegistry, client string) *Config {
+	t.Helper()
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+	key, err := generateTestKey()
+	require.NoError(t, err)
+	require.NoError(t, savePrivateKey(config.OAuthPrivateKeyFile, key))
+	require.NoError(t, saveRegistrationState(config.OAuthStateFile, &registrationState{ClientID: client}))
+	return config
+}
+
+// After a restart a still-valid token on disk lets AMQP start without the
+// registry, e.g. during a registry outage.
+func TestOAuthResumeUsesValidTokenOnDisk(t *testing.T) {
+	fr := newFakeRegistry(t)
+	config := registeredConfig(t, fr, "client-1")
+	require.NoError(t, os.WriteFile(config.AmqpToken, []byte(testAccessToken(t, "client-1", time.Hour)), 0600))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+	waitReady(t, ready)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	assert.Equal(t, 0, fr.tokenCount, "the token on disk is good for an hour; no fetch yet")
+}
+
+func TestOAuthResumeIgnoresUnusableTokenOnDisk(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		token func(t *testing.T) string
+	}{
+		{"another client's", func(t *testing.T) string { return testAccessToken(t, "someone-else", time.Hour) }},
+		{"nearly expired", func(t *testing.T) string { return testAccessToken(t, "client-1", 10*time.Second) }},
+		{"garbage", func(t *testing.T) string { return "not-a-jwt" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fr := newFakeRegistry(t)
+			config := registeredConfig(t, fr, "client-1")
+			require.NoError(t, os.WriteFile(config.AmqpToken, []byte(tc.token(t)), 0600))
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ready, err := StartOAuthManager(ctx, config)
+			require.NoError(t, err)
+			waitReady(t, ready)
+
+			fr.mu.Lock()
+			defer fr.mu.Unlock()
+			assert.Equal(t, 1, fr.tokenCount)
+		})
+	}
+}
+
+// When the token can't be written, only the write is retried; the registry
+// isn't asked for a new token every time.
+func TestOAuthTokenWriteFailureRetriesWriteOnly(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	shortOAuthDelays(t)
+	fr := newFakeRegistry(t)
+	config := oauthTestConfig(t, fr.tokenURL(), fr.regURL())
+	tokenDir := filepath.Join(t.TempDir(), "tokens")
+	require.NoError(t, os.MkdirAll(tokenDir, 0500))
+	t.Cleanup(func() { _ = os.Chmod(tokenDir, 0700) })
+	config.AmqpToken = filepath.Join(tokenDir, "token")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready, err := StartOAuthManager(ctx, config)
+	require.NoError(t, err)
+
+	time.Sleep(200 * time.Millisecond) // ~20 write retries
+	select {
+	case <-ready:
+		t.Fatal("ready before the token could be written")
+	default:
+	}
+	require.NoError(t, os.Chmod(tokenDir, 0700))
+	waitReady(t, ready)
+
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	assert.Equal(t, 1, fr.tokenCount, "write failures must not mint new tokens")
+}
+
+func TestLifetimeFromJWTAcceptsArrayAudience(t *testing.T) {
+	remaining := lifetimeFromJWT(testAccessToken(t, "c", time.Hour))
+	assert.InDelta(t, time.Hour.Seconds(), remaining.Seconds(), 5)
+}
+
+// readTestConfig reads YAML config text the way the shoveler does.
+func readTestConfig(t *testing.T, yaml string) *Config {
+	t.Helper()
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configFile, []byte(yaml), 0644))
+	c := &Config{}
+	c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER")
+	return c
+}
+
+// Setting one endpoint points the other at the same registry, so a
+// registration token for one registry is never sent to another.
+func TestOAuthEndpointsFollowEachOther(t *testing.T) {
+	c := readTestConfig(t, "mq: amqp\namqp:\n  url: amqps://example.com/vhost\n  oauth:\n    enabled: true\n"+
+		"    token_url: https://custom.example.org/auth/token\n")
+	assert.Equal(t, "https://custom.example.org/auth/register", c.OAuthRegistrationURL)
+	assert.Equal(t, "https://custom.example.org/auth/report", c.OAuthReportURL)
+
+	c = readTestConfig(t, "mq: amqp\namqp:\n  url: amqps://example.com/vhost\n  oauth:\n    enabled: true\n"+
+		"    registration_url: https://custom.example.org/register\n")
+	assert.Equal(t, "https://custom.example.org/token", c.OAuthTokenURL)
+
+	assert.Panics(t, func() {
+		readTestConfig(t, "mq: amqp\namqp:\n  url: amqps://example.com/vhost\n  oauth:\n    enabled: true\n"+
+			"    token_url: https://custom.example.org/oauth2/access\n")
+	}, "an endpoint the other can't be derived from must not fall back to the OSG registry")
+}
+
+// Upgraded installs keep the old config.yaml, which pinned token_location
+// under /etc where the service user can't write.
+func TestOAuthIgnoresLegacyTokenLocation(t *testing.T) {
+	c := readTestConfig(t, "mq: amqp\namqp:\n  url: amqps://example.com/vhost\n"+
+		"  token_location: /etc/xrootd-monitoring-shoveler/token\n  oauth:\n    enabled: true\n")
+	assert.Equal(t, "/var/lib/xrootd-monitoring-shoveler/token", c.AmqpToken)
+
+	c = readTestConfig(t, "mq: amqp\namqp:\n  url: amqps://example.com/vhost\n"+
+		"  token_location: /etc/xrootd-monitoring-shoveler/token\n")
+	assert.Equal(t, "/etc/xrootd-monitoring-shoveler/token", c.AmqpToken, "unchanged without OAuth")
+}
+
+// The collector's rabbitmq input can't use the OAuth publish token.
+func TestOAuthInputNeedsItsOwnCredentials(t *testing.T) {
+	base := "mq: amqp\ninput:\n  type: rabbitmq\n%samqp:\n  url: amqps://example.com/vhost\n  oauth:\n    enabled: %s\n"
+	assert.Panics(t, func() { readTestConfig(t, fmt.Sprintf(base, "", "true")) })
+
+	c := readTestConfig(t, fmt.Sprintf(base, "  broker_url: amqps://user:pw@in.example.com/vhost\n", "true"))
+	assert.Empty(t, c.Input.TokenLocation)
+
+	c = readTestConfig(t, fmt.Sprintf(base, "  token_location: /etc/input.token\n", "true"))
+	assert.Equal(t, "/etc/input.token", c.Input.TokenLocation)
+
+	c = readTestConfig(t, fmt.Sprintf(base, "", "false"))
+	assert.Equal(t, c.AmqpToken, c.Input.TokenLocation, "without OAuth the input shares the AMQP token as before")
+}
+
+func TestParseBrokerURLHidesCredentials(t *testing.T) {
+	_, err := parseBrokerURL("amqps://user:s3cret@broker.example.org/vhost\n")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "s3cret")
 }

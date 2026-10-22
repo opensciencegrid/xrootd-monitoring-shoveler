@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -78,13 +77,7 @@ func metricValue(m prometheus.Metric) uint64 {
 // (Shoveler-registry serves .../token and .../report), or "" when tokenURL
 // doesn't end in /token.
 func defaultReportURL(tokenURL string) string {
-	u, err := url.Parse(tokenURL)
-	if err != nil || u.Host == "" || !strings.HasSuffix(u.Path, "/token") {
-		return ""
-	}
-	u.Path = strings.TrimSuffix(u.Path, "token") + "report"
-	u.RawPath, u.RawQuery, u.Fragment = "", "", ""
-	return u.String()
+	return siblingURL(tokenURL, "/token", "/report")
 }
 
 // Reporter sends health reports to the registry.

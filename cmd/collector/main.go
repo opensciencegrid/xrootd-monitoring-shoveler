@@ -546,7 +546,7 @@ func runCollectorModeRabbitMQ(config *shoveler.Config, output connectors.OutputC
 
 	exchange := ""    // Can be added to config if needed
 	routingKey := "#" // Can be added to config if needed
-	tokenPath := config.AmqpToken
+	tokenPath := config.Input.TokenLocation
 
 	reader := input.NewRabbitMQReader(brokerURL, queueName, exchange, routingKey, tokenPath, logger)
 	if err := reader.Start(); err != nil {

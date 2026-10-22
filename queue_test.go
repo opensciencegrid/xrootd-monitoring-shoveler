@@ -1,12 +1,14 @@
 package shoveler
 
 import (
+	"fmt"
 	"path"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestQueueInsert tests the good validation
@@ -106,4 +108,20 @@ func TestQueueLotsEntries(t *testing.T) {
 		assert.Equal(t, msgString, string(msg.Message))
 	}
 
+}
+
+// The queue drops its oldest messages beyond queue_max_messages, so a long
+// outage or approval wait can't fill the disk.
+func TestQueueMaxMessagesDropsOldest(t *testing.T) {
+	config := &Config{QueueDir: t.TempDir(), QueueMaxMessages: 150}
+	cq := NewConfirmationQueue(config)
+	before := metricValue(QueueDropped)
+	for i := 0; i < 200; i++ {
+		cq.Enqueue([]byte(fmt.Sprint(i)))
+	}
+	assert.Equal(t, 150, cq.Size())
+	assert.Equal(t, uint64(50), metricValue(QueueDropped)-before)
+	msg, err := cq.Dequeue()
+	require.NoError(t, err)
+	assert.Equal(t, "50", string(msg.Message), "the oldest messages are the ones dropped")
 }

@@ -12,6 +12,10 @@ input:
   
   # For message_bus input:
   # broker_url: amqp://guest:guest@localhost:5672/
+  # Token to consume with when broker_url has no credentials. Defaults to the
+  # amqp token_location; with amqp.oauth enabled it must be set (or credentials
+  # put in broker_url), since the OAuth token only grants publishing.
+  # token_location: /etc/xrootd-monitoring-shoveler/input-token
   # topic: xrootd-packets
   # subscription: xrootd-shoveler
   # base64_encoded: true
@@ -116,6 +120,10 @@ profile:
 # it will store messages over the 100 in memory onto disk into this directory.  Once the connection has been re-established
 # the queue will be emptied.  The queue on disk is persistent between restarts, so a persistent directory should be used.
 queue_directory: /var/spool/xrootd-monitoring-shoveler/queue
+# Drop the oldest queued messages beyond this many, so a long broker outage
+# (or, with amqp.oauth, a registration awaiting approval) can't fill the disk.
+# Default: no limit, or 1000000 when amqp.oauth is enabled.
+# queue_max_messages: 1000000
 
 # Mapping configuration
 # If map.all is set, all messages will be mapped to the configured origin.
