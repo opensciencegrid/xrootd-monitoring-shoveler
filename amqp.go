@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net/url"
 	"os"
 	"strings"
@@ -38,9 +37,9 @@ type WorkerPool struct {
 	workersCancel context.CancelFunc
 
 	messagesQueue chan *MessageStruct // Shared channel for all workers
-	// retry holds messages a stopped worker was still publishing; the next
+	// retry holds messages a stopped worker hadn't had confirmed; the next
 	// generation publishes them before anything else, so a rotation neither
-	// loses nor reorders them.
+	// loses nor reorders them. It holds every worker's whole window.
 	retry chan *MessageStruct
 	wg    sync.WaitGroup
 }
@@ -50,12 +49,26 @@ type PublishWorker struct {
 	id            int
 	config        *Config
 	amqpURL       url.URL
-	session       *Session
-	messagesQueue chan *MessageStruct // Reference to shared channel
-	retry         chan *MessageStruct // Reference to the pool's retry channel
+	session       channelSource        // its own AMQP session; created in run unless set
+	window        int                  // most unconfirmed messages in flight
+	messagesQueue chan *MessageStruct  // Reference to shared channel
+	retry         chan *MessageStruct  // Reference to the pool's retry channel
+	requeue       func(*MessageStruct) // last resort if retry is full
 	ctx           context.Context
 	wg            sync.WaitGroup
 }
+
+// defaultConfirmWindow is the default amqp.confirm_window.
+const defaultConfirmWindow = 256
+
+// confirmTimeout is how long a worker waits without any confirm while
+// messages are in flight before it treats the channel as stuck and replaces
+// it. A var so tests can shorten it.
+var confirmTimeout = 30 * time.Second
+
+// channelPoll is how often a worker checks for a usable channel while its
+// session (re)connects.
+const channelPoll = 100 * time.Millisecond
 
 // This should run in a new go co-routine.
 func StartAMQP(config *Config, queue *ConfirmationQueue) {
@@ -109,8 +122,16 @@ func newWorkerPool(config *Config, queue *ConfirmationQueue) *WorkerPool {
 		ctx:           ctx,
 		cancel:        cancel,
 		messagesQueue: make(chan *MessageStruct, 1000), // Shared buffered channel
-		retry:         make(chan *MessageStruct, config.AmqpPublishWorkers+1),
+		retry:         make(chan *MessageStruct, max(config.AmqpPublishWorkers, 1)*(confirmWindow(config)+1)),
 	}
+}
+
+// confirmWindow is the configured confirm window, or the default.
+func confirmWindow(config *Config) int {
+	if config.AmqpConfirmWindow > 0 {
+		return config.AmqpConfirmWindow
+	}
+	return defaultConfirmWindow
 }
 
 // workerCount is the number of publishing workers to run.
@@ -133,9 +154,13 @@ func (p *WorkerPool) startWorkers() {
 			id:            i,
 			config:        p.config,
 			amqpURL:       *copyURL(p.url),
+			window:        confirmWindow(p.config),
 			messagesQueue: p.messagesQueue, // Share the pool's channel
 			retry:         p.retry,
-			ctx:           ctx,
+			requeue: func(m *MessageStruct) {
+				p.queue.EnqueueToExchange(m.Message, m.Exchange)
+			},
+			ctx: ctx,
 		}
 		p.workers = append(p.workers, worker)
 		worker.Start()
@@ -293,83 +318,162 @@ func (w *PublishWorker) run() {
 	log.Debugf("Worker %d: Starting with own AMQP connection", w.id)
 
 	// Create own AMQP session
-	w.session = New(w.amqpURL)
+	if w.session == nil {
+		w.session = newSession(w.amqpURL, w.window)
+	}
 	defer func() {
-		if w.session != nil {
-			if err := w.session.Close(); err != nil {
-				log.Debugf("Worker %d: Error closing session: %v", w.id, err)
-			}
+		if err := w.session.Close(); err != nil {
+			log.Debugf("Worker %d: Error closing session: %v", w.id, err)
 		}
 	}()
 
+	w.publishLoop()
+}
+
+// inflight is a message taken by the worker and not yet confirmed. tag is
+// its delivery tag on the current channel, or 0 if it hasn't been
+// published on it.
+type inflight struct {
+	msg *MessageStruct
+	tag uint64
+}
+
+// publishLoop publishes with up to w.window messages awaiting confirms.
+// Messages are counted as published only when the broker acks them. On a
+// nack, a closed channel or a stuck one, every unconfirmed message is
+// republished, in order, on the next channel before anything new, so
+// ordering holds (duplicates are possible: delivery is at-least-once). When
+// the worker is stopped, unconfirmed messages are handed back in order.
+func (w *PublishWorker) publishLoop() {
+	var pending []inflight
+	var ch confirmChannel // the channel pending was published on
+	var lastProgress time.Time
+	watchdog := time.NewTicker(confirmTimeout / 4)
+	defer watchdog.Stop()
+
+	// dropChannel abandons ch: everything pending goes out again on the
+	// next channel.
+	dropChannel := func(reason string) {
+		if ch != nil {
+			log.Warningf("Worker %d: %s; republishing %d unconfirmed messages on a new channel",
+				w.id, reason, len(pending))
+			ch.close()
+		}
+		ch = nil
+		for i := range pending {
+			pending[i].tag = 0
+		}
+	}
+
+	// send publishes m on ch and tracks it; on failure it is kept for the
+	// next channel.
+	send := func(m *MessageStruct) {
+		if len(pending) == 0 {
+			lastProgress = time.Now()
+		}
+		tag, err := ch.publish(w.exchange(m), m.Message)
+		pending = append(pending, inflight{msg: m, tag: tag})
+		if err != nil {
+			dropChannel("publish failed: " + err.Error())
+		}
+	}
+
 	for {
-		// Once stopped, leave handed-back messages for the next generation.
 		if w.ctx.Err() != nil {
+			w.handBackAll(pending)
 			log.Debugf("Worker %d: Stopping", w.id)
 			return
 		}
-		// Messages a previous generation of workers didn't finish go first.
-		select {
-		case msgStruct := <-w.retry:
-			w.publishMessage(msgStruct)
-			continue
-		default:
-		}
 
-		select {
-		case <-w.ctx.Done():
-			log.Debugf("Worker %d: Stopping", w.id)
-			return
-		case msgStruct := <-w.retry:
-			w.publishMessage(msgStruct)
-		case msgStruct := <-w.messagesQueue:
-			w.publishMessage(msgStruct)
-		}
-	}
-}
-
-// handBack returns a message this worker could not finish publishing, so
-// the next generation of workers publishes it first.
-func (w *PublishWorker) handBack(msgStruct *MessageStruct) {
-	select {
-	case w.retry <- msgStruct:
-	default:
-		// Cannot happen while each worker hands back at most one message;
-		// don't block shutdown if it somehow does.
-		log.Errorf("Worker %d: dropping a message that was being published during shutdown", w.id)
-	}
-}
-
-// publishMessage publishes a single message with retry logic
-func (w *PublishWorker) publishMessage(msgStruct *MessageStruct) {
-	// Use specific exchange if provided, otherwise use default
-	exchange := w.config.AmqpExchange
-	if msgStruct.Exchange != "" {
-		exchange = msgStruct.Exchange
-	}
-
-	for {
-		select {
-		case <-w.ctx.Done():
-			w.handBack(msgStruct)
-			return
-		default:
-			err := w.session.Push(w.ctx, exchange, msgStruct.Message)
-			if err != nil {
-				log.Warningf("Worker %d: Failed to push message: %v", w.id, err)
-				// Random backoff between 1-5 seconds
-				randSleep := rand.Intn(4000) + 1000
-				select {
-				case <-w.ctx.Done():
-					w.handBack(msgStruct)
-					return
-				case <-time.After(time.Duration(randSleep) * time.Millisecond):
+		if ch == nil {
+			cur := w.session.current()
+			if cur == nil {
+				if !sleepCtx(w.ctx, channelPoll) {
 					continue
 				}
+				continue
 			}
-			// The broker confirmed the message
+			ch = cur
+			lastProgress = time.Now()
+			// Republish everything unconfirmed, in order, before new messages.
+			for i := range pending {
+				tag, err := ch.publish(w.exchange(pending[i].msg), pending[i].msg.Message)
+				if err != nil {
+					dropChannel("republish failed: " + err.Error())
+					break
+				}
+				pending[i].tag = tag
+			}
+			continue
+		}
+
+		// Room in the window: messages a previous worker generation didn't
+		// finish go first.
+		var retry, queue <-chan *MessageStruct
+		if len(pending) < w.window {
+			select {
+			case m := <-w.retry:
+				send(m)
+				continue
+			default:
+			}
+			retry, queue = w.retry, w.messagesQueue
+		}
+
+		select {
+		case <-w.ctx.Done():
+		case m := <-retry:
+			send(m)
+		case m := <-queue:
+			send(m)
+		case c, ok := <-ch.confirms():
+			if !ok {
+				dropChannel("channel closed")
+				continue
+			}
+			i := 0
+			for i < len(pending) && pending[i].tag != c.DeliveryTag {
+				i++
+			}
+			if i == len(pending) || c.DeliveryTag == 0 {
+				continue // not one of ours (e.g. a duplicate)
+			}
+			if !c.Ack {
+				dropChannel("the broker refused a message")
+				continue
+			}
+			pending = append(pending[:i], pending[i+1:]...)
+			lastProgress = time.Now()
 			MessagesPublished.Inc()
-			return
+		case <-watchdog.C:
+			if len(pending) > 0 && time.Since(lastProgress) > confirmTimeout {
+				dropChannel(fmt.Sprintf("no confirms for %s", confirmTimeout))
+			}
+		}
+	}
+}
+
+// exchange is where m goes: its own exchange, or the configured default.
+func (w *PublishWorker) exchange(m *MessageStruct) string {
+	if m.Exchange != "" {
+		return m.Exchange
+	}
+	return w.config.AmqpExchange
+}
+
+// handBackAll returns messages this worker took but didn't get confirmed,
+// in order, so the next generation of workers publishes them first. If the
+// retry channel is somehow full they go back to the durable queue rather
+// than being dropped.
+func (w *PublishWorker) handBackAll(pending []inflight) {
+	for _, p := range pending {
+		select {
+		case w.retry <- p.msg:
+		default:
+			log.Warningf("Worker %d: retry channel full; returning a message to the queue", w.id)
+			if w.requeue != nil {
+				w.requeue(p.msg)
+			}
 		}
 	}
 }
@@ -413,22 +517,27 @@ type Session struct {
 	isReady         bool
 	mu              sync.Mutex // guards isReady, connection, channel, pub
 	closeOnce       sync.Once
+	confirmBuffer   int           // capacity of each channel's confirm listener
 	stopped         chan struct{} // closed when handleReconnect returns
 }
 
-var (
-	errNotConnected  = errors.New("not connected to a server")
-	errAlreadyClosed = errors.New("already closed: not connected to the server")
-	errShutdown      = errors.New("session is shutting down")
-)
+var errAlreadyClosed = errors.New("already closed: not connected to the server")
 
 // New creates a new consumer state instance, and automatically
 // attempts to connect to the server.
 func New(url url.URL) *Session {
+	return newSession(url, defaultConfirmWindow)
+}
+
+// newSession is New for a worker with up to window unconfirmed messages.
+func newSession(url url.URL, window int) *Session {
 	session := Session{
 		url:     url,
 		done:    make(chan bool),
 		stopped: make(chan struct{}),
+		// streadway's channel reader blocks if this listener's buffer can't
+		// hold every outstanding confirm.
+		confirmBuffer: max(1024, 2*window),
 	}
 	go session.handleReconnect()
 	return &session
@@ -556,29 +665,53 @@ func (session *Session) setReady(ready bool) {
 // and updates the channel listeners to reflect this.
 func (session *Session) changeChannel(channel *amqp.Channel) {
 	session.notifyChanClose = make(chan *amqp.Error)
-	// Room for late confirms of resent messages, so the channel's reader
-	// never blocks on this listener.
-	confirms := make(chan amqp.Confirmation, 16)
+	// The worker reads confirms as they come; the buffer keeps the
+	// channel's reader from blocking while the worker is publishing.
+	confirms := make(chan amqp.Confirmation, session.confirmBuffer)
 	channel.NotifyClose(session.notifyChanClose)
 	channel.NotifyPublish(confirms)
 	session.mu.Lock()
 	session.channel = channel
-	session.pub = &publisher{channel: channel, confirms: confirms}
+	session.pub = &publisher{channel: channel, confirmsChan: confirms}
 	session.mu.Unlock()
 }
 
-// publisher is one confirm-mode channel and the delivery tags assigned on it.
-// The broker numbers a channel's publishes 1, 2, 3, ... and confirms them by
-// that tag; lastTag mirrors the count. Only the session's single publishing
-// goroutine (its worker) uses it.
-type publisher struct {
-	channel  *amqp.Channel
-	confirms chan amqp.Confirmation
-	lastTag  uint64
+// confirmChannel is a confirm-mode AMQP channel. Publishes are numbered 1,
+// 2, 3, ... and confirmed by that delivery tag, in order; the confirms
+// channel is closed when the AMQP channel closes.
+type confirmChannel interface {
+	publish(exchange string, data []byte) (uint64, error)
+	confirms() <-chan amqp.Confirmation
+	close() // abandon the channel; the session opens a new one
 }
 
-// publish sends one message and records its delivery tag in lastTag.
-func (p *publisher) publish(exchange string, data []byte) error {
+// channelSource provides a worker's current confirm channel, or nil while it
+// (re)connects.
+type channelSource interface {
+	current() confirmChannel
+	Close() error
+}
+
+// current returns the session's channel if it is ready to publish on.
+func (session *Session) current() confirmChannel {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if !session.isReady || session.pub == nil {
+		return nil
+	}
+	return session.pub
+}
+
+// publisher is one confirm-mode channel and the delivery tags assigned on
+// it, mirroring the broker's numbering. Only the session's worker uses it.
+type publisher struct {
+	channel      *amqp.Channel
+	confirmsChan chan amqp.Confirmation
+	lastTag      uint64
+}
+
+// publish sends one message and returns its delivery tag.
+func (p *publisher) publish(exchange string, data []byte) (uint64, error) {
 	err := p.channel.Publish(
 		exchange, // Exchange
 		"",       // Routing key
@@ -589,83 +722,17 @@ func (p *publisher) publish(exchange string, data []byte) error {
 			Body:        data,
 		},
 	)
-	if err == nil {
-		p.lastTag++
+	if err != nil {
+		return 0, err
 	}
-	return err
+	p.lastTag++
+	return p.lastTag, nil
 }
 
-// errConfirmTimeout means no confirm arrived in time; the message is resent.
-var errConfirmTimeout = errors.New("no confirm from the broker")
+func (p *publisher) confirms() <-chan amqp.Confirmation { return p.confirmsChan }
 
-// awaitConfirm waits for the confirm of one of tags: this message's
-// publishes, including resends. Confirms for other tags belong to earlier
-// messages (e.g. a late ack of a resend) and are skipped, so they can never
-// confirm this one.
-func awaitConfirm(ctx context.Context, done <-chan bool, confirms <-chan amqp.Confirmation,
-	tags map[uint64]bool, timeout time.Duration) error {
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	for {
-		select {
-		case confirm, ok := <-confirms:
-			if !ok {
-				return errNotConfirmed // the channel closed
-			}
-			if !tags[confirm.DeliveryTag] {
-				continue
-			}
-			if !confirm.Ack {
-				return errNotConfirmed
-			}
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-done:
-			return errShutdown
-		case <-timer.C:
-			return errConfirmTimeout
-		}
-	}
-}
-
-// errNotConfirmed means the broker refused the message (nack) or closed the
-// channel before confirming it, e.g. a missing exchange or no permission.
-var errNotConfirmed = errors.New("message not confirmed by the broker")
-
-// Push publishes data and waits for the broker to confirm it. If no confirm
-// arrives within resendDelay the message is re-sent. It returns an error if
-// the broker refuses the message, the channel closes, or ctx is cancelled
-// (e.g. the worker is being replaced on a token rotation), so the caller
-// keeps the message and retries instead of counting it as published.
-func (session *Session) Push(ctx context.Context, exchange string, data []byte) error {
-	session.mu.Lock()
-	ready, pub := session.isReady, session.pub
-	session.mu.Unlock()
-	if !ready {
-		return errNotConnected
-	}
-	tags := map[uint64]bool{}
-	for {
-		if err := pub.publish(exchange, data); err != nil {
-			log.Warningln("Push failed. Retrying...")
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-session.done:
-				return errShutdown
-			case <-time.After(resendDelay):
-			}
-			continue
-		}
-		tags[pub.lastTag] = true
-		err := awaitConfirm(ctx, session.done, pub.confirms, tags, resendDelay)
-		if !errors.Is(err, errConfirmTimeout) {
-			return err
-		}
-		log.Warningln("Push didn't confirm. Retrying...")
-	}
-}
+// close closes the channel; the session's handleReInit opens a new one.
+func (p *publisher) close() { _ = p.channel.Close() }
 
 // Close will cleanly shutdown the channel and connection.
 func (session *Session) Close() error {

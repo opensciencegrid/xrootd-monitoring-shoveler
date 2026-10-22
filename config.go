@@ -86,6 +86,7 @@ type Config struct {
 	AmqpExchangeWLCGTPC   string   // Exchange for WLCG formatted TPC events
 	AmqpToken             string   // File location of the token
 	AmqpPublishWorkers    int      // Number of concurrent publishing workers
+	AmqpConfirmWindow     int      // Most unconfirmed messages in flight per worker
 	ListenPort            int
 	ListenIp              string
 	DestUdp               []string
@@ -339,6 +340,15 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		viper.SetDefault("amqp.publish_workers", 10)
 		c.AmqpPublishWorkers = viper.GetInt("amqp.publish_workers")
 		log.Debugln("AMQP Publish Workers:", c.AmqpPublishWorkers)
+
+		// Messages each worker publishes ahead of the broker's confirms.
+		viper.SetDefault("amqp.confirm_window", defaultConfirmWindow)
+		c.AmqpConfirmWindow = viper.GetInt("amqp.confirm_window")
+		if c.AmqpConfirmWindow < 1 {
+			log.Warningln("amqp.confirm_window must be at least 1; using", defaultConfirmWindow)
+			c.AmqpConfirmWindow = defaultConfirmWindow
+		}
+		log.Debugln("AMQP Confirm Window:", c.AmqpConfirmWindow)
 
 		// OAuth2 self-registration + private_key_jwt configuration
 		viper.SetDefault("amqp.oauth.enabled", false)

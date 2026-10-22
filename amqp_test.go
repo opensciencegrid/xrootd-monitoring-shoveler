@@ -1,14 +1,12 @@
 package shoveler
 
 import (
-	"context"
 	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,24 +56,23 @@ func TestRestartKeepsPoolRunningAndMessages(t *testing.T) {
 	for i := 0; i < n; i++ {
 		cq.Enqueue([]byte("msg"))
 	}
-	// The worker holds one message; the feeder moves the rest to the channel.
+	// With no channel the worker takes nothing; the feeder moves all of
+	// them to the shared channel.
 	require.Eventually(t, func() bool {
-		return cq.Size() == 0 && len(pool.messagesQueue) == n-1
+		return cq.Size() == 0 && len(pool.messagesQueue) == n
 	}, 5*time.Second, 10*time.Millisecond)
 
 	for i := 0; i < 3; i++ {
 		rotate(pool, "tok"+string(rune('2'+i)))
 		require.NoError(t, pool.ctx.Err(), "a rotation must not end the pool")
-		// The new worker takes the handed-back message first.
-		require.Eventually(t, func() bool {
-			return len(pool.retry) == 0 && len(pool.messagesQueue) == n-1
-		}, 5*time.Second, 10*time.Millisecond, "no message may be lost on rotation %d", i+1)
+		require.Equal(t, n, len(pool.messagesQueue)+len(pool.retry),
+			"no message may be lost on rotation %d", i+1)
 	}
 
 	// The feeder is still running after the rotations.
 	cq.Enqueue([]byte("after"))
 	require.Eventually(t, func() bool {
-		return cq.Size() == 0 && len(pool.messagesQueue) == n
+		return cq.Size() == 0 && len(pool.messagesQueue) == n+1
 	}, 5*time.Second, 10*time.Millisecond, "the feeder must survive rotations")
 	assert.Equal(t, "tok4", passwordOf(pool.workers[0].amqpURL))
 }
@@ -99,41 +96,6 @@ func TestSessionCloseStopsReconnectWhenNotConnected(t *testing.T) {
 	case <-time.After(2 * reconnectDelay):
 		t.Fatal("handleReconnect kept running after Close")
 	}
-}
-
-// A late ack for an earlier message (e.g. of a resend) must not confirm the
-// message being published now.
-func TestAwaitConfirmIgnoresOtherMessagesConfirms(t *testing.T) {
-	ctx := context.Background()
-	done := make(chan bool)
-
-	confirms := make(chan amqp.Confirmation, 4)
-	confirms <- amqp.Confirmation{DeliveryTag: 1, Ack: true} // previous message's resend
-	confirms <- amqp.Confirmation{DeliveryTag: 2, Ack: false}
-	assert.ErrorIs(t, awaitConfirm(ctx, done, confirms, map[uint64]bool{2: true}, time.Second), errNotConfirmed)
-
-	confirms <- amqp.Confirmation{DeliveryTag: 3, Ack: true} // stale
-	confirms <- amqp.Confirmation{DeliveryTag: 5, Ack: true}
-	assert.NoError(t, awaitConfirm(ctx, done, confirms, map[uint64]bool{4: true, 5: true}, time.Second),
-		"an ack of either of this message's publishes confirms it")
-
-	confirms <- amqp.Confirmation{DeliveryTag: 6, Ack: true} // stale only
-	assert.ErrorIs(t, awaitConfirm(ctx, done, confirms, map[uint64]bool{7: true}, 50*time.Millisecond), errConfirmTimeout)
-
-	close(confirms)
-	assert.ErrorIs(t, awaitConfirm(ctx, done, confirms, map[uint64]bool{8: true}, time.Second), errNotConfirmed,
-		"a closed channel means the message wasn't confirmed")
-}
-
-// Cancelling the worker (token rotation) must interrupt the wait for a
-// confirm, so the message is handed back and the rotation proceeds.
-func TestAwaitConfirmStopsOnCancel(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
-	start := time.Now()
-	err := awaitConfirm(ctx, make(chan bool), make(chan amqp.Confirmation), map[uint64]bool{1: true}, time.Minute)
-	assert.ErrorIs(t, err, context.Canceled)
-	assert.Less(t, time.Since(start), time.Second)
 }
 
 // The token goes into the pool's URL only; config.AmqpURL stays without

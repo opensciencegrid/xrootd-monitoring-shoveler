@@ -223,6 +223,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_EXCHANGE_WLCG_TPC` - WLCG formatted TPC events exchange (default: `xrd-wlcg-tpc-events`)
 * `<PREFIX>_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`, or `/var/lib/xrootd-monitoring-shoveler/token` when OAuth is enabled)
 * `<PREFIX>_AMQP_PUBLISH_WORKERS` - Number of concurrent publishing workers for collector mode (default: `10`, forced to `1` in shoveler mode)
+* `<PREFIX>_AMQP_CONFIRM_WINDOW` - Messages each worker publishes ahead of the broker's confirms (default: `256`)
 
 **AMQP OAuth2 Self-Registration (optional; shoveler: `SHOVELER_AMQP_OAUTH_*`, collector: `COLLECTOR_AMQP_OAUTH_*`):**
 * `<PREFIX>_AMQP_OAUTH_ENABLED` - Enable OAuth2 self-registration + token fetch: `true` or `false` (default: `false`)
@@ -586,6 +587,15 @@ The system uses a configurable pool of concurrent worker goroutines for publishi
 - **Independent Connections**: Each worker maintains its own AMQP connection to the broker
 - **Context-Based Cancellation**: Clean shutdown using Go contexts
 - **Automatic Token Rotation**: Workers restart with new credentials when JWT tokens are updated
+
+#### Publisher Confirms
+
+Every message is published with RabbitMQ publisher confirms, and counted in `shoveler_messages_published` only once
+the broker acknowledges it. Each worker keeps up to `amqp.confirm_window` (default 256) messages in flight, so
+throughput isn't limited to one message per round trip to the broker. If the broker refuses a message, closes the
+channel, or stops confirming for 30 seconds, the worker opens a new channel and republishes every unconfirmed
+message, in order, before anything new; the same happens across token rotations. Delivery is therefore
+at-least-once: a message can occasionally arrive twice, but none is dropped.
 
 #### Mode-Specific Behavior
 

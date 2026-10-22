@@ -16,6 +16,9 @@ amqp:
   url: amqps://username:password@example.com/vhost
   exchange: shoveled-xrd
   topic:
+  # Messages published ahead of the broker's confirms (per worker). Larger
+  # values keep throughput up on high-latency links to the broker.
+  # confirm_window: 256
   # File holding the JWT used as the AMQP password. Defaults to
   # /etc/xrootd-monitoring-shoveler/token, or to
   # /var/lib/xrootd-monitoring-shoveler/token when oauth is enabled below (the
