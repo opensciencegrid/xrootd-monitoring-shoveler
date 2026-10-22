@@ -73,6 +73,16 @@ var confirmTimeout = 30 * time.Second
 // session (re)connects.
 const channelPoll = 100 * time.Millisecond
 
+// After a worker gives up on a channel (the broker refused a message, closed
+// the channel, or stopped confirming) it waits before republishing on a new
+// one: channelRetryMin, doubling up to channelRetryMax, reset by an ack. A
+// broker that keeps refusing (e.g. a missing exchange) is not hammered with
+// channels. Vars so tests can shorten them.
+var (
+	channelRetryMin = time.Second
+	channelRetryMax = 30 * time.Second
+)
+
 // This should run in a new go co-routine.
 func StartAMQP(config *Config, queue *ConfirmationQueue) {
 	pool := newWorkerPool(config, queue)
@@ -352,6 +362,8 @@ func (w *PublishWorker) publishLoop() {
 	var ch confirmChannel      // the channel pending was published on
 	var dropped confirmChannel // the last channel given up on
 	var lastProgress time.Time
+	var retryAt time.Time // don't use a new channel before this
+	retryDelay := channelRetryMin
 	watchdog := time.NewTicker(confirmTimeout / 4)
 	defer watchdog.Stop()
 
@@ -365,6 +377,8 @@ func (w *PublishWorker) publishLoop() {
 			// don't hold up the worker for it.
 			go ch.close()
 			dropped = ch
+			retryAt = time.Now().Add(retryDelay)
+			retryDelay = min(2*retryDelay, channelRetryMax)
 		}
 		ch = nil
 		for i := range pending {
@@ -393,6 +407,10 @@ func (w *PublishWorker) publishLoop() {
 		}
 
 		if ch == nil {
+			if wait := time.Until(retryAt); wait > 0 {
+				sleepCtx(w.ctx, wait)
+				continue
+			}
 			cur := w.session.current()
 			// Until the session notices the close it may still offer the
 			// channel just given up on; wait for a new one.
@@ -453,6 +471,7 @@ func (w *PublishWorker) publishLoop() {
 			}
 			pending = append(pending[:i], pending[i+1:]...)
 			lastProgress = time.Now()
+			retryDelay = channelRetryMin
 			MessagesPublished.Inc()
 		case <-watchdog.C:
 			if len(pending) > 0 && time.Since(lastProgress) > confirmTimeout {

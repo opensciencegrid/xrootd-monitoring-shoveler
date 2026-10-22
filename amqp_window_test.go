@@ -22,6 +22,7 @@ type fakeChannel struct {
 	tags      uint64
 	confirmCh chan amqp.Confirmation
 	closed    bool
+	autoNack  bool // nack every publish, like a broker refusing it
 }
 
 func newFakeChannel() *fakeChannel {
@@ -37,6 +38,9 @@ func (f *fakeChannel) publish(exchange string, data []byte) (uint64, error) {
 	}
 	f.tags++
 	f.published = append(f.published, string(data))
+	if f.autoNack {
+		f.confirmCh <- amqp.Confirmation{DeliveryTag: f.tags, Ack: false}
+	}
 	return f.tags, nil
 }
 
@@ -314,4 +318,52 @@ func TestDroppedChannelIsNotRetried(t *testing.T) {
 	ch2 := newFakeChannel()
 	h.source.set(ch2)
 	eventuallyPublished(t, ch2, []string{"m1", "m2"})
+}
+
+// refusingSource hands out a fresh channel each time the worker needs one;
+// every channel nacks whatever is published on it, like a broker refusing a
+// message for a missing exchange.
+type refusingSource struct {
+	mu       sync.Mutex
+	ch       *fakeChannel
+	channels int
+}
+
+func (s *refusingSource) current() confirmChannel {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ch == nil || s.ch.isClosed() {
+		s.ch = newFakeChannel()
+		s.ch.autoNack = true
+		s.channels++
+	}
+	return s.ch
+}
+
+func (s *refusingSource) Close() error { return nil }
+
+func (s *refusingSource) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.channels
+}
+
+// A broker that keeps refusing must not be hammered with channels: the
+// worker backs off between attempts.
+func TestRefusalsBackOff(t *testing.T) {
+	oldMin, oldMax := channelRetryMin, channelRetryMax
+	channelRetryMin, channelRetryMax = 50*time.Millisecond, 200*time.Millisecond
+	t.Cleanup(func() { channelRetryMin, channelRetryMax = oldMin, oldMax })
+
+	h := newWindowHarness(t, 8)
+	src := &refusingSource{}
+	h.worker.session = src
+	h.worker.Start()
+	h.enqueue("m1")
+
+	time.Sleep(time.Second)
+	// Without backoff this is thousands; with 50, 100, 200, 200, ... ms
+	// waits it is at most about 7.
+	assert.LessOrEqual(t, src.count(), 8)
+	assert.GreaterOrEqual(t, src.count(), 3, "it keeps retrying")
 }
