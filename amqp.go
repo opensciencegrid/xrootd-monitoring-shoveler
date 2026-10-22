@@ -15,16 +15,29 @@ import (
 
 // WorkerPool manages multiple publishing workers
 type WorkerPool struct {
-	config        *Config
-	queue         *ConfirmationQueue
-	workers       []*PublishWorker
-	tokenAge      time.Time
-	useToken      bool
-	mu            sync.RWMutex
-	ctx           context.Context
-	cancel        context.CancelFunc
+	config   *Config
+	queue    *ConfirmationQueue
+	workers  []*PublishWorker
+	tokenAge time.Time
+	useToken bool
+	mu       sync.RWMutex
+
+	// ctx lives as long as the pool. The feeder and the token watcher run on
+	// it; Stop cancels it.
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	// workersCancel stops the current generation of workers. Restart (on a
+	// token rotation) replaces only the workers, so the feeder, the shared
+	// channel and StartAMQP are unaffected.
+	workersCancel context.CancelFunc
+
 	messagesQueue chan *MessageStruct // Shared channel for all workers
-	wg            sync.WaitGroup
+	// retry holds messages a stopped worker was still publishing; the next
+	// generation publishes them before anything else, so a rotation neither
+	// loses nor reorders them.
+	retry chan *MessageStruct
+	wg    sync.WaitGroup
 }
 
 // PublishWorker handles publishing messages to AMQP
@@ -34,21 +47,14 @@ type PublishWorker struct {
 	amqpURL       url.URL
 	session       *Session
 	messagesQueue chan *MessageStruct // Reference to shared channel
+	retry         chan *MessageStruct // Reference to the pool's retry channel
 	ctx           context.Context
 	wg            sync.WaitGroup
 }
 
 // This should run in a new go co-routine.
 func StartAMQP(config *Config, queue *ConfirmationQueue) {
-	ctx, cancel := context.WithCancel(context.Background())
-	pool := &WorkerPool{
-		config:        config,
-		queue:         queue,
-		workers:       make([]*PublishWorker, 0, config.AmqpPublishWorkers),
-		ctx:           ctx,
-		cancel:        cancel,
-		messagesQueue: make(chan *MessageStruct, 1000), // Shared buffered channel
-	}
+	pool := newWorkerPool(config, queue)
 
 	// Check if we need to use tokens
 	if config.AmqpURL.User == nil {
@@ -78,96 +84,117 @@ func StartAMQP(config *Config, queue *ConfirmationQueue) {
 		go pool.CheckTokenFile()
 	}
 
-	// Keep the main routine running
+	// Keep the main routine running. Only Stop ends the pool; a token
+	// rotation replaces the workers without touching pool.ctx.
 	<-pool.ctx.Done()
-	pool.Stop()
+}
+
+// newWorkerPool creates a pool; Start launches its workers and feeder.
+func newWorkerPool(config *Config, queue *ConfirmationQueue) *WorkerPool {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &WorkerPool{
+		config:        config,
+		queue:         queue,
+		workers:       make([]*PublishWorker, 0, config.AmqpPublishWorkers),
+		ctx:           ctx,
+		cancel:        cancel,
+		messagesQueue: make(chan *MessageStruct, 1000), // Shared buffered channel
+		retry:         make(chan *MessageStruct, config.AmqpPublishWorkers+1),
+	}
+}
+
+// workerCount is the number of publishing workers to run.
+func (p *WorkerPool) workerCount() int {
+	// In shoveler mode, only use 1 worker to preserve message ordering
+	if p.config.Mode == "shoveler" {
+		return 1
+	}
+	return p.config.AmqpPublishWorkers
+}
+
+// startWorkers starts a new generation of workers using the current
+// p.config.AmqpURL. The caller holds p.mu (or has exclusive access).
+func (p *WorkerPool) startWorkers() {
+	ctx, cancel := context.WithCancel(p.ctx)
+	p.workersCancel = cancel
+	p.workers = make([]*PublishWorker, 0, p.workerCount())
+	for i := 0; i < p.workerCount(); i++ {
+		worker := &PublishWorker{
+			id:            i,
+			config:        p.config,
+			amqpURL:       *copyURL(p.config.AmqpURL),
+			messagesQueue: p.messagesQueue, // Share the pool's channel
+			retry:         p.retry,
+			ctx:           ctx,
+		}
+		p.workers = append(p.workers, worker)
+		worker.Start()
+	}
+}
+
+// stopWorkers stops the current generation of workers and waits for them.
+// The caller holds p.mu (or has exclusive access).
+func (p *WorkerPool) stopWorkers() {
+	if p.workersCancel != nil {
+		p.workersCancel()
+	}
+	for _, worker := range p.workers {
+		worker.Stop()
+	}
 }
 
 // Start initializes and starts all workers
 func (p *WorkerPool) Start() {
-	// In shoveler mode, only use 1 worker to preserve message ordering
-	workerCount := p.config.AmqpPublishWorkers
 	if p.config.Mode == "shoveler" {
-		workerCount = 1
 		log.Infof("Starting AMQP worker pool with 1 worker (shoveler mode - message ordering required)")
 	} else {
-		log.Infof("Starting AMQP worker pool with %d workers", workerCount)
+		log.Infof("Starting AMQP worker pool with %d workers", p.workerCount())
 	}
 
-	for i := 0; i < workerCount; i++ {
-		worker := &PublishWorker{
-			id:            i,
-			config:        p.config,
-			amqpURL:       *copyURL(p.config.AmqpURL),
-			messagesQueue: p.messagesQueue, // Share the pool's channel
-			ctx:           p.ctx,
-		}
-		p.workers = append(p.workers, worker)
-		worker.Start()
-	}
+	p.mu.Lock()
+	p.startWorkers()
+	p.mu.Unlock()
 
-	// Start feeding messages to the shared queue
+	// Start feeding messages to the shared queue. The feeder lives as long
+	// as the pool, across token rotations.
 	p.wg.Add(1)
 	go p.feedMessages()
 }
 
-// Stop gracefully shuts down all workers
+// Stop gracefully shuts down all workers. Messages still in the shared
+// channel are not published; the shoveler is exiting.
 func (p *WorkerPool) Stop() {
 	log.Infoln("Stopping AMQP worker pool")
 	p.cancel()
 
-	for _, worker := range p.workers {
-		worker.Stop()
-	}
+	p.mu.Lock()
+	p.stopWorkers()
+	p.mu.Unlock()
 
 	p.wg.Wait()
-	close(p.messagesQueue)
 	log.Infoln("AMQP worker pool stopped")
 }
 
-// Restart stops all workers and starts new ones with updated credentials
+// Restart stops all workers and starts new ones with updated credentials.
+// The feeder, the shared channel and the pool context are left running, and
+// any message a worker was still publishing is handed to the new workers.
 func (p *WorkerPool) Restart(newURL *url.URL) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.ctx.Err() != nil {
+		return // the pool is stopping
+	}
+
 	log.Infoln("Restarting AMQP worker pool with new credentials")
 
-	// Cancel old context to stop all workers
-	p.cancel()
-
-	// Wait for all workers to finish
-	for _, worker := range p.workers {
-		worker.wg.Wait()
-	}
+	p.stopWorkers()
 
 	// Update config URL
 	p.config.AmqpURL = newURL
 
-	// Create new context for new workers
-	ctx, cancel := context.WithCancel(context.Background())
-	p.ctx = ctx
-	p.cancel = cancel
-
-	// Clear old workers
-	p.workers = make([]*PublishWorker, 0, p.config.AmqpPublishWorkers)
-
 	// Start new workers with updated credentials
-	// In shoveler mode, only use 1 worker to preserve message ordering
-	workerCount := p.config.AmqpPublishWorkers
-	if p.config.Mode == "shoveler" {
-		workerCount = 1
-	}
-	for i := 0; i < workerCount; i++ {
-		worker := &PublishWorker{
-			id:            i,
-			config:        p.config,
-			amqpURL:       *copyURL(p.config.AmqpURL),
-			messagesQueue: p.messagesQueue, // Share the pool's channel
-			ctx:           p.ctx,
-		}
-		p.workers = append(p.workers, worker)
-		worker.Start()
-	}
+	p.startWorkers()
 
 	log.Infoln("AMQP worker pool restarted")
 }
@@ -193,6 +220,8 @@ func (p *WorkerPool) feedMessages() {
 			case p.messagesQueue <- msgStruct:
 				// Message sent successfully
 			case <-p.ctx.Done():
+				// Shutting down: keep the message on disk for next time.
+				p.queue.EnqueueToExchange(msgStruct.Message, msgStruct.Exchange)
 				return
 			}
 		}
@@ -265,13 +294,40 @@ func (w *PublishWorker) run() {
 	}()
 
 	for {
+		// Once stopped, leave handed-back messages for the next generation.
+		if w.ctx.Err() != nil {
+			log.Debugf("Worker %d: Stopping", w.id)
+			return
+		}
+		// Messages a previous generation of workers didn't finish go first.
+		select {
+		case msgStruct := <-w.retry:
+			w.publishMessage(msgStruct)
+			continue
+		default:
+		}
+
 		select {
 		case <-w.ctx.Done():
 			log.Debugf("Worker %d: Stopping", w.id)
 			return
+		case msgStruct := <-w.retry:
+			w.publishMessage(msgStruct)
 		case msgStruct := <-w.messagesQueue:
 			w.publishMessage(msgStruct)
 		}
+	}
+}
+
+// handBack returns a message this worker could not finish publishing, so
+// the next generation of workers publishes it first.
+func (w *PublishWorker) handBack(msgStruct *MessageStruct) {
+	select {
+	case w.retry <- msgStruct:
+	default:
+		// Cannot happen while each worker hands back at most one message;
+		// don't block shutdown if it somehow does.
+		log.Errorf("Worker %d: dropping a message that was being published during shutdown", w.id)
 	}
 }
 
@@ -286,6 +342,7 @@ func (w *PublishWorker) publishMessage(msgStruct *MessageStruct) {
 	for {
 		select {
 		case <-w.ctx.Done():
+			w.handBack(msgStruct)
 			return
 		default:
 			err := w.session.Push(exchange, msgStruct.Message)
@@ -295,12 +352,13 @@ func (w *PublishWorker) publishMessage(msgStruct *MessageStruct) {
 				randSleep := rand.Intn(4000) + 1000
 				select {
 				case <-w.ctx.Done():
+					w.handBack(msgStruct)
 					return
 				case <-time.After(time.Duration(randSleep) * time.Millisecond):
 					continue
 				}
 			}
-			// Successfully published
+			// The broker confirmed the message
 			MessagesPublished.Inc()
 			return
 		}
@@ -344,6 +402,9 @@ type Session struct {
 	notifyChanClose chan *amqp.Error
 	notifyConfirm   chan amqp.Confirmation
 	isReady         bool
+	mu              sync.Mutex // guards isReady, connection, channel, notifyConfirm
+	closeOnce       sync.Once
+	stopped         chan struct{} // closed when handleReconnect returns
 }
 
 var (
@@ -356,8 +417,9 @@ var (
 // attempts to connect to the server.
 func New(url url.URL) *Session {
 	session := Session{
-		url:  url,
-		done: make(chan bool),
+		url:     url,
+		done:    make(chan bool),
+		stopped: make(chan struct{}),
 	}
 	go session.handleReconnect()
 	return &session
@@ -366,8 +428,14 @@ func New(url url.URL) *Session {
 // handleReconnect will wait for a connection error on
 // notifyConnClose, and then continuously attempt to reconnect.
 func (session *Session) handleReconnect() {
+	defer close(session.stopped)
 	for {
-		session.isReady = false
+		session.setReady(false)
+		select {
+		case <-session.done:
+			return
+		default:
+		}
 		log.Debugln("Attempting to connect")
 
 		conn, err := session.connect()
@@ -384,7 +452,10 @@ func (session *Session) handleReconnect() {
 		}
 
 		if done := session.handleReInit(conn); done {
-			break
+			// Close may have run before this connection was ready, so
+			// it can't rely on Close to shut it.
+			_ = conn.Close()
+			return
 		}
 	}
 }
@@ -407,7 +478,7 @@ func (session *Session) connect() (*amqp.Connection, error) {
 // and then continuously attempt to re-initialize both channels
 func (session *Session) handleReInit(conn *amqp.Connection) bool {
 	for {
-		session.isReady = false
+		session.setReady(false)
 
 		err := session.init(conn)
 
@@ -449,7 +520,7 @@ func (session *Session) init(conn *amqp.Connection) error {
 	}
 
 	session.changeChannel(ch)
-	session.isReady = true
+	session.setReady(true)
 	log.Debugln("Setup!")
 
 	return nil
@@ -458,27 +529,48 @@ func (session *Session) init(conn *amqp.Connection) error {
 // changeConnection takes a new connection to the queue,
 // and updates the close listener to reflect this.
 func (session *Session) changeConnection(connection *amqp.Connection) {
+	session.mu.Lock()
 	session.connection = connection
+	session.mu.Unlock()
 	session.notifyConnClose = make(chan *amqp.Error)
-	session.connection.NotifyClose(session.notifyConnClose)
+	connection.NotifyClose(session.notifyConnClose)
+}
+
+// setReady records whether the channel is usable for publishing.
+func (session *Session) setReady(ready bool) {
+	session.mu.Lock()
+	session.isReady = ready
+	session.mu.Unlock()
 }
 
 // changeChannel takes a new channel to the queue,
 // and updates the channel listeners to reflect this.
 func (session *Session) changeChannel(channel *amqp.Channel) {
-	session.channel = channel
 	session.notifyChanClose = make(chan *amqp.Error)
-	session.notifyConfirm = make(chan amqp.Confirmation, 1)
-	session.channel.NotifyClose(session.notifyChanClose)
+	// Room for late confirms of resent messages, so the channel's reader
+	// never blocks on this listener.
+	confirms := make(chan amqp.Confirmation, 16)
+	channel.NotifyClose(session.notifyChanClose)
+	channel.NotifyPublish(confirms)
+	session.mu.Lock()
+	session.channel = channel
+	session.notifyConfirm = confirms
+	session.mu.Unlock()
 }
 
-// Push will push data onto the queue, and wait for a confirm.
-// If no confirms are received until within the resendTimeout,
-// it continuously re-sends messages until a confirm is received.
-// This will block until the server sends a confirm. Errors are
-// only returned if the push action itself fails, see UnsafePush.
+// errNotConfirmed means the broker refused the message (nack) or closed the
+// channel before confirming it, e.g. a missing exchange or no permission.
+var errNotConfirmed = errors.New("message not confirmed by the broker")
+
+// Push publishes data and waits for the broker to confirm it. If no confirm
+// arrives within resendDelay the message is re-sent. It returns an error if
+// the broker refuses the message or the channel closes, so the caller keeps
+// the message and retries instead of counting it as published.
 func (session *Session) Push(exchange string, data []byte) error {
-	if !session.isReady {
+	session.mu.Lock()
+	ready, confirms := session.isReady, session.notifyConfirm
+	session.mu.Unlock()
+	if !ready {
 		return errors.New("failed to push push: not connected")
 	}
 	for {
@@ -492,7 +584,17 @@ func (session *Session) Push(exchange string, data []byte) error {
 			}
 			continue
 		}
-		return nil
+		select {
+		case confirm, ok := <-confirms:
+			if !ok || !confirm.Ack {
+				return errNotConfirmed
+			}
+			return nil
+		case <-session.done:
+			return errShutdown
+		case <-time.After(resendDelay):
+			log.Warningln("Push didn't confirm. Retrying...")
+		}
 	}
 }
 
@@ -501,10 +603,13 @@ func (session *Session) Push(exchange string, data []byte) error {
 // No guarantees are provided for whether the server will
 // recieve the message.
 func (session *Session) UnsafePush(exchange string, data []byte) error {
-	if !session.isReady {
+	session.mu.Lock()
+	ready, channel := session.isReady, session.channel
+	session.mu.Unlock()
+	if !ready {
 		return errNotConnected
 	}
-	return session.channel.Publish(
+	return channel.Publish(
 		exchange, // Exchange
 		"",       // Routing key
 		false,    // Mandatory
@@ -518,18 +623,19 @@ func (session *Session) UnsafePush(exchange string, data []byte) error {
 
 // Close will cleanly shutdown the channel and connection.
 func (session *Session) Close() error {
-	if !session.isReady {
+	// Always stop handleReconnect, even if the session never connected;
+	// otherwise it keeps redialing with stale credentials forever.
+	session.closeOnce.Do(func() { close(session.done) })
+	session.mu.Lock()
+	ready, channel, connection := session.isReady, session.channel, session.connection
+	session.isReady = false
+	session.mu.Unlock()
+	if !ready {
 		return errAlreadyClosed
 	}
-	close(session.done)
-	err := session.channel.Close()
+	err := channel.Close()
 	if err != nil {
 		return err
 	}
-	err = session.connection.Close()
-	if err != nil {
-		return err
-	}
-	session.isReady = false
-	return nil
+	return connection.Close()
 }
