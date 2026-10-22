@@ -133,6 +133,12 @@ type Config struct {
 // StateDirectory.
 const OAuthStateDir = "/var/lib/xrootd-monitoring-shoveler"
 
+// DefaultRegistryURL is the OSG shoveler registry. OAuth mode uses its /token
+// and /register endpoints unless amqp.oauth.token_url / registration_url are
+// set. token_url is used as the client assertion's audience, which the
+// registry compares exactly.
+const DefaultRegistryURL = "https://shoveler-auth.osg-htc.org"
+
 func (c *Config) ReadConfig() {
 	c.ReadConfigWithPathAndPrefix("", "SHOVELER")
 }
@@ -308,9 +314,11 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		c.OAuthEnabled = viper.GetBool("amqp.oauth.enabled")
 		log.Debugln("AMQP OAuth Enabled:", c.OAuthEnabled)
 		if c.OAuthEnabled {
+			viper.SetDefault("amqp.oauth.token_url", DefaultRegistryURL+"/token")
 			c.OAuthTokenURL = viper.GetString("amqp.oauth.token_url")
 			log.Debugln("AMQP OAuth Token URL:", c.OAuthTokenURL)
 
+			viper.SetDefault("amqp.oauth.registration_url", DefaultRegistryURL+"/register")
 			c.OAuthRegistrationURL = viper.GetString("amqp.oauth.registration_url")
 			log.Debugln("AMQP OAuth Registration URL:", c.OAuthRegistrationURL)
 
@@ -335,10 +343,10 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 			c.OAuthScopes = viper.GetStringSlice("amqp.oauth.scopes")
 			log.Debugln("AMQP OAuth Scopes:", c.OAuthScopes)
 
-			// Validation: token_url and registration_url are always required
-			// when OAuth is enabled.
+			// Validation: token_url and registration_url default to the OSG
+			// registry, so they can only be empty if set that way explicitly.
 			if c.OAuthTokenURL == "" || c.OAuthRegistrationURL == "" {
-				log.Panicln("amqp.oauth.enabled is true but amqp.oauth.token_url and amqp.oauth.registration_url are both required")
+				log.Panicln("amqp.oauth.enabled is true but amqp.oauth.token_url or amqp.oauth.registration_url is set to an empty value")
 			}
 			// StartAMQP uses credentials in the URL instead of the token
 			// file, which would silently bypass the OAuth tokens.

@@ -74,7 +74,8 @@ shoveler gets `invalid_client` from then on; to try again, delete its
 
 ## Registration endpoint
 
-Configured as `amqp.oauth.registration_url` (`<PORTAL_BASE_URL>/register`).
+Configured as `amqp.oauth.registration_url` (`<PORTAL_BASE_URL>/register`); defaults to the OSG registry,
+`https://shoveler-auth.osg-htc.org/register`.
 
 ```http
 POST /register
@@ -154,7 +155,8 @@ The shoveler treats every 4xx except 408 and 429 as permanent.
 
 ## Token endpoint
 
-Configured as `amqp.oauth.token_url` (`<PORTAL_BASE_URL>/token`).
+Configured as `amqp.oauth.token_url` (`<PORTAL_BASE_URL>/token`); defaults to the OSG registry,
+`https://shoveler-auth.osg-htc.org/token`.
 
 ```http
 POST /token

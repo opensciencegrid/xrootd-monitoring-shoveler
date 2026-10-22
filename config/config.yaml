@@ -46,8 +46,11 @@ amqp:
   #
   # oauth:
   #   enabled: true
-  #   token_url: https://registry.example.org/token
-  #   registration_url: https://registry.example.org/register
+  #   # The registry's endpoints. They default to the OSG registry
+  #   # (https://shoveler-auth.osg-htc.org/token and /register); set them only
+  #   # for a different registry, copying token_url exactly as it shows it.
+  #   # token_url: https://shoveler-auth.osg-htc.org/token
+  #   # registration_url: https://shoveler-auth.osg-htc.org/register
   #
   #   # The optional one-time registration token; leave it out to wait for
   #   # approval instead. It is only used on the FIRST run; once registration

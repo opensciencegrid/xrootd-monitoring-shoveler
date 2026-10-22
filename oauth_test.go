@@ -718,3 +718,42 @@ func TestShippedConfigLeavesTokenLocationDefault(t *testing.T) {
 	c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER")
 	assert.Equal(t, "/var/lib/xrootd-monitoring-shoveler/token", c.AmqpToken)
 }
+
+func TestOAuthDefaultRegistryURLs(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		urls      string
+		wantToken string
+		wantReg   string
+	}{
+		{"defaults to the OSG registry", "",
+			"https://shoveler-auth.osg-htc.org/token", "https://shoveler-auth.osg-htc.org/register"},
+		{"explicit URLs win", "" +
+			"    token_url: https://registry.example.org/token\n" +
+			"    registration_url: https://registry.example.org/register\n",
+			"https://registry.example.org/token", "https://registry.example.org/register"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+
+			dir := t.TempDir()
+			configFile := filepath.Join(dir, "config.yaml")
+			yaml := "" +
+				"mq: amqp\n" +
+				"amqp:\n" +
+				"  url: amqps://example.com/vhost\n" +
+				"  oauth:\n" +
+				"    enabled: true\n" +
+				tc.urls +
+				"    state_file: " + filepath.Join(dir, "registration.json") + "\n"
+			require.NoError(t, os.WriteFile(configFile, []byte(yaml), 0644))
+
+			c := &Config{}
+			c.ReadConfigWithPathAndPrefix(configFile, "SHOVELER")
+			assert.Equal(t, tc.wantToken, c.OAuthTokenURL)
+			assert.Equal(t, tc.wantReg, c.OAuthRegistrationURL)
+			assert.Equal(t, defaultReportURL(tc.wantToken), c.OAuthReportURL, "health reports follow the token URL")
+		})
+	}
+}
