@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -157,14 +158,15 @@ type InputConfig struct {
 
 type StateConfig struct {
 	EntryTTL   int // TTL in seconds for 'd'/'i' dictionary records (paths, app info)
-	MaxEntries int // Max entries in state map (0 for unlimited)
+	MaxEntries int // Hard cap on correlation entries, evicting least recently used (0 for unlimited)
+	MaxMemory  int // Process memory cap in bytes, met by evicting least recently used state (0 for unlimited)
 
 	// Lifetimes of the rest of the correlation state, in seconds. A value of 0
 	// gives the default. A negative value turns off the idle and file
 	// lifetimes, and gives the default for the other two.
 	UserTTL     int // keep a session this long after its disconnect (default 300)
 	UserIdleTTL int // drop an idle session with no open files after this long (default 86400)
-	FileTTL     int // drop an open file not heard of this long: silent with XFR, else its age (default 604800)
+	FileTTL     int // drop an open file not heard of this long: silent with XFR, else its age (default 604800; with max_memory 7200, on XFR servers only)
 	ServerTTL   int // drop a server incarnation silent this long (default 172800)
 
 	// DNS Enrichment configuration
@@ -358,11 +360,17 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.State.EntryTTL = viper.GetInt("state.entry_ttl")
 	viper.SetDefault("state.max_entries", 0) // unlimited by default
 	c.State.MaxEntries = viper.GetInt("state.max_entries")
+	viper.SetDefault("state.max_memory", "0") // unbounded; accepts K/M/G/T suffixes
+	if n, err := ParseByteSize(viper.GetString("state.max_memory")); err != nil {
+		log.Warningf("Ignoring state.max_memory: %v", err)
+	} else {
+		c.State.MaxMemory = n
+	}
 	viper.SetDefault("state.user_ttl", 300) // 5 minutes after the disconnect
 	c.State.UserTTL = viper.GetInt("state.user_ttl")
 	viper.SetDefault("state.user_idle_ttl", 86400) // 1 day
 	c.State.UserIdleTTL = viper.GetInt("state.user_idle_ttl")
-	viper.SetDefault("state.file_ttl", 0) // 0: the correlator's default, 7 days
+	viper.SetDefault("state.file_ttl", 0) // 0: the correlator's default, 7 days (2 h with max_memory)
 	c.State.FileTTL = viper.GetInt("state.file_ttl")
 	viper.SetDefault("state.server_ttl", 172800) // 2 days
 	c.State.ServerTTL = viper.GetInt("state.server_ttl")
@@ -818,4 +826,37 @@ func (c *Config) readInputToken() {
 		log.Panicln("amqp.oauth is enabled, so the rabbitmq input can't use the OAuth publish token:",
 			"put credentials in input.broker_url or set input.token_location")
 	}
+}
+
+// ParseByteSize parses a byte count with an optional binary K, M, G or T
+// suffix ("512M", "4G", "1073741824"), --max-memory
+// takes. An empty string is 0.
+func ParseByteSize(v string) (int, error) {
+	v = strings.TrimSpace(strings.ToUpper(v))
+	v = strings.TrimSuffix(strings.TrimSuffix(v, "B"), "I")
+	if v == "" {
+		return 0, nil
+	}
+	shift := 0
+	switch v[len(v)-1] {
+	case 'K':
+		shift = 10
+	case 'M':
+		shift = 20
+	case 'G':
+		shift = 30
+	case 'T':
+		shift = 40
+	}
+	if shift > 0 {
+		v = v[:len(v)-1]
+	}
+	n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid byte size %q", v)
+	}
+	if n > (1<<62)>>shift {
+		return 0, fmt.Errorf("byte size %q is too large", v)
+	}
+	return int(n << shift), nil
 }

@@ -488,6 +488,7 @@ func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger 
 		FileTTL:             time.Duration(config.State.FileTTL) * time.Second,
 		ServerTTL:           time.Duration(config.State.ServerTTL) * time.Second,
 		MaxEntries:          config.State.MaxEntries,
+		MaxMemory:           config.State.MaxMemory,
 		EnableDNSEnrichment: config.State.EnableDNSEnrichment,
 		DNSCacheTTL:         time.Duration(config.State.DNSCacheTTL) * time.Second,
 		DNSTimeout:          time.Duration(config.State.DNSTimeout) * time.Second,

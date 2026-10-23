@@ -33,12 +33,16 @@ state:
   # file_ttl: 604800     # 7 days: drop an open file not heard of this long (its close was lost). <0: never
   #                      # On a server that sends XFR records ("xfr" on xrootd.monitor), this is
   #                      # the time since the last XFR record. Elsewhere it is the time since the open.
+  #                      # With max_memory set: 7200, and only on servers that send XFR
   # server_ttl: 172800   # 2 days: drop a server incarnation, and all it owns, after this long silent
-  # Maximum number of entries in each state map (0: no limit). Leave this at 0.
-  # A full map refuses new entries and evicts nothing. Sessions and open files
-  # now live until their disconnect or close (or the lifetimes above), so a
-  # map can stay full for days. While it is full, new logins and opens are
-  # dropped, and their records come out with host "unknown".
+  # Memory: the correlation state (open files, sessions, dictionary records)
+  # is bounded by evicting the least recently used entries first.
+  # max_memory: 4G       # cap on the process's memory (K/M/G/T; 0 = unbounded).
+  #                      # Best effort: set any cgroup MemoryMax= above it, never at it.
+  #
+  # Maximum number of correlation entries (0 = no limit). When full, the least
+  # recently used entry is removed. If you set it, allow for all concurrent
+  # sessions and open files; otherwise leave it at 0 and use max_memory.
   max_entries: 0
   # DNS enrichment settings (replaces reverse DNS lookup)
   # enable_dns_enrichment: false

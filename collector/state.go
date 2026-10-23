@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"container/list"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,9 @@ type StateEntry struct {
 	// period. A later Set of the same key within that period keeps the
 	// deadline, so an update arriving after the end cannot revive the entry.
 	ending bool
+
+	// node is the entry's place in the LRU index, nil when the map has none
+	node *list.Element
 }
 
 // StateMap is a concurrent-safe map with per-entry expiry
@@ -46,6 +50,15 @@ type StateMap struct {
 	// write that replaces an expired entry the janitor has not swept yet.
 	// ended reports an entry whose deadline was set by ExpireIn.
 	onExpire func(key string, value interface{}, ended bool)
+
+	// lru, when set, bounds this map together with the others attached to the
+	// same index; see lruIndex. The map's own maxEntries is then not used: the
+	// index's entry cap applies to all of them, and evicts instead of refusing.
+	lru *lruIndex
+
+	// onEvict, when set, is called for every entry the LRU index evicts, after
+	// the map's lock is released.
+	onEvict func(key string, value interface{})
 }
 
 // NewStateMap creates a new state map with TTL and janitor. A ttl of 0 gives
@@ -79,6 +92,20 @@ func (sm *StateMap) SetKeepAlive(fn func(value interface{}) bool) {
 	sm.keepAlive = fn
 }
 
+// attachLRU puts the map under an LRU index. Call before the map is used.
+func (sm *StateMap) attachLRU(idx *lruIndex) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.lru = idx
+}
+
+// SetOnEvict installs the eviction callback; see StateMap.onEvict.
+func (sm *StateMap) SetOnEvict(fn func(key string, value interface{})) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.onEvict = fn
+}
+
 // SetOnExpire installs the expiry callback; see StateMap.onExpire.
 func (sm *StateMap) SetOnExpire(fn func(key string, value interface{}, ended bool)) {
 	sm.mu.Lock()
@@ -106,6 +133,9 @@ func (sm *StateMap) set(key string, value interface{}, ttl, idleTTL time.Duratio
 			onExpire(stale.Key, stale.Value, stale.ending)
 		}
 	}
+	if ok && sm.lru != nil {
+		sm.lru.enforce()
+	}
 	return ok
 }
 
@@ -126,7 +156,7 @@ func (sm *StateMap) store(key string, value interface{}, ttl, idleTTL time.Durat
 	prev, exists := sm.entries[key]
 
 	// Check max entries limit
-	if sm.maxEntries > 0 && len(sm.entries) >= sm.maxEntries && !exists {
+	if sm.lru == nil && sm.maxEntries > 0 && len(sm.entries) >= sm.maxEntries && !exists {
 		// Key doesn't exist and we're at capacity
 		return false, nil
 	}
@@ -151,6 +181,14 @@ func (sm *StateMap) store(key string, value interface{}, ttl, idleTTL time.Durat
 		entry.ExpiresAt = prev.ExpiresAt
 		entry.ending = true
 	}
+	if sm.lru != nil {
+		bytes := stateSize(key, value)
+		if exists && prev.node != nil && sm.lru.update(prev.node, bytes) {
+			entry.node = prev.node
+		} else {
+			entry.node = sm.lru.insert(sm, key, bytes)
+		}
+	}
 	sm.entries[key] = entry
 
 	return true, stale
@@ -174,8 +212,9 @@ func (sm *StateMap) Get(key string) (interface{}, bool) {
 	return entry.Value, true
 }
 
-// Touch marks an entry as in use now, restarting its idle lifetime. It does
-// not move a fixed deadline. Reports whether the entry exists.
+// Touch marks an entry as in use now, restarting its idle lifetime and making
+// it the most recently used. It does not move a fixed deadline. Reports
+// whether the entry exists.
 func (sm *StateMap) Touch(key string) bool {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -185,6 +224,44 @@ func (sm *StateMap) Touch(key string) bool {
 		return false
 	}
 	entry.LastSeen = time.Now()
+	if entry.node != nil {
+		sm.lru.touch(entry.node)
+	}
+	return true
+}
+
+// Demote makes an entry the next one the LRU index evicts. Reports whether
+// the entry exists.
+func (sm *StateMap) Demote(key string) bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	entry, exists := sm.entries[key]
+	if !exists {
+		return false
+	}
+	if entry.node != nil {
+		sm.lru.demote(entry.node)
+	}
+	return true
+}
+
+// evict removes key on behalf of the LRU index, unless the entry has been
+// replaced since node was chosen. Reports whether it removed anything.
+func (sm *StateMap) evict(key string, node *list.Element) bool {
+	sm.mu.Lock()
+	entry, exists := sm.entries[key]
+	if !exists || entry.node != node {
+		sm.mu.Unlock()
+		return false
+	}
+	delete(sm.entries, key)
+	onEvict := sm.onEvict
+	sm.mu.Unlock()
+
+	if onEvict != nil {
+		onEvict(key, entry.Value)
+	}
 	return true
 }
 
@@ -200,6 +277,9 @@ func (sm *StateMap) SetIdle(key string, idleTTL time.Duration) bool {
 	}
 	entry.IdleTTL = idleTTL
 	entry.LastSeen = time.Now()
+	if entry.node != nil {
+		sm.lru.touch(entry.node)
+	}
 	return true
 }
 
@@ -226,9 +306,20 @@ func (sm *StateMap) ExpireIn(key string, d time.Duration) bool {
 func (sm *StateMap) Delete(key string) bool {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	_, exists := sm.entries[key]
-	delete(sm.entries, key)
+	entry, exists := sm.entries[key]
+	if exists {
+		sm.unlink(entry)
+		delete(sm.entries, key)
+	}
 	return exists
+}
+
+// unlink takes an entry being removed out of the LRU index. The caller holds
+// sm.mu.
+func (sm *StateMap) unlink(entry *StateEntry) {
+	if entry.node != nil {
+		sm.lru.remove(entry.node)
+	}
 }
 
 // DeletePrefix removes every entry whose key starts with prefix and returns
@@ -238,8 +329,9 @@ func (sm *StateMap) DeletePrefix(prefix string) int {
 	defer sm.mu.Unlock()
 
 	n := 0
-	for key := range sm.entries {
+	for key, entry := range sm.entries {
 		if strings.HasPrefix(key, prefix) {
+			sm.unlink(entry)
 			delete(sm.entries, key)
 			n++
 		}
@@ -290,6 +382,7 @@ func (sm *StateMap) cleanup() int {
 
 	for key, entry := range sm.entries {
 		if sm.expired(entry, now) {
+			sm.unlink(entry)
 			delete(sm.entries, key)
 			gone = append(gone, entry)
 		}

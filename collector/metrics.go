@@ -224,7 +224,7 @@ var (
 
 	// fileXFRRecordsTotal counts in-flight XFR records. Zero means no server
 	// reporting here has "xfr" on its xrootd.monitor line, and state.file_ttl
-	// then counts from each open.
+	// then counts from each open (with state.max_memory set, it has no effect).
 	fileXFRRecordsTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_file_xfr_records_total",
 		Help: "Total number of in-flight XFR records received in f-stream packets",
@@ -235,5 +235,46 @@ var (
 	fileDisconnectRecordsTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_file_disconnect_records_total",
 		Help: "Total number of session disconnect records received in f-stream packets",
+	})
+)
+
+// Correlation state memory bound (state.max_memory, state.max_entries).
+var (
+	// stateEvictedTotal counts entries evicted, least recently used first,
+	// because the state was over its byte budget or its entry cap. Evicted
+	// entries are lost correlation: a steady rate means the budget is binding.
+	stateEvictedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_state_evicted_total",
+		Help: "Total number of correlation entries evicted (least recently used first) to stay within state.max_memory or state.max_entries",
+	})
+
+	// stateEntries is the number of entries in the correlation maps (open
+	// files, sessions, dictionary records) under the LRU bound.
+	stateEntries = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_state_entries",
+		Help: "Current number of correlation entries (open files, sessions, dictionary records)",
+	})
+
+	// stateBudgetUtilization is how full the state's byte budget is, 0 to 1;
+	// 0 when unbounded. A ratio on purpose: the charged bytes behind it are an
+	// estimate, and must not be read as the process's memory.
+	stateBudgetUtilization = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_state_budget_utilization",
+		Help: "Fraction of the correlation state's byte budget in use (0 when state.max_memory is off)",
+	})
+
+	// stateMaxMemoryBytes publishes state.max_memory, so a dashboard can draw
+	// the cap next to the process memory it bounds.
+	stateMaxMemoryBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_state_max_memory_bytes",
+		Help: "The state.max_memory process memory cap in force (0 = unbounded)",
+	})
+
+	// stateMemoryFlooredTotal counts control ticks spent over state.max_memory
+	// with the state budget already at its floor and nothing left to evict:
+	// the memory is somewhere other than the correlation state.
+	stateMemoryFlooredTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_state_memory_floored_total",
+		Help: "Total number of memory control ticks over state.max_memory with the correlation state already at its floor",
 	})
 )
