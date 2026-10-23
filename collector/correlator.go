@@ -585,6 +585,11 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		us, ok := v.(*UserState)
 		return ok && us.hasOpenFiles()
 	})
+	c.userMap.SetPinned(func(_ string, v interface{}) bool {
+		us, ok := v.(*UserState)
+		return ok && us.hasOpenFiles()
+	})
+	c.dictMap.SetPinned(c.sessionDictIDPinned)
 	c.userMap.SetOnExpire(c.userExpired)
 	c.stateMap.SetOnExpire(c.fileExpired)
 	c.servers.SetIdleTTL(config.ServerTTL)
@@ -1528,6 +1533,30 @@ func (c *Correlator) userEvicted(_ string, value interface{}) {
 			c.dictMap.Delete(BuildDictIDKey(us.serverID, id))
 		}
 	}
+}
+
+// sessionDictIDPinned keeps a session's dictid entry from LRU eviction while
+// the session has files open, as its userMap entry is kept. Without it the
+// session's next open could not find its client. Only the login's dictid
+// entry is pinned: 'd' and 'i' records keep the user info under dictids of
+// their own, and other dictMap entries are not pinned.
+func (c *Correlator) sessionDictIDPinned(key string, value interface{}) bool {
+	const sep = "-dictid-"
+	info, ok := value.(parser.UserInfo)
+	i := strings.LastIndex(key, sep)
+	if !ok || i < 0 {
+		return false
+	}
+	dictID, err := strconv.ParseUint(key[i+len(sep):], 10, 32)
+	if err != nil {
+		return false
+	}
+	v, ok := c.userMap.Get(BuildUserInfoKey(key[:i], info))
+	if !ok {
+		return false
+	}
+	us, ok := v.(*UserState)
+	return ok && us.dictID() == uint32(dictID) && us.hasOpenFiles()
 }
 
 // fileEvicted runs when the LRU index evicts an open file. Its close, if it

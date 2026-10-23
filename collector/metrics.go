@@ -248,6 +248,13 @@ var (
 		Help: "Total number of correlation entries evicted (least recently used first) to stay within state.max_memory or state.max_entries",
 	})
 
+	// stateEvictPinnedTotal counts how often eviction passed over an entry
+	// it may not evict: a session with files open, or its dictid entry.
+	stateEvictPinnedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_state_evict_pinned_total",
+		Help: "Total number of times LRU eviction passed over an entry of a session that has files open (its session or dictid entry)",
+	})
+
 	// stateEntries is the number of entries in the correlation maps (open
 	// files, sessions, dictionary records) under the LRU bound.
 	stateEntries = promauto.NewGauge(prometheus.GaugeOpts{

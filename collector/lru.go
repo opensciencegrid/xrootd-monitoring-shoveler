@@ -24,6 +24,11 @@ import (
 // evicted ahead of those, as it would be by a count cap that drops whatever
 // arrives once full, which is what state.max_entries used to do.
 //
+// A session with files open is never evicted (StateMap.pinned): its files
+// hold it, so evicting it would free nothing, and its next open could no
+// longer find its client. It becomes evictable when its last file closes or
+// is itself evicted.
+//
 // The budget itself is steered from the process's measured memory
 // (state.max_memory) by a control loop, because the per-entry charge is only
 // an estimate: the loop lowers the budget when the process is over its cap
@@ -137,8 +142,11 @@ func (x *lruIndex) enforce() int {
 		return 0
 	}
 	low := limit - limit/16
-	evicted := 0
-	for x.order.Len() > 0 && x.over(low) {
+	evicted, kept := 0, 0
+	// kept counts the pinned entries passed over since the last one that went.
+	// Once it reaches the length of the list, every entry left is pinned and
+	// the index stays over its limit until one of them is released.
+	for x.order.Len() > 0 && x.over(low) && kept < x.order.Len() {
 		e := x.order.Front()
 		n := e.Value.(*lruNode)
 		n.dead = true
@@ -146,10 +154,17 @@ func (x *lruIndex) enforce() int {
 		x.order.Remove(e)
 
 		x.mu.Unlock()
-		if n.sm.evict(n.key, e) {
+		removed, pinned := n.sm.evict(n.key, e)
+		if removed {
 			evicted++
 		}
 		x.mu.Lock()
+		if pinned {
+			kept++
+			stateEvictPinnedTotal.Inc()
+		} else {
+			kept = 0
+		}
 	}
 	x.mu.Unlock()
 	if evicted > 0 {

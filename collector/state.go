@@ -59,6 +59,12 @@ type StateMap struct {
 	// onEvict, when set, is called for every entry the LRU index evicts, after
 	// the map's lock is released.
 	onEvict func(key string, value interface{})
+
+	// pinned, when set, exempts an entry from LRU eviction while it returns
+	// true: the index passes over it and makes it most recently used. It is
+	// called without the map's lock held, so it may look in other maps. It
+	// does not exempt the entry from expiry.
+	pinned func(key string, value interface{}) bool
 }
 
 // NewStateMap creates a new state map with TTL and janitor. A ttl of 0 gives
@@ -104,6 +110,13 @@ func (sm *StateMap) SetOnEvict(fn func(key string, value interface{})) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.onEvict = fn
+}
+
+// SetPinned installs the eviction exemption; see StateMap.pinned.
+func (sm *StateMap) SetPinned(fn func(key string, value interface{}) bool) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.pinned = fn
 }
 
 // SetOnExpire installs the expiry callback; see StateMap.onExpire.
@@ -247,13 +260,31 @@ func (sm *StateMap) Demote(key string) bool {
 }
 
 // evict removes key on behalf of the LRU index, unless the entry has been
-// replaced since node was chosen. Reports whether it removed anything.
-func (sm *StateMap) evict(key string, node *list.Element) bool {
-	sm.mu.Lock()
+// replaced since node was chosen. A pinned entry is not removed: it goes back
+// into the index as the most recently used. The index has already unlinked
+// node.
+func (sm *StateMap) evict(key string, node *list.Element) (removed, pinned bool) {
+	sm.mu.RLock()
 	entry, exists := sm.entries[key]
+	isPinned := sm.pinned
+	sm.mu.RUnlock()
 	if !exists || entry.node != node {
+		return false, false
+	}
+
+	// Asked without the map's lock, so the check can look in other maps
+	keep := isPinned != nil && isPinned(key, entry.Value)
+
+	sm.mu.Lock()
+	if cur, ok := sm.entries[key]; !ok || cur != entry {
+		// Written or deleted meanwhile: a write has given it a new node
 		sm.mu.Unlock()
-		return false
+		return false, false
+	}
+	if keep {
+		entry.node = sm.lru.insert(sm, key, stateSize(key, entry.Value))
+		sm.mu.Unlock()
+		return false, true
 	}
 	delete(sm.entries, key)
 	onEvict := sm.onEvict
@@ -262,7 +293,7 @@ func (sm *StateMap) evict(key string, node *list.Element) bool {
 	if onEvict != nil {
 		onEvict(key, entry.Value)
 	}
-	return true
+	return true, false
 }
 
 // SetIdle gives an existing entry an idle lifetime and touches it. Reports

@@ -198,6 +198,87 @@ func TestLRU_FileTTLWithMaxMemory(t *testing.T) {
 	})
 }
 
+// A session with files open is not evicted, nor is its dictid entry: its
+// files hold it, and its next open has to find its client. Before, both went
+// as soon as they were the coldest, and that open came out "unknown".
+func TestLRU_SessionWithOpenFilesIsPinned(t *testing.T) {
+	c := NewCorrelatorWithConfig(CorrelatorConfig{TTL: time.Minute, MaxEntries: 4})
+	defer c.Stop()
+	before := testutil.ToFloat64(stateEvictPinnedTotal)
+
+	snapRun(t, c, snapLogin())     // the session's dictid and userMap entries
+	snapRun(t, c, snapOpen(true))  // one file open on it
+	c.dictMap.Set("filler-1", "x") // at the cap
+	snapRun(t, c, lcXfr())         // the file is transferring: the session is now the coldest
+	c.dictMap.Set("filler-2", "x") // one has to go
+
+	serverID := c.getServerID(snapLogin())
+	assert.True(t, present(c.dictMap, BuildDictIDKey(serverID, snapLoginDic)), "the session's dictid entry is kept")
+	assert.Equal(t, 1, c.GetUserMapSize(), "the session is kept")
+	assert.True(t, present(c.stateMap, BuildFileKey(serverID, snapFileDic)), "the open file is kept")
+	assert.False(t, present(c.dictMap, "filler-1"), "the coldest entry not pinned goes instead")
+	assert.Equal(t, 2.0, testutil.ToFloat64(stateEvictPinnedTotal)-before)
+
+	// The session's next open still finds its client
+	const second = snapFileDic + 1
+	snapRun(t, c, withFileID(snapOpen(true), second))
+	cl := snapClose()
+	r := cl.FileRecords[1].(parser.FileCloseRecord)
+	r.Header.FileId = second
+	cl.FileRecords[1] = r
+	recs := snapRun(t, c, cl)
+	require.Len(t, recs, 1)
+	assert.Equal(t, snapHost, recs[0].Host)
+	assert.Equal(t, "/CN=alice", recs[0].UserDN)
+
+	// With no file open, the session can be evicted again
+	snapRun(t, c, snapClose())
+	c.lru.mu.Lock()
+	c.lru.maxBytes = 1
+	c.lru.mu.Unlock()
+	c.lru.enforce()
+	assert.Equal(t, 0, c.GetUserMapSize())
+}
+
+// Only the login's dictid entry is pinned. A 'd' record keeps the user info
+// under a dictid of its own too, and that entry is not kept just because its
+// session has a file open.
+func TestLRU_PathDictIDNotPinned(t *testing.T) {
+	c := NewCorrelatorWithConfig(CorrelatorConfig{TTL: time.Minute, MaxEntries: 5})
+	defer c.Stop()
+
+	snapRun(t, c, snapLogin())     // the session's dictid and userMap entries
+	snapRun(t, c, snapDict())      // the path, and the user info under the 'd' dictid
+	snapRun(t, c, snapOpen(true))  // a file open on the session: at the cap
+	snapRun(t, c, lcXfr())         // the file is transferring
+	c.dictMap.Set("filler-1", "x") // two have to go
+	c.dictMap.Set("filler-2", "x")
+
+	serverID := c.getServerID(snapLogin())
+	assert.True(t, present(c.dictMap, BuildDictIDKey(serverID, snapLoginDic)), "the login's dictid entry is kept")
+	assert.False(t, present(c.dictMap, BuildDictIDKey(serverID, snapFileDic)), "the 'd' record's is not pinned")
+	assert.True(t, present(c.dictMap, "filler-1"))
+}
+
+// When every entry left is pinned, eviction stops instead of cycling through
+// them for ever, and the index stays over its limit.
+func TestLRU_AllPinnedStops(t *testing.T) {
+	idx, m := lruMaps(t, 2, 1)
+	m[0].SetPinned(func(key string, _ interface{}) bool { return key != "free" })
+	m[0].Set("a", "x")
+	m[0].Set("b", "x")
+	m[0].Set("free", "x")
+	m[0].Set("c", "x")
+
+	assert.True(t, present(m[0], "a"))
+	assert.True(t, present(m[0], "b"))
+	assert.True(t, present(m[0], "c"))
+	assert.False(t, present(m[0], "free"), "the one entry not pinned goes")
+	_, n, _ := idx.stats()
+	assert.Equal(t, 3, n, "over the cap of 2, with everything left pinned")
+	checkAccounting(t, idx, m...)
+}
+
 func withFileID(p *parser.Packet, id uint32) *parser.Packet {
 	o := p.FileRecords[1].(parser.FileOpenRecord)
 	o.Header.FileId = id
