@@ -1,0 +1,1279 @@
+{
+  "a.incd.pt": [
+    "NCG-INGRID-PT"
+  ],
+  "ac.ae": [
+    "UAEU"
+  ],
+  "ac.at": [
+    "Hephy-Vienna"
+  ],
+  "ac.be": [
+    "BEgrid-ULB-VUB",
+    "BelGrid-UCL"
+  ],
+  "ac.cn": [
+    "BEIJING-T1"
+  ],
+  "ac.cy": [
+    "CY-01-KIMON"
+  ],
+  "ac.il": [
+    "IL-TAU-HEP",
+    "TECHNION-HEP",
+    "WEIZMANN-LCG2"
+  ],
+  "ac.kr": [
+    "KR-KNU-T3",
+    "KR-UOS-SSCC"
+  ],
+  "ac.th": [
+    "T2-TH-SUT"
+  ],
+  "ac.uk": [
+    "RAL-LCG2"
+  ],
+  "ac.za": [
+    "ZA-CHPC"
+  ],
+  "accre.vanderbilt.edu": [
+    "Vanderbilt"
+  ],
+  "acrc.bris.ac.uk": [
+    "UKI-SOUTHGRID-BRIS-HEP"
+  ],
+  "aglt2.org": [
+    "AGLT2"
+  ],
+  "alcf.anl.gov": [
+    "ANLASC"
+  ],
+  "alice-af.wigner.hu": [
+    "BUDAPEST"
+  ],
+  "alice.ihep.ac.cn": [
+    "BEIJING-LCG2"
+  ],
+  "anl.gov": [
+    "ANLASC"
+  ],
+  "apps.compute.net2.mghpcc.org": [
+    "NET2"
+  ],
+  "arbutus.cloud.computecanada.ca": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "arizona.edu": [
+    "Arizona"
+  ],
+  "arnes.si": [
+    "ARNES"
+  ],
+  "artemis.hrc.susx.ac.uk": [
+    "UKI-SOUTHGRID-SUSX"
+  ],
+  "atlas-swt2.org": [
+    "SWT2_CPB"
+  ],
+  "atlas.cuhk.edu.hk": [
+    "HK-LCG2"
+  ],
+  "atlas.unimelb.edu.au": [
+    "AU-Melbourne"
+  ],
+  "auth.gr": [
+    "GR-01-AUTH"
+  ],
+  "ba.infn.it": [
+    "INFN-BARI"
+  ],
+  "baylor.edu": [
+    "Baylor-Kodiak"
+  ],
+  "bfg.uni-freiburg.de": [
+    "UNI-FREIBURG"
+  ],
+  "bham.ac.uk": [
+    "UKI-SOUTHGRID-BHAM-HEP"
+  ],
+  "bitp.kiev.ua": [
+    "UA-BITP"
+  ],
+  "bluegrass.nsc.liu.se": [
+    "NDGF-T1"
+  ],
+  "bnl.gov": [
+    "BNL-ATLAS"
+  ],
+  "bnl.local": [
+    "BNL-ATLAS"
+  ],
+  "brazos.tamu.edu": [
+    "TAMU_BRAZOS"
+  ],
+  "bris.ac.uk": [
+    "UKI-SOUTHGRID-BRIS-HEP"
+  ],
+  "brown.edu": [
+    "brown-cms"
+  ],
+  "brunel.ac.uk": [
+    "UKI-LT2-Brunel"
+  ],
+  "cat.cbpf.br": [
+    "CBPF"
+  ],
+  "cbpf.br": [
+    "CBPF"
+  ],
+  "cc.kek.jp": [
+    "JP-KEK-CRC-02"
+  ],
+  "cea.fr": [
+    "GRIF"
+  ],
+  "cern-test.uiocloud.no": [
+    "NDGF-T1"
+  ],
+  "cern.ch": [
+    "CERN-PROD"
+  ],
+  "cesnet.cz": [
+    "prague_cesnet_lcg2"
+  ],
+  "chpc.ac.za": [
+    "ZA-CHPC"
+  ],
+  "chtc.wisc.edu": [
+    "CHTC",
+    "WISC-ATLAS"
+  ],
+  "chula.ac.th": [
+    "T3-TH-CHULA"
+  ],
+  "ciemat.es": [
+    "CIEMAT-LCG2"
+  ],
+  "cinvestav.mx": [
+    "cinvestav"
+  ],
+  "cis.gov.pl": [
+    "NCBJ-CIS"
+  ],
+  "cism.ucl.ac.be": [
+    "BelGrid-UCL"
+  ],
+  "cloud.computecanada.ca": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "cloud.unimelb.edu.au": [
+    "AU-Melbourne"
+  ],
+  "clumeq.mcgill.ca": [
+    "CA-MCGILL-CLUMEQ-T2"
+  ],
+  "cms.rcac.purdue.edu": [
+    "Purdue"
+  ],
+  "cmsaf.mit.edu": [
+    "MIT_CMS",
+    "MIT_LHCb"
+  ],
+  "cmu.edu": [
+    "T3_US_CMU"
+  ],
+  "cnaf.infn.it": [
+    "INFN-T1"
+  ],
+  "colorado.edu": [
+    "UColorado_HEP"
+  ],
+  "compute.net2.mghpcc.org": [
+    "NET2"
+  ],
+  "computecanada.ca": [
+    "CA-SFU-T2",
+    "CA-VICTORIA-WESTGRID-T2",
+    "CA-WATERLOO-T2"
+  ],
+  "comsats.edu.pk": [
+    "PK-CIIT"
+  ],
+  "cr.cnaf.infn.it": [
+    "INFN-T1"
+  ],
+  "crc.nd.edu": [
+    "NWICG_NDCMS"
+  ],
+  "cs.infn.it": [
+    "INFN-COSENZA"
+  ],
+  "csc.fi": [
+    "FI_HIP_T2"
+  ],
+  "cscs.ch": [
+    "CSCS-LCG2"
+  ],
+  "ct.infn.it": [
+    "INFN-CATANIA"
+  ],
+  "cuhk.edu.hk": [
+    "HK-LCG2"
+  ],
+  "cyf-kr.edu.pl": [
+    "CYFRONET-LCG2"
+  ],
+  "cyfronet.pl": [
+    "CYFRONET-LCG2"
+  ],
+  "data.net2.mghpcc.org": [
+    "NET2"
+  ],
+  "datagrid.cea.fr": [
+    "GRIF"
+  ],
+  "dcache.nikhef.nl": [
+    "NIKHEF-ELPROD"
+  ],
+  "de.tmp": [
+    "GSI-LCG2"
+  ],
+  "desy.de": [
+    "DESY-HH",
+    "DESY-ZN"
+  ],
+  "dnp.fmph.uniba.sk": [
+    "FMPhI-UNIBA"
+  ],
+  "dur.scotgrid.ac.uk": [
+    "UKI-SCOTGRID-DURHAM"
+  ],
+  "ecdf.ed.ac.uk": [
+    "UKI-SCOTGRID-ECDF"
+  ],
+  "echo.stfc.ac.uk": [
+    "RAL-LCG2"
+  ],
+  "ed.ac.uk": [
+    "UKI-SCOTGRID-ECDF"
+  ],
+  "edu.au": [
+    "AU-Melbourne"
+  ],
+  "edu.cn": [
+    "LZU-T2"
+  ],
+  "edu.hk": [
+    "HK-LCG2"
+  ],
+  "edu.pk": [
+    "NCP-LCG2",
+    "PK-CIIT"
+  ],
+  "edu.pl": [
+    "CYFRONET-LCG2"
+  ],
+  "edu.tr": [
+    "TR-03-METU"
+  ],
+  "edu.tw": [
+    "TW-FTT"
+  ],
+  "egee.cesnet.cz": [
+    "prague_cesnet_lcg2"
+  ],
+  "egee.man.poznan.pl": [
+    "PSNC"
+  ],
+  "esc.qmul.ac.uk": [
+    "UKI-LT2-QMUL"
+  ],
+  "example.com": [
+    "OU_OSCER_ATLAS",
+    "UKI-NORTHGRID-LANCS-HEP",
+    "UKI-NORTHGRID-MAN-HEP"
+  ],
+  "exo.io": [
+    "EXOSCALE"
+  ],
+  "farm.particle.cz": [
+    "praguelcg2"
+  ],
+  "fas.harvard.edu": [
+    "MIT_CMS"
+  ],
+  "fis.cinvestav.mx": [
+    "cinvestav"
+  ],
+  "fmph.uniba.sk": [
+    "FMPhI-UNIBA"
+  ],
+  "fnal.gov": [
+    "USCMS-FNAL-WC1"
+  ],
+  "fr.fr": [
+    "IN2P3-IPNL"
+  ],
+  "frontera.tacc.utexas.edu": [
+    "TACC"
+  ],
+  "frontier-squid.frontier-squid": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "ft.uam.es": [
+    "UAM-LCG2"
+  ],
+  "garching.physik.uni-muenchen.de": [
+    "LRZ-LMU"
+  ],
+  "gautschi.rcac.purdue.edu": [
+    "Purdue"
+  ],
+  "ge.infn.it": [
+    "INFN-GENOVA"
+  ],
+  "gina.surfsara.nl": [
+    "SARA-MATRIX"
+  ],
+  "gla.scotgrid.ac.uk": [
+    "UKI-SCOTGRID-GLASGOW"
+  ],
+  "goegrid.gwdg.de": [
+    "GoeGrid"
+  ],
+  "gov.pl": [
+    "NCBJ-CIS"
+  ],
+  "gov.tr": [
+    "TR-03-METU",
+    "TR-10-ULAKBIM"
+  ],
+  "grid.am": [
+    "AM-04-YERPHI"
+  ],
+  "grid.auth.gr": [
+    "GR-01-AUTH"
+  ],
+  "grid.cesnet.cz": [
+    "prague_cesnet_lcg2"
+  ],
+  "grid.cyf-kr.edu.pl": [
+    "CYFRONET-LCG2"
+  ],
+  "grid.cyfronet.pl": [
+    "CYFRONET-LCG2"
+  ],
+  "grid.helsinki.fi": [
+    "FI_HIP_T2"
+  ],
+  "grid.hep.ph.ic.ac.uk": [
+    "UKI-LT2-IC-HEP"
+  ],
+  "grid.lrz.de": [
+    "LRZ-LMU"
+  ],
+  "grid.metu.edu.tr": [
+    "TR-03-METU"
+  ],
+  "grid.nchc.org.tw": [
+    "TW-NCHC"
+  ],
+  "grid.pub.ro": [
+    "RO-03-UPB"
+  ],
+  "grid.sara.nl": [
+    "SARA-MATRIX"
+  ],
+  "grid.sinica.edu.tw": [
+    "TW-FTT"
+  ],
+  "grid.surfsara.nl": [
+    "SARA-MATRIX"
+  ],
+  "grid.teiemt.gr": [
+    "GR-12-TEIKAV"
+  ],
+  "grid.uiocloud.no": [
+    "NDGF-T1"
+  ],
+  "grid.uni-sofia.bg": [
+    "BG05-SUGrid"
+  ],
+  "grid.vbc.ac.at": [
+    "Hephy-Vienna"
+  ],
+  "gridka.de": [
+    "FZK-LCG2"
+  ],
+  "gridpp.ecdf.ed.ac.uk": [
+    "UKI-SCOTGRID-ECDF"
+  ],
+  "gridpp.rl.ac.uk": [
+    "RAL-LCG2"
+  ],
+  "grif.fr": [
+    "GRIF"
+  ],
+  "gsi.de": [
+    "GSI-LCG2"
+  ],
+  "gsi.de.tmp": [
+    "GSI-LCG2"
+  ],
+  "gwdg.de": [
+    "GoeGrid"
+  ],
+  "harvard.edu": [
+    "MIT_CMS"
+  ],
+  "hec.lancs.ac.uk": [
+    "UKI-NORTHGRID-LANCS-HEP"
+  ],
+  "helsinki.fi": [
+    "FI_HIP_T2"
+  ],
+  "hep.brown.edu": [
+    "brown-cms"
+  ],
+  "hep.ipm.ir": [
+    "IR-IPM-HEP"
+  ],
+  "hep.kbfi.ee": [
+    "T2_Estonia"
+  ],
+  "hep.lzu.edu.cn": [
+    "LZU-T2"
+  ],
+  "hep.manchester.ac.uk": [
+    "UKI-NORTHGRID-MAN-HEP"
+  ],
+  "hep.olemiss.edu": [
+    "UMissHEP"
+  ],
+  "hep.ph.ic.ac.uk": [
+    "UKI-LT2-IC-HEP"
+  ],
+  "hep.physik.uni-siegen.de": [
+    "UNI-SIEGEN-HEP"
+  ],
+  "hep.tau.ac.il": [
+    "IL-TAU-HEP"
+  ],
+  "hep.technion.ac.il": [
+    "TECHNION-HEP"
+  ],
+  "hep.upenn.edu": [
+    "PennT3"
+  ],
+  "hep.uprm.edu": [
+    "uprm-cms"
+  ],
+  "hep.wisc.edu": [
+    "GLOW"
+  ],
+  "hepgrid.uerj.br": [
+    "UERJ"
+  ],
+  "hephy.oeaw.ac.at": [
+    "Hephy-Vienna"
+  ],
+  "hepnetcanada.ca": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "hepnnu.com": [
+    "T3_CN_Nanjing"
+  ],
+  "heprc.uvic.ca": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "hip.fi": [
+    "FI_HIP_T2"
+  ],
+  "hl-lhc.net": [
+    "MWT2"
+  ],
+  "hpc-net.lv": [
+    "RTU"
+  ],
+  "hpc.ku.dk": [
+    "NDGF-T1"
+  ],
+  "hpc.susx.ac.uk": [
+    "UKI-SOUTHGRID-SUSX"
+  ],
+  "hpc.um6p.ma": [
+    "UM6P"
+  ],
+  "hpc.unibe.ch": [
+    "UNIBE-LHEP"
+  ],
+  "hpc.unige.ch": [
+    "UNIBE-LHEP"
+  ],
+  "hpc.utfsm.cl": [
+    "EELA-UTFSM"
+  ],
+  "hpc2n.umu.se": [
+    "NDGF-T1"
+  ],
+  "hpc4l.org": [
+    "HPC4L"
+  ],
+  "hpccloud.mpg.de": [
+    "MPPMU"
+  ],
+  "hrc.susx.ac.uk": [
+    "UKI-SOUTHGRID-SUSX"
+  ],
+  "ic.ac.uk": [
+    "UKI-LT2-IC-HEP"
+  ],
+  "icepp.jp": [
+    "TOKYO-LCG2"
+  ],
+  "if.usp.br": [
+    "SAMPA"
+  ],
+  "ifca.es": [
+    "IFCA-LCG2"
+  ],
+  "ifh.de": [
+    "DESY-ZN"
+  ],
+  "ific.uv.es": [
+    "IFIC-LCG2"
+  ],
+  "ihep.ac.cn": [
+    "BEIJING-T1"
+  ],
+  "ihep.su": [
+    "RU-Protvino-IHEP"
+  ],
+  "ihepa.ufl.edu": [
+    "UFlorida-HPC"
+  ],
+  "iihe.ac.be": [
+    "BEgrid-ULB-VUB"
+  ],
+  "ijclab.in2p3.fr": [
+    "GRIF"
+  ],
+  "ijs.si": [
+    "SiGNET"
+  ],
+  "in.tier2.hep.manchester.ac.uk": [
+    "UKI-NORTHGRID-MAN-HEP"
+  ],
+  "in2p3.fr": [
+    "IN2P3-CC"
+  ],
+  "in2p3.fr.fr": [
+    "IN2P3-IPNL"
+  ],
+  "incd.pt": [
+    "NCG-INGRID-PT"
+  ],
+  "indiacms.res.in": [
+    "INDIACMS-TIFR"
+  ],
+  "infn.it": [
+    "INFN-T1"
+  ],
+  "ingrid.pt": [
+    "NCG-INGRID-PT"
+  ],
+  "inr.troitsk.ru": [
+    "Ru-Troitsk-INR-LCG2"
+  ],
+  "ipm.ir": [
+    "IR-IPM-HEP"
+  ],
+  "irb.hr": [
+    "egee.irb.hr"
+  ],
+  "isma.kharkov.ua": [
+    "UA-ISMA"
+  ],
+  "itep.ru": [
+    "ITEP"
+  ],
+  "itim-cj.ro": [
+    "RO-14-ITIM"
+  ],
+  "itns.purdue.edu": [
+    "Purdue",
+    "Purdue-Hadoop"
+  ],
+  "iu.edu": [
+    "MWT2"
+  ],
+  "izum.si": [
+    "SiGNET"
+  ],
+  "jinr-t1.ru": [
+    "JINR-T1"
+  ],
+  "jinr.ru": [
+    "JINR-LCG2"
+  ],
+  "kbfi.ee": [
+    "T2_Estonia"
+  ],
+  "kek.jp": [
+    "JP-KEK-CRC-02"
+  ],
+  "kfki.hu": [
+    "BUDAPEST"
+  ],
+  "kharkov.ua": [
+    "Kharkov-KIPT-LCG2",
+    "UA-ISMA"
+  ],
+  "kiev.ua": [
+    "UA-BITP",
+    "UA-KNU"
+  ],
+  "kipt.kharkov.ua": [
+    "Kharkov-KIPT-LCG2"
+  ],
+  "knu.ac.kr": [
+    "KR-KNU-T3"
+  ],
+  "ku.dk": [
+    "NDGF-T1"
+  ],
+  "lal.in2p3.fr": [
+    "GRIF"
+  ],
+  "lamod.unam.mx": [
+    "ICN-UNAM"
+  ],
+  "lancs.ac.uk": [
+    "UKI-NORTHGRID-LANCS-HEP"
+  ],
+  "lbl.gov": [
+    "LBL_HPCS"
+  ],
+  "lcg.cscs.ch": [
+    "CSCS-LCG2"
+  ],
+  "lcg.triumf.ca": [
+    "TRIUMF-LCG2"
+  ],
+  "lhcmon.triumf.ca": [
+    "TRIUMF-LCG2"
+  ],
+  "lhep.unibe.ch": [
+    "UNIBE-LHEP"
+  ],
+  "liu.se": [
+    "NDGF-T1"
+  ],
+  "liv.ac.uk": [
+    "UKI-NORTHGRID-LIV-HEP"
+  ],
+  "lnf.infn.it": [
+    "INFN-FRASCATI"
+  ],
+  "lnl.infn.it": [
+    "INFN-LNL-2"
+  ],
+  "lrz.de": [
+    "LRZ-LMU"
+  ],
+  "lzu.edu.cn": [
+    "LZU-T2"
+  ],
+  "m45.ihep.su": [
+    "RU-Protvino-IHEP"
+  ],
+  "man.poznan.pl": [
+    "PSNC"
+  ],
+  "manchester.ac.uk": [
+    "UKI-NORTHGRID-MAN-HEP"
+  ],
+  "mcgill.ca": [
+    "CA-MCGILL-CLUMEQ-T2"
+  ],
+  "metu.edu.tr": [
+    "TR-03-METU"
+  ],
+  "mghpcc.org": [
+    "MIT_CMS",
+    "NET2"
+  ],
+  "mi.infn.it": [
+    "INFN-MILANO-ATLASC"
+  ],
+  "mib.infn.it": [
+    "INFN-MIB"
+  ],
+  "mit.edu": [
+    "MIT_CMS",
+    "MIT_LHCb"
+  ],
+  "mpcdf.mpg.de": [
+    "MPPMU"
+  ],
+  "mpg.de": [
+    "MPPMU"
+  ],
+  "mwt2.org": [
+    "MWT2"
+  ],
+  "na.infn.it": [
+    "INFN-NAPOLI-ATLAS"
+  ],
+  "ncg.ingrid.pt": [
+    "NCG-INGRID-PT"
+  ],
+  "nchc.org.tw": [
+    "TW-NCHC"
+  ],
+  "ncp.edu.pk": [
+    "NCP-LCG2"
+  ],
+  "nd.edu": [
+    "NWICG_NDCMS"
+  ],
+  "ndgf.org": [
+    "NDGF-T1"
+  ],
+  "negishi.rcac.purdue.edu": [
+    "Purdue"
+  ],
+  "nersc.gov": [
+    "LBNL_DSD_ITB",
+    "NERSC-PDSF"
+  ],
+  "nese.mghpcc.org": [
+    "MIT_CMS"
+  ],
+  "nese.rc.fas.harvard.edu": [
+    "MIT_CMS"
+  ],
+  "net2.mghpcc.org": [
+    "NET2"
+  ],
+  "nhn.ou.edu": [
+    "OUHEP_OSG"
+  ],
+  "nikhef.nl": [
+    "NIKHEF-ELPROD"
+  ],
+  "nipne.ro": [
+    "NIHAM",
+    "RO-02-NIPNE",
+    "RO-07-NIPNE"
+  ],
+  "nrp.mghpcc.org": [
+    "NET2"
+  ],
+  "nsc.liu.se": [
+    "NDGF-T1"
+  ],
+  "ntu.edu.tw": [
+    "TW-NTU-HEP"
+  ],
+  "oeaw.ac.at": [
+    "Hephy-Vienna"
+  ],
+  "offn.oscer.ou.edu": [
+    "OU_OSCER_ATLAS"
+  ],
+  "olemiss.edu": [
+    "UMissHEP"
+  ],
+  "opensciencegrid.org": [
+    "UColorado_HEP",
+    "Vanderbilt"
+  ],
+  "openstack.um6plocal": [
+    "UM6P"
+  ],
+  "org.br": [
+    "SPRACE"
+  ],
+  "org.tw": [
+    "TW-NCHC"
+  ],
+  "ornl.gov": [
+    "ORNL"
+  ],
+  "oscer.ou.edu": [
+    "OU_OSCER_ATLAS"
+  ],
+  "ou.edu": [
+    "OU_OSCER_ATLAS"
+  ],
+  "ox.ac.uk": [
+    "UKI-SOUTHGRID-OX-HEP"
+  ],
+  "particle.cz": [
+    "praguelcg2"
+  ],
+  "ph.bham.ac.uk": [
+    "UKI-SOUTHGRID-BHAM-HEP"
+  ],
+  "ph.ic.ac.uk": [
+    "UKI-LT2-IC-HEP"
+  ],
+  "ph.liv.ac.uk": [
+    "UKI-NORTHGRID-LIV-HEP"
+  ],
+  "phoenix.lcg.cscs.ch": [
+    "CSCS-LCG2"
+  ],
+  "phy.bris.ac.uk": [
+    "UKI-SOUTHGRID-BRIS-HEP"
+  ],
+  "phyast.pitt.edu": [
+    "UPittTier3"
+  ],
+  "phys.cmu.edu": [
+    "T3_US_CMU"
+  ],
+  "phys.ntu.edu.tw": [
+    "TW-NTU-HEP"
+  ],
+  "physics.arizona.edu": [
+    "Arizona"
+  ],
+  "physics.ox.ac.uk": [
+    "UKI-SOUTHGRID-OX-HEP"
+  ],
+  "physics.uoi.gr": [
+    "GR-07-UOI-HEPLAB"
+  ],
+  "physik.rwth-aachen.de": [
+    "RWTH-Aachen"
+  ],
+  "physik.uni-bonn.de": [
+    "UNI-BONN"
+  ],
+  "physik.uni-mainz.de": [
+    "mainz",
+    "mainzgrid"
+  ],
+  "physik.uni-muenchen.de": [
+    "LRZ-LMU"
+  ],
+  "physik.uni-siegen.de": [
+    "UNI-SIEGEN-HEP"
+  ],
+  "physik.uni-wuppertal.de": [
+    "wuppertalprod"
+  ],
+  "pi.infn.it": [
+    "INFN-PISA"
+  ],
+  "pic.es": [
+    "pic"
+  ],
+  "pitt.edu": [
+    "UPittTier3"
+  ],
+  "pleiades.uni-wuppertal.de": [
+    "wuppertalprod"
+  ],
+  "poznan.pl": [
+    "PSNC"
+  ],
+  "pp.rl.ac.uk": [
+    "UKI-SOUTHGRID-RALPP"
+  ],
+  "ppgrid1.rhul.ac.uk": [
+    "UKI-LT2-RHUL"
+  ],
+  "princeton.edu": [
+    "Princeton_ICSE_T3_CMS"
+  ],
+  "production.openstack.um6plocal": [
+    "UM6P"
+  ],
+  "psi.ch": [
+    "T3_CH_PSI"
+  ],
+  "pub.ro": [
+    "RO-03-UPB"
+  ],
+  "purdue.edu": [
+    "Purdue",
+    "Purdue-Hadoop"
+  ],
+  "qmul.ac.uk": [
+    "UKI-LT2-QMUL"
+  ],
+  "rc.cloud.unimelb.edu.au": [
+    "AU-Melbourne"
+  ],
+  "rc.fas.harvard.edu": [
+    "MIT_CMS"
+  ],
+  "rc.ufl.edu": [
+    "UFlorida-HPC"
+  ],
+  "rcac.purdue.edu": [
+    "Purdue"
+  ],
+  "rcs.uvic.ca": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "recas.ba.infn.it": [
+    "INFN-BARI"
+  ],
+  "reef.man.poznan.pl": [
+    "PSNC"
+  ],
+  "res.in": [
+    "IN-DAE-VECC-02",
+    "INDIACMS-TIFR"
+  ],
+  "rhul.ac.uk": [
+    "UKI-LT2-RHUL"
+  ],
+  "rice.edu": [
+    "Rice"
+  ],
+  "rl.ac.uk": [
+    "RAL-LCG2"
+  ],
+  "roma1.infn.it": [
+    "INFN-ROMA1",
+    "INFN-ROMA1-CMS"
+  ],
+  "roma2.infn.it": [
+    "INFN-ROMA2"
+  ],
+  "roma3.infn.it": [
+    "INFN-ROMA3"
+  ],
+  "rutgers.edu": [
+    "rutgers-cms"
+  ],
+  "rwth-aachen.de": [
+    "RWTH-Aachen"
+  ],
+  "rzg.mpg.de": [
+    "MPPMU"
+  ],
+  "sara.nl": [
+    "SARA-MATRIX"
+  ],
+  "saske.sk": [
+    "IEPSAS-Kosice"
+  ],
+  "sc.chula.ac.th": [
+    "T3-TH-CHULA"
+  ],
+  "scd.rl.ac.uk": [
+    "RAL-LCG2"
+  ],
+  "sci.am": [
+    "AM-01-AANL"
+  ],
+  "scinet.utoronto.ca": [
+    "CA-SCINET-T2"
+  ],
+  "scotgrid.ac.uk": [
+    "UKI-SCOTGRID-DURHAM",
+    "UKI-SCOTGRID-GLASGOW"
+  ],
+  "sdcc.bnl.gov": [
+    "BNL-ATLAS"
+  ],
+  "sdcc.bnl.local": [
+    "BNL-ATLAS"
+  ],
+  "sdfarm.kr": [
+    "KR-KISTI-GSDC-01"
+  ],
+  "sfu.computecanada.ca": [
+    "CA-SFU-T2"
+  ],
+  "shef.ac.uk": [
+    "UKI-NORTHGRID-SHEF-HEP"
+  ],
+  "simple-grid.lan": [
+    "UNI-SIEGEN-HEP"
+  ],
+  "sinica.edu.tw": [
+    "TW-FTT"
+  ],
+  "sites.opensciencegrid.org": [
+    "UColorado_HEP",
+    "Vanderbilt"
+  ],
+  "slac.stanford.edu": [
+    "MWT2"
+  ],
+  "slateci.io": [
+    "AGLT2"
+  ],
+  "snellius.surf.nl": [
+    "SARA-MATRIX"
+  ],
+  "sos-ch-gva-2.exo.io": [
+    "EXOSCALE"
+  ],
+  "spacescience.ro": [
+    "RO-13-ISS"
+  ],
+  "spbu.ru": [
+    "RU-SPbSU"
+  ],
+  "sprace.org.br": [
+    "SPRACE"
+  ],
+  "sscc.uos.ac.kr": [
+    "KR-UOS-SSCC"
+  ],
+  "stanford.edu": [
+    "MWT2"
+  ],
+  "stfc.ac.uk": [
+    "RAL-LCG2"
+  ],
+  "surf.nl": [
+    "SARA-MATRIX"
+  ],
+  "surfsara.nl": [
+    "SARA-MATRIX"
+  ],
+  "susx.ac.uk": [
+    "UKI-SOUTHGRID-SUSX"
+  ],
+  "sut.ac.th": [
+    "T2-TH-SUT"
+  ],
+  "swt2.uta.edu": [
+    "SWT2_CPB"
+  ],
+  "syr.edu": [
+    "SU-ITS"
+  ],
+  "t2.ct.infn.it": [
+    "INFN-CATANIA"
+  ],
+  "t2.mi.infn.it": [
+    "INFN-MILANO-ATLASC"
+  ],
+  "t2.mpcdf.mpg.de": [
+    "MPPMU"
+  ],
+  "t2.ucsd.edu": [
+    "UCSDT2"
+  ],
+  "tacc.utexas.edu": [
+    "TACC"
+  ],
+  "tamu.edu": [
+    "TAMU_BRAZOS"
+  ],
+  "tau.ac.il": [
+    "IL-TAU-HEP"
+  ],
+  "technion.ac.il": [
+    "TECHNION-HEP"
+  ],
+  "teiemt.gr": [
+    "GR-12-TEIKAV"
+  ],
+  "tier2-kol.res.in": [
+    "IN-DAE-VECC-02"
+  ],
+  "tier2.hep.manchester.ac.uk": [
+    "UKI-NORTHGRID-MAN-HEP"
+  ],
+  "tier2.hpc-net.lv": [
+    "RTU"
+  ],
+  "tier2.hpccloud.mpg.de": [
+    "MPPMU"
+  ],
+  "to.infn.it": [
+    "INFN-TORINO"
+  ],
+  "triumf.ca": [
+    "TRIUMF-LCG2"
+  ],
+  "troitsk.ru": [
+    "Ru-Troitsk-INR-LCG2"
+  ],
+  "truba.gov.tr": [
+    "TR-03-METU"
+  ],
+  "ts.infn.it": [
+    "INFN-TRIESTE"
+  ],
+  "twgrid.org": [
+    "Taiwan-LCG2"
+  ],
+  "uaeu.ac.ae": [
+    "UAEU"
+  ],
+  "uaic.ro": [
+    "RO-16-UAIC"
+  ],
+  "uam.es": [
+    "UAM-LCG2"
+  ],
+  "ucl.ac.be": [
+    "BelGrid-UCL"
+  ],
+  "ucsd.edu": [
+    "UCSDT2"
+  ],
+  "ucy.ac.cy": [
+    "CY-01-KIMON"
+  ],
+  "uerj.br": [
+    "UERJ"
+  ],
+  "ufl.edu": [
+    "UFlorida-HPC"
+  ],
+  "uiocloud.no": [
+    "NDGF-T1"
+  ],
+  "ulakbim.gov.tr": [
+    "TR-10-ULAKBIM"
+  ],
+  "ultralight.org": [
+    "CIT_CMS_T2"
+  ],
+  "um6p.ma": [
+    "UM6P"
+  ],
+  "umd.edu": [
+    "umd-cms"
+  ],
+  "umu.se": [
+    "NDGF-T1"
+  ],
+  "unam.mx": [
+    "ICN-UNAM"
+  ],
+  "uni-bonn.de": [
+    "UNI-BONN"
+  ],
+  "uni-freiburg.de": [
+    "UNI-FREIBURG"
+  ],
+  "uni-mainz.de": [
+    "mainz",
+    "mainzgrid"
+  ],
+  "uni-muenchen.de": [
+    "LRZ-LMU"
+  ],
+  "uni-siegen.de": [
+    "UNI-SIEGEN-HEP"
+  ],
+  "uni-sofia.bg": [
+    "BG05-SUGrid"
+  ],
+  "uni-wuppertal.de": [
+    "wuppertalprod"
+  ],
+  "uniba.sk": [
+    "FMPhI-UNIBA"
+  ],
+  "unibe.ch": [
+    "UNIBE-LHEP"
+  ],
+  "unige.ch": [
+    "UNIBE-LHEP"
+  ],
+  "unimelb.edu.au": [
+    "AU-Melbourne"
+  ],
+  "univ.kiev.ua": [
+    "UA-KNU"
+  ],
+  "unl.edu": [
+    "Nebraska"
+  ],
+  "uoi.gr": [
+    "GR-07-UOI-HEPLAB"
+  ],
+  "uos.ac.kr": [
+    "KR-UOS-SSCC"
+  ],
+  "upenn.edu": [
+    "PennT3"
+  ],
+  "uprm.edu": [
+    "uprm-cms"
+  ],
+  "usatlas.bnl.gov": [
+    "BNL-ATLAS"
+  ],
+  "usp.br": [
+    "SAMPA"
+  ],
+  "uta.edu": [
+    "SWT2_CPB"
+  ],
+  "utexas.edu": [
+    "TACC"
+  ],
+  "utfsm.cl": [
+    "EELA-UTFSM"
+  ],
+  "utoronto.ca": [
+    "CA-SCINET-T2"
+  ],
+  "uv.es": [
+    "IFIC-LCG2"
+  ],
+  "uvic.ca": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "uw.computecanada.ca": [
+    "CA-WATERLOO-T2"
+  ],
+  "vanderbilt.edu": [
+    "Vanderbilt"
+  ],
+  "vbc.ac.at": [
+    "Hephy-Vienna"
+  ],
+  "vega.izum.si": [
+    "SiGNET"
+  ],
+  "vega.pri": [
+    "SiGNET"
+  ],
+  "weizmann.ac.il": [
+    "WEIZMANN-LCG2"
+  ],
+  "westgrid.ca": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "wigner.hu": [
+    "BUDAPEST"
+  ],
+  "wisc.edu": [
+    "GLOW"
+  ],
+  "wlcg-dev.uvic.ca": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "wlcg.sci.am": [
+    "AM-01-AANL"
+  ],
+  "wlcg.uvic.ca": [
+    "CA-VICTORIA-WESTGRID-T2"
+  ],
+  "xrdb.local": [
+    "SWT2_CPB"
+  ],
+  "yerphi-cluster.grid.am": [
+    "AM-04-YERPHI"
+  ],
+  "zeuthen.desy.de": [
+    "DESY-ZN"
+  ]
+}

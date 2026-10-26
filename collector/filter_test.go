@@ -358,8 +358,8 @@ func TestDropPrecedenceOverWLCG(t *testing.T) {
 	}
 
 	record := &CollectorRecord{
-		VO:       "cms",       // matches drop filter
-		Filename: "/store/x",  // would match WLCG path prefix
+		VO:       "cms",      // matches drop filter
+		Filename: "/store/x", // would match WLCG path prefix
 	}
 
 	req := enrichmentRequest{record: record, destination: dest}
@@ -417,9 +417,9 @@ func TestNonDroppedRecordIsPublished(t *testing.T) {
 // enrichment pipeline (EnqueueForEnrichment), not just processEnrichmentRequest.
 func TestDropFilterWithEnrichmentPipeline(t *testing.T) {
 	c := newTestCorrelator(CorrelatorConfig{
-		TTL:              time.Minute,
+		TTL:               time.Minute,
 		EnrichmentWorkers: 1,
-		DropVOs:          []string{"droppedvo"},
+		DropVOs:           []string{"droppedvo"},
 	})
 	defer c.Stop()
 

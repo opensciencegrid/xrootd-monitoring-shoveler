@@ -370,6 +370,7 @@ func (d *dnsRecordEnricher) Enrich(ctx context.Context, record *CollectorRecord)
 		hostname := d.correlator.lookupDNSHostname(ctx, record.enrichmentIP)
 		if hostname != "" {
 			record.UserDomain = extractDomainFromHostname(hostname)
+			record.clientHostname = hostname
 		}
 		record.needsDNSEnrichment = false
 		record.enrichmentIP = ""

@@ -1,0 +1,4378 @@
+{
+  "AGLT2_SE": {
+    "protocols": {
+      "AGLT2_SE-SRM-head01.aglt2.org": {
+        "endpoint": "srm://head01.aglt2.org:8443"
+      }
+    },
+    "rcsite": "AGLT2"
+  },
+  "AGLT2_SE_0_ATLAS": {
+    "protocols": {
+      "AGLT2_SE_0_ATLAS-WEBDAV-webdav.aglt2.org": {
+        "endpoint": "davs://webdav.aglt2.org:2880"
+      },
+      "AGLT2_SE_0_ATLAS-XROOTD-xrootd.aglt2.org": {
+        "endpoint": "root://xrootd.aglt2.org:1094"
+      }
+    },
+    "rcsite": "AGLT2"
+  },
+  "AGLT2_SE_S3_ATLAS": {
+    "protocols": {
+      "AGLT2_SE_S3_ATLAS-WEBDAV-xrootd-s3gw.aglt2.org": {
+        "endpoint": "davs://xrootd-s3gw.aglt2.org:1094"
+      },
+      "AGLT2_SE_S3_ATLAS-XROOTD-xrootd-s3gw.aglt2.org": {
+        "endpoint": "root://xrootd-s3gw.aglt2.org:1094"
+      }
+    },
+    "rcsite": "AGLT2"
+  },
+  "AU-Melbourne_SE_ATLAS": {
+    "protocols": {
+      "AU-Melbourne_SE_ATLAS-WEBDAV-xrootd-redirector.atlas.unimelb.edu.au": {
+        "endpoint": "davs://xrootd-redirector.atlas.unimelb.edu.au:1094/"
+      },
+      "AU-Melbourne_SE_ATLAS-XROOTD-xrootd-redirector.atlas.unimelb.edu.au": {
+        "endpoint": "root://xrootd-redirector.atlas.unimelb.edu.au:1094/"
+      }
+    },
+    "rcsite": "AU-Melbourne"
+  },
+  "BEIJING-LCG2_SE_1_ATLAS": {
+    "protocols": {
+      "BEIJING-LCG2_SE_1_ATLAS-WEBDAV-cceos.ihep.ac.cn": {
+        "endpoint": "davs://cceos.ihep.ac.cn:9000"
+      },
+      "BEIJING-LCG2_SE_1_ATLAS-XROOTD-cceos.ihep.ac.cn": {
+        "endpoint": "root://cceos.ihep.ac.cn:1094"
+      }
+    },
+    "rcsite": "BEIJING-LCG2"
+  },
+  "BEIJING-LCG2_SE_ALICE": {
+    "protocols": {
+      "BEIJING-LCG2_SE_ALICE-AliEn-SE-aliceeos.alice.ihep.ac.cn": {
+        "endpoint": "aliceeos.alice.ihep.ac.cn"
+      }
+    },
+    "rcsite": "BEIJING-LCG2"
+  },
+  "BEIJING-T1_SE_LHCB": {
+    "protocols": {
+      "BEIJING-T1_SE_LHCB-HTTP-eoslhcb.ihep.ac.cn": {
+        "endpoint": "https://eoslhcb.ihep.ac.cn:9000"
+      },
+      "BEIJING-T1_SE_LHCB-XROOTD-eoslhcb.ihep.ac.cn": {
+        "endpoint": "root://eoslhcb.ihep.ac.cn"
+      }
+    },
+    "rcsite": "BEIJING-T1"
+  },
+  "BEIJING-T1_SE_LHCB_TAPE": {
+    "protocols": {
+      "BEIJING-T1_SE_LHCB_TAPE-HTTP-ctalhcb01.ihep.ac.cn": {
+        "endpoint": "https://ctalhcb01.ihep.ac.cn:9000"
+      },
+      "BEIJING-T1_SE_LHCB_TAPE-XROOTD-ctalhcb01.ihep.ac.cn": {
+        "endpoint": "root://ctalhcb01.ihep.ac.cn"
+      }
+    },
+    "rcsite": "BEIJING-T1"
+  },
+  "BEgrid-ULB-VUB_SE": {
+    "protocols": {
+      "BEgrid-ULB-VUB_SE-SRM-maite.iihe.ac.be": {
+        "endpoint": "srm://maite.iihe.ac.be:8443"
+      },
+      "BEgrid-ULB-VUB_SE-WEBDAV-maite.iihe.ac.be": {
+        "endpoint": "davs://maite.iihe.ac.be:2880"
+      }
+    },
+    "rcsite": "BEgrid-ULB-VUB"
+  },
+  "BNL-ATLAS_SE": {
+    "protocols": {
+      "BNL-ATLAS_SE-SRM-dcsrm.usatlas.bnl.gov": {
+        "endpoint": "srm://dcsrm.usatlas.bnl.gov:8443"
+      }
+    },
+    "rcsite": "BNL-ATLAS"
+  },
+  "BNL-ATLAS_SE_0_ATLAS": {
+    "protocols": {
+      "BNL-ATLAS_SE_0_ATLAS-WEBDAV-dcgftp.usatlas.bnl.gov": {
+        "endpoint": "davs://dcgftp.usatlas.bnl.gov:443"
+      },
+      "BNL-ATLAS_SE_0_ATLAS-XROOTD-dcgftp.usatlas.bnl.gov": {
+        "endpoint": "root://dcgftp.usatlas.bnl.gov:1094"
+      }
+    },
+    "rcsite": "BNL-ATLAS"
+  },
+  "BNL-ATLAS_SE_ATLAS_TAPE": {
+    "protocols": {
+      "BNL-ATLAS_SE_ATLAS_TAPE-WEBDAV-dcdoor-tape.usatlas.bnl.gov": {
+        "endpoint": "davs://dcdoor-tape.usatlas.bnl.gov:443"
+      },
+      "BNL-ATLAS_SE_ATLAS_TAPE-WEBDAV-dcqosdoor.usatlas.bnl.gov": {
+        "endpoint": "davs://dcqosdoor.usatlas.bnl.gov:443"
+      }
+    },
+    "rcsite": "BNL-ATLAS"
+  },
+  "BNL-ATLAS_SE_TEST_ATLAS": {
+    "protocols": {
+      "BNL-ATLAS_SE_TEST_ATLAS-WEBDAV-dcintdoor.sdcc.bnl.gov": {
+        "endpoint": "davs://dcintdoor.sdcc.bnl.gov:443/"
+      }
+    },
+    "rcsite": "BNL-ATLAS"
+  },
+  "BNL_SDCC_GLOBUS_ATLAS": {
+    "protocols": {
+      "BNL_SDCC_GLOBUS_ATLAS-GLOBUS-globus01.sdcc.bnl.gov": {
+        "endpoint": "globus://globus01.sdcc.bnl.gov"
+      }
+    },
+    "rcsite": "BNL-ATLAS"
+  },
+  "BOINC_SE_141_ATLAS": {
+    "protocols": {
+      "BOINC_SE_141_ATLAS-WEBDAV-data-bridge.cern.ch": {
+        "endpoint": "davs://data-bridge.cern.ch:443"
+      }
+    },
+    "rcsite": "BOINC"
+  },
+  "BUDAPEST_SE_ALICE": {
+    "protocols": {
+      "BUDAPEST_SE_ALICE-AliEn-SE-grid149.kfki.hu": {
+        "endpoint": "grid149.kfki.hu"
+      },
+      "BUDAPEST_SE_ALICE-XROOTD-eos-mgm1.alice-af.wigner.hu": {
+        "endpoint": "eos-mgm1.alice-af.wigner.hu"
+      },
+      "BUDAPEST_SE_ALICE-XROOTD-grid149.kfki.hu": {
+        "endpoint": "grid149.kfki.hu"
+      }
+    },
+    "rcsite": "BUDAPEST"
+  },
+  "BelGrid-UCL_SE": {
+    "protocols": {
+      "BelGrid-UCL_SE-SRM-ingrid-se02.cism.ucl.ac.be": {
+        "endpoint": "srm://ingrid-se02.cism.ucl.ac.be:8444"
+      }
+    },
+    "rcsite": "BelGrid-UCL"
+  },
+  "CA-MCGILL-CLUMEQ-T2_SE_0_ATLAS": {
+    "protocols": {
+      "CA-MCGILL-CLUMEQ-T2_SE_0_ATLAS-SRM-storm02.clumeq.mcgill.ca": {
+        "endpoint": "srm://storm02.clumeq.mcgill.ca:8444/srm/managerv2?SFN="
+      },
+      "CA-MCGILL-CLUMEQ-T2_SE_0_ATLAS-WEBDAV-gridftp02.clumeq.mcgill.ca": {
+        "endpoint": "davs://gridftp02.clumeq.mcgill.ca:8443"
+      },
+      "CA-MCGILL-CLUMEQ-T2_SE_0_ATLAS-XROOTD-gridftp03.clumeq.mcgill.ca": {
+        "endpoint": "root://gridftp03.clumeq.mcgill.ca:1094"
+      }
+    },
+    "rcsite": "CA-MCGILL-CLUMEQ-T2"
+  },
+  "CA-SCINET-T2_SE_0_ATLAS": {
+    "protocols": {
+      "CA-SCINET-T2_SE_0_ATLAS-SRM-lcg-se1.scinet.utoronto.ca": {
+        "endpoint": "srm://lcg-se1.scinet.utoronto.ca:8443/srm/managerv2?SFN="
+      },
+      "CA-SCINET-T2_SE_0_ATLAS-WEBDAV-lcg-door4.scinet.utoronto.ca": {
+        "endpoint": "davs://lcg-door4.scinet.utoronto.ca:2880/pnfs/scinet.utoronto.ca/data"
+      },
+      "CA-SCINET-T2_SE_0_ATLAS-XROOTD-lcg-door3.scinet.utoronto.ca": {
+        "endpoint": "root://lcg-door3.scinet.utoronto.ca:1094"
+      }
+    },
+    "rcsite": "CA-SCINET-T2"
+  },
+  "CA-SFU-T2_SE_0_ATLAS": {
+    "protocols": {
+      "CA-SFU-T2_SE_0_ATLAS-WEBDAV-lcg-se1.sfu.computecanada.ca": {
+        "endpoint": "davs://lcg-se1.sfu.computecanada.ca:2880"
+      },
+      "CA-SFU-T2_SE_0_ATLAS-XROOTD-lcg-dp2.sfu.computecanada.ca": {
+        "endpoint": "root://lcg-dp2.sfu.computecanada.ca:1094"
+      },
+      "CA-SFU-T2_SE_0_ATLAS-XROOTD-lcg-dp3.sfu.computecanada.ca": {
+        "endpoint": "root://lcg-dp3.sfu.computecanada.ca:1094"
+      },
+      "CA-SFU-T2_SE_0_ATLAS-XROOTD-lcg-dp4.sfu.computecanada.ca": {
+        "endpoint": "root://lcg-dp4.sfu.computecanada.ca:1094"
+      },
+      "CA-SFU-T2_SE_0_ATLAS-XROOTD-lcg-dp7.sfu.computecanada.ca": {
+        "endpoint": "root://lcg-dp7.sfu.computecanada.ca:1094"
+      }
+    },
+    "rcsite": "CA-SFU-T2"
+  },
+  "CA-VICTORIA-WESTGRID-T2_SE": {
+    "protocols": {
+      "CA-VICTORIA-WESTGRID-T2_SE-SRM-charon01.westgrid.ca": {
+        "endpoint": "srm://charon01.westgrid.ca:8443"
+      }
+    },
+    "rcsite": "CA-VICTORIA-WESTGRID-T2"
+  },
+  "CA-VICTORIA-WESTGRID-T2_SE_1_ATLAS": {
+    "protocols": {
+      "CA-VICTORIA-WESTGRID-T2_SE_1_ATLAS-WEBDAV-dcache-door.rcs.uvic.ca": {
+        "endpoint": "davs://dcache-door.rcs.uvic.ca:2880"
+      },
+      "CA-VICTORIA-WESTGRID-T2_SE_1_ATLAS-XROOTD-dcache-door.rcs.uvic.ca": {
+        "endpoint": "root://dcache-door.rcs.uvic.ca:1094"
+      }
+    },
+    "rcsite": "CA-VICTORIA-WESTGRID-T2"
+  },
+  "CA-VICTORIA-WESTGRID-T2_SE_2_ATLAS": {
+    "protocols": {
+      "CA-VICTORIA-WESTGRID-T2_SE_2_ATLAS-WEBDAV-eos-mgm.wlcg.uvic.ca": {
+        "endpoint": "davs://eos-mgm.wlcg.uvic.ca:8443"
+      },
+      "CA-VICTORIA-WESTGRID-T2_SE_2_ATLAS-XROOTD-eos-mgm.wlcg.uvic.ca": {
+        "endpoint": "root://eos-mgm.wlcg.uvic.ca:1094"
+      }
+    },
+    "rcsite": "CA-VICTORIA-WESTGRID-T2"
+  },
+  "CA-WATERLOO-T2_SE_1_ATLAS": {
+    "protocols": {
+      "CA-WATERLOO-T2_SE_1_ATLAS-WEBDAV-lcg-dp01.atlas.sharcnet.ca": {
+        "endpoint": "davs://lcg-dp01.atlas.sharcnet.ca:2880"
+      },
+      "CA-WATERLOO-T2_SE_1_ATLAS-XROOTD-lcg-dp01.atlas.sharcnet.ca": {
+        "endpoint": "root://lcg-dp01.atlas.sharcnet.ca:1094"
+      }
+    },
+    "rcsite": "CA-WATERLOO-T2"
+  },
+  "CERN-PILOT_SE_0_ATLAS": {
+    "protocols": {
+      "CERN-PILOT_SE_0_ATLAS-WEBDAV-eospilot.cern.ch": {
+        "endpoint": "davs://eospilot.cern.ch:443"
+      },
+      "CERN-PILOT_SE_0_ATLAS-XROOTD-eospilot.cern.ch": {
+        "endpoint": "root://eospilot.cern.ch:1094"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CERN-PROD_SE": {
+    "protocols": {
+      "CERN-PROD_SE-SRM-castorpublic.cern.ch": {
+        "endpoint": "srm://castorpublic.cern.ch:8443"
+      },
+      "CERN-PROD_SE-SRM-srm-cms.cern.ch": {
+        "endpoint": "srm://srm-cms.cern.ch:8443"
+      },
+      "CERN-PROD_SE-SRM-srm-eospublic.cern.ch": {
+        "endpoint": "srm://srm-eospublic.cern.ch:8443"
+      },
+      "CERN-PROD_SE-SRM-srm-public.cern.ch": {
+        "endpoint": "srm://srm-public.cern.ch:8443"
+      },
+      "CERN-PROD_SE-WEBDAV-dpmhead-rc.cern.ch": {
+        "endpoint": "davs://dpmhead-rc.cern.ch:443"
+      },
+      "CERN-PROD_SE-WEBDAV-dpmhead-trunk.cern.ch": {
+        "endpoint": "davs://dpmhead-trunk.cern.ch:443"
+      },
+      "CERN-PROD_SE-WEBDAV-eoseulakehttp.cern.ch": {
+        "endpoint": "davs://eoseulakehttp.cern.ch:433"
+      },
+      "CERN-PROD_SE-WEBDAV-eosppshttp.cern.ch": {
+        "endpoint": "davs://eosppshttp.cern.ch:443"
+      },
+      "CERN-PROD_SE-XROOTD-dpmhead-trunk.cern.ch": {
+        "endpoint": "root://dpmhead-trunk.cern.ch:1094"
+      },
+      "CERN-PROD_SE-XROOTD-eosppsftp.cern.ch": {
+        "endpoint": "root://eosppsftp.cern.ch:1094"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CERN-PROD_SE_140_ATLAS": {
+    "protocols": {
+      "CERN-PROD_SE_140_ATLAS-dynafed-data-bridge.cern.ch": {
+        "endpoint": "https://data-bridge.cern.ch/myfed/atlas/boinc/"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CERN-PROD_SE_1_ATLAS": {
+    "protocols": {
+      "CERN-PROD_SE_1_ATLAS-WEBDAV-eosatlas.cern.ch": {
+        "endpoint": "davs://eosatlas.cern.ch:443"
+      },
+      "CERN-PROD_SE_1_ATLAS-XROOTD-eosatlas.cern.ch": {
+        "endpoint": "root://eosatlas.cern.ch:1094"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CERN-PROD_SE_4_ATLAS": {
+    "protocols": {
+      "CERN-PROD_SE_4_ATLAS-WEBDAV-eospublic.cern.ch": {
+        "endpoint": "davs://eospublic.cern.ch:443"
+      },
+      "CERN-PROD_SE_4_ATLAS-XROOTD-eospublic.cern.ch": {
+        "endpoint": "root://eospublic.cern.ch:1094"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CERN-PROD_SE_ALICE": {
+    "protocols": {
+      "CERN-PROD_SE_ALICE-AliEn-SE-eosalice.cern.ch": {
+        "endpoint": "eosalice.cern.ch"
+      },
+      "CERN-PROD_SE_ALICE-AliEn-SE-eosctaalice.cern.ch": {
+        "endpoint": "eosctaalice.cern.ch"
+      },
+      "CERN-PROD_SE_ALICE-XROOTD-castoralice.cern.ch": {
+        "endpoint": "castoralice.cern.ch"
+      },
+      "CERN-PROD_SE_ALICE-XROOTD-eosalice.cern.ch": {
+        "endpoint": "eosalice.cern.ch"
+      },
+      "CERN-PROD_SE_ALICE-XROOTD-eosalicedaq.cern.ch": {
+        "endpoint": "eosalicedaq.cern.ch"
+      },
+      "CERN-PROD_SE_ALICE-XROOTD-eosaliceo2.cern.ch": {
+        "endpoint": "eosaliceo2.cern.ch"
+      },
+      "CERN-PROD_SE_ALICE-XROOTD-eosctaalice.cern.ch": {
+        "endpoint": "eosctaalice.cern.ch"
+      },
+      "CERN-PROD_SE_ALICE-XROOTD-eosctaalicepps.cern.ch": {
+        "endpoint": "eosctaalicepps.cern.ch"
+      },
+      "CERN-PROD_SE_ALICE-XROOTD-eosctaalicero.cern.ch": {
+        "endpoint": "eosctaalicero.cern.ch"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CERN-PROD_SE_ALICE_TAPE": {
+    "protocols": {
+      "CERN-PROD_SE_ALICE_TAPE-XROOTD-castoralice.cern.ch": {
+        "endpoint": "castoralice.cern.ch"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CERN-PROD_SE_ATLAS_TAPE": {
+    "protocols": {
+      "CERN-PROD_SE_ATLAS_TAPE-WEBDAV-eosctaatlas.cern.ch": {
+        "endpoint": "davs://eosctaatlas.cern.ch:8444"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CERN-PROD_SE_LHCB": {
+    "protocols": {
+      "CERN-PROD_SE_LHCB-HTTP-eoslhcb.cern.ch": {
+        "endpoint": "https://eoslhcb.cern.ch"
+      },
+      "CERN-PROD_SE_LHCB-XROOTD-eoslhcb.cern.ch": {
+        "endpoint": "root://eoslhcb.cern.ch"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CERN-PROD_SE_LHCB_TAPE": {
+    "protocols": {
+      "CERN-PROD_SE_LHCB_TAPE-HTTP-eosctalhcb.cern.ch": {
+        "endpoint": "https://eosctalhcb.cern.ch:8444"
+      },
+      "CERN-PROD_SE_LHCB_TAPE-XROOTD-eosctalhcb.cern.ch": {
+        "endpoint": "root://eosctalhcb.cern.ch"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "CIT_CMS_T2_SE": {
+    "protocols": {
+      "CIT_CMS_T2_SE-GRIDFTP-transfer.ultralight.org": {
+        "endpoint": "gsiftp://transfer.ultralight.org:2811"
+      }
+    },
+    "rcsite": "CIT_CMS_T2"
+  },
+  "CSCS-LCG2_SE": {
+    "protocols": {
+      "CSCS-LCG2_SE-WEBDAV-storage01.lcg.cscs.ch": {
+        "endpoint": "davs://storage01.lcg.cscs.ch:2880"
+      }
+    },
+    "rcsite": "CSCS-LCG2"
+  },
+  "CSCS-LCG2_SE_0_ATLAS": {
+    "protocols": {
+      "CSCS-LCG2_SE_0_ATLAS-WEBDAV-storage01.lcg.cscs.ch": {
+        "endpoint": "davs://storage01.lcg.cscs.ch:2880"
+      },
+      "CSCS-LCG2_SE_0_ATLAS-XROOTD-storage01.lcg.cscs.ch": {
+        "endpoint": "root://storage01.lcg.cscs.ch:1094"
+      }
+    },
+    "rcsite": "CSCS-LCG2"
+  },
+  "CSCS-LCG2_SE_LHCB": {
+    "protocols": {
+      "CSCS-LCG2_SE_LHCB-HTTP-storage01.lcg.cscs.ch": {
+        "endpoint": "https://storage01.lcg.cscs.ch:2880"
+      },
+      "CSCS-LCG2_SE_LHCB-XROOTD-storage01.lcg.cscs.ch": {
+        "endpoint": "root://storage01.lcg.cscs.ch:1094"
+      }
+    },
+    "rcsite": "CSCS-LCG2"
+  },
+  "CYFRONET-LCG2_SE": {
+    "protocols": {
+      "CYFRONET-LCG2_SE-SRM-dpm.cyf-kr.edu.pl": {
+        "endpoint": "srm://dpm.cyf-kr.edu.pl:8446"
+      }
+    },
+    "rcsite": "CYFRONET-LCG2"
+  },
+  "CYFRONET-LCG2_SE_1_ATLAS": {
+    "protocols": {
+      "CYFRONET-LCG2_SE_1_ATLAS-WEBDAV-eos01.grid.cyfronet.pl": {
+        "endpoint": "davs://eos01.grid.cyfronet.pl:8443"
+      },
+      "CYFRONET-LCG2_SE_1_ATLAS-XROOTD-eos01.grid.cyfronet.pl": {
+        "endpoint": "root://eos01.grid.cyfronet.pl:1094/"
+      }
+    },
+    "rcsite": "CYFRONET-LCG2"
+  },
+  "CYFRONET-LCG2_SE_ALICE": {
+    "protocols": {
+      "CYFRONET-LCG2_SE_ALICE-XROOTD-xrd01.grid.cyf-kr.edu.pl": {
+        "endpoint": "xrd01.grid.cyf-kr.edu.pl"
+      }
+    },
+    "rcsite": "CYFRONET-LCG2"
+  },
+  "DESY-HH_SE": {
+    "protocols": {
+      "DESY-HH_SE-GRIDFTP-dcache-door-doma01.desy.de": {
+        "endpoint": "gsiftp://dcache-door-doma01.desy.de:2811"
+      },
+      "DESY-HH_SE-SRM-dcache-se-atlas.desy.de": {
+        "endpoint": "srm://dcache-se-atlas.desy.de:8443"
+      },
+      "DESY-HH_SE-SRM-dcache-se-cms.desy.de": {
+        "endpoint": "srm://dcache-se-cms.desy.de:8443"
+      },
+      "DESY-HH_SE-SRM-dcache-se-desy.desy.de": {
+        "endpoint": "srm://dcache-se-desy.desy.de:8443"
+      },
+      "DESY-HH_SE-WEBDAV-dcache-cms-webdav.desy.de": {
+        "endpoint": "davs://dcache-cms-webdav.desy.de:2880"
+      },
+      "DESY-HH_SE-WEBDAV-dcache-door-doma01.desy.de": {
+        "endpoint": "davs://dcache-door-doma01.desy.de:2880"
+      },
+      "DESY-HH_SE-WEBDAV-dcache-se-doma.desy.de": {
+        "endpoint": "davs://dcache-se-doma.desy.de:2880"
+      },
+      "DESY-HH_SE-WEBDAV-prometheus.desy.de": {
+        "endpoint": "davs://prometheus.desy.de:2443"
+      },
+      "DESY-HH_SE-XROOTD-dcache-se-doma.desy.de": {
+        "endpoint": "root://dcache-se-doma.desy.de:1094"
+      },
+      "DESY-HH_SE-XROOTD-prometheus.desy.de": {
+        "endpoint": "root://prometheus.desy.de:1095"
+      }
+    },
+    "rcsite": "DESY-HH"
+  },
+  "DESY-HH_SE_0_ATLAS": {
+    "protocols": {
+      "DESY-HH_SE_0_ATLAS-WEBDAV-dcache-atlas-webdav-job.desy.de": {
+        "endpoint": "davs://dcache-atlas-webdav-job.desy.de:2880"
+      },
+      "DESY-HH_SE_0_ATLAS-WEBDAV-dcache-atlas-webdav-wan.desy.de": {
+        "endpoint": "davs://dcache-atlas-webdav-wan.desy.de:2880"
+      },
+      "DESY-HH_SE_0_ATLAS-XROOTD-dcache-atlas-xrootd-job.desy.de": {
+        "endpoint": "root://dcache-atlas-xrootd-job.desy.de:1094"
+      },
+      "DESY-HH_SE_0_ATLAS-XROOTD-dcache-atlas-xrootd-wan.desy.de": {
+        "endpoint": "root://dcache-atlas-xrootd-wan.desy.de:1094"
+      }
+    },
+    "rcsite": "DESY-HH"
+  },
+  "DESY-HH_SE_ATLAS_TAPE": {
+    "protocols": {
+      "DESY-HH_SE_ATLAS_TAPE-WEBDAV-dcache-atlas-webdav.desy.de": {
+        "endpoint": "davs://dcache-atlas-webdav.desy.de:2880"
+      }
+    },
+    "rcsite": "DESY-HH"
+  },
+  "DESY-HH_SE_LHCB": {
+    "protocols": {
+      "DESY-HH_SE_LHCB-HTTP-dcache-desy-webdav.desy.de": {
+        "endpoint": "https://dcache-desy-webdav.desy.de:2880"
+      },
+      "DESY-HH_SE_LHCB-XROOTD-dcache-desy-xrootd.desy.de": {
+        "endpoint": "root://dcache-desy-xrootd.desy.de:1094"
+      }
+    },
+    "rcsite": "DESY-HH"
+  },
+  "DESY-ZN_SE": {
+    "protocols": {
+      "DESY-ZN_SE-SRM-lcg-se0.ifh.de": {
+        "endpoint": "srm://lcg-se0.ifh.de:8443"
+      }
+    },
+    "rcsite": "DESY-ZN"
+  },
+  "DESY-ZN_SE_0_ATLAS": {
+    "protocols": {
+      "DESY-ZN_SE_0_ATLAS-WEBDAV-lcg-se0.ifh.de": {
+        "endpoint": "davs://lcg-se0.ifh.de:2880"
+      },
+      "DESY-ZN_SE_0_ATLAS-XROOTD-lcg-dc0.ifh.de": {
+        "endpoint": "root://lcg-dc0.ifh.de:1094"
+      },
+      "DESY-ZN_SE_0_ATLAS-XROOTD-lcg-se0.ifh.de": {
+        "endpoint": "root://lcg-se0.ifh.de:1094"
+      }
+    },
+    "rcsite": "DESY-ZN"
+  },
+  "EELA-UTFSM_SE_0_ATLAS": {
+    "protocols": {
+      "EELA-UTFSM_SE_0_ATLAS-WEBDAV-se.hpc.utfsm.cl": {
+        "endpoint": "davs://se.hpc.utfsm.cl:2880"
+      },
+      "EELA-UTFSM_SE_0_ATLAS-XROOTD-se.hpc.utfsm.cl": {
+        "endpoint": "root://se.hpc.utfsm.cl:1094"
+      }
+    },
+    "rcsite": "EELA-UTFSM"
+  },
+  "EXOSCALE_SE_163_ATLAS": {
+    "protocols": {
+      "EXOSCALE_SE_163_ATLAS-HTTP-atlas-exoscale-vie.sos-ch-gva-2.exo.io": {
+        "endpoint": "https://atlas-exoscale-vie.sos-ch-gva-2.exo.io"
+      }
+    },
+    "rcsite": "EXOSCALE"
+  },
+  "FMPhI-UNIBA_SE_0_ATLAS": {
+    "protocols": {
+      "FMPhI-UNIBA_SE_0_ATLAS-WEBDAV-lcgdpmse.dnp.fmph.uniba.sk": {
+        "endpoint": "davs://lcgdpmse.dnp.fmph.uniba.sk:443"
+      },
+      "FMPhI-UNIBA_SE_0_ATLAS-XROOTD-lcgdpmse.dnp.fmph.uniba.sk": {
+        "endpoint": "root://lcgdpmse.dnp.fmph.uniba.sk:1094"
+      }
+    },
+    "rcsite": "FMPhI-UNIBA"
+  },
+  "FMPhI-UNIBA_SE_ALICE": {
+    "protocols": {
+      "FMPhI-UNIBA_SE_ALICE-AliEn-SE-lcgeos.dnp.fmph.uniba.sk": {
+        "endpoint": "lcgeos.dnp.fmph.uniba.sk"
+      },
+      "FMPhI-UNIBA_SE_ALICE-AliEn-SE-lcgstorage04.dnp.fmph.uniba.sk": {
+        "endpoint": "lcgstorage04.dnp.fmph.uniba.sk"
+      },
+      "FMPhI-UNIBA_SE_ALICE-XROOTD-lcgstorage04.dnp.fmph.uniba.sk": {
+        "endpoint": "lcgstorage04.dnp.fmph.uniba.sk"
+      }
+    },
+    "rcsite": "FMPhI-UNIBA"
+  },
+  "FZK-LCG2_SE_1_ATLAS": {
+    "protocols": {
+      "FZK-LCG2_SE_1_ATLAS-WEBDAV-atlasdcache-kit.gridka.de": {
+        "endpoint": "davs://atlasdcache-kit.gridka.de:2880"
+      },
+      "FZK-LCG2_SE_1_ATLAS-XROOTD-atlasdcache-kit.gridka.de": {
+        "endpoint": "root://atlasdcache-kit.gridka.de:1094"
+      }
+    },
+    "rcsite": "FZK-LCG2"
+  },
+  "FZK-LCG2_SE_ALICE": {
+    "protocols": {
+      "FZK-LCG2_SE_ALICE-AliEn-SE-alice-disk-se.gridka.de": {
+        "endpoint": "alice-disk-se.gridka.de"
+      },
+      "FZK-LCG2_SE_ALICE-AliEn-SE-alice-tape-se.gridka.de": {
+        "endpoint": "alice-tape-se.gridka.de"
+      },
+      "FZK-LCG2_SE_ALICE-XROOTD-alice-disk-se.gridka.de": {
+        "endpoint": "alice-disk-se.gridka.de"
+      },
+      "FZK-LCG2_SE_ALICE-XROOTD-alice-tape-se.gridka.de": {
+        "endpoint": "alice-tape-se.gridka.de"
+      }
+    },
+    "rcsite": "FZK-LCG2"
+  },
+  "FZK-LCG2_SE_ATLAS_TAPE": {
+    "protocols": {
+      "FZK-LCG2_SE_ATLAS_TAPE-WEBDAV-atlasdcache-kit-tape.gridka.de": {
+        "endpoint": "davs://atlasdcache-kit-tape.gridka.de:2880"
+      }
+    },
+    "rcsite": "FZK-LCG2"
+  },
+  "FZK-LCG2_SE_CMS_TAPE": {
+    "protocols": {
+      "FZK-LCG2_SE_CMS_TAPE-SRM-cmsdcache-kit.gridka.de": {
+        "endpoint": "srm://cmsdcache-kit.gridka.de:8443"
+      },
+      "FZK-LCG2_SE_CMS_TAPE-WEBDAV-cmsdcache-kit.gridka.de": {
+        "endpoint": "https://cmsdcache-kit.gridka.de:2880"
+      },
+      "FZK-LCG2_SE_CMS_TAPE-XROOTD-cmsxrootd-redirectors.gridka.de": {
+        "endpoint": "cmsxrootd-redirectors.gridka.de:1094"
+      }
+    },
+    "rcsite": "FZK-LCG2"
+  },
+  "FZK-LCG2_SE_COMPASS": {
+    "protocols": {
+      "FZK-LCG2_SE_COMPASS-SRM-dcache-kit.gridka.de": {
+        "endpoint": "srm://dcache-kit.gridka.de:8443"
+      },
+      "FZK-LCG2_SE_COMPASS-WEBDAV-dcache-kit.gridka.de": {
+        "endpoint": "https://dcache-kit.gridka.de:2880"
+      },
+      "FZK-LCG2_SE_COMPASS-XROOTD-dcache-kit.gridka.de": {
+        "endpoint": "root://dcache-kit.gridka.de:1094"
+      }
+    },
+    "rcsite": "FZK-LCG2"
+  },
+  "FZK-LCG2_SE_COMPASS_TAPE": {
+    "protocols": {
+      "FZK-LCG2_SE_COMPASS_TAPE-SRM-dcache-kit-tape.gridka.de": {
+        "endpoint": "srm://dcache-kit-tape.gridka.de:8443"
+      },
+      "FZK-LCG2_SE_COMPASS_TAPE-WEBDAV-dcache-kit-tape.gridka.de": {
+        "endpoint": "https://dcache-kit-tape.gridka.de:2880"
+      },
+      "FZK-LCG2_SE_COMPASS_TAPE-XROOTD-dcache-kit-tape.gridka.de": {
+        "endpoint": "root://dcache-kit-tape.gridka.de:1094"
+      }
+    },
+    "rcsite": "FZK-LCG2"
+  },
+  "FZK-LCG2_SE_LHCB": {
+    "protocols": {
+      "FZK-LCG2_SE_LHCB-HTTP-lhcbdcache-kit.gridka.de": {
+        "endpoint": "https://lhcbdcache-kit.gridka.de:2880"
+      },
+      "FZK-LCG2_SE_LHCB-XROOTD-lhcbdcache-kit.gridka.de": {
+        "endpoint": "root://lhcbdcache-kit.gridka.de:1094"
+      }
+    },
+    "rcsite": "FZK-LCG2"
+  },
+  "FZK-LCG2_SE_LHCB_TAPE": {
+    "protocols": {
+      "FZK-LCG2_SE_LHCB_TAPE-HTTP-lhcbdcache-kit-tape.gridka.de": {
+        "endpoint": "https://lhcbdcache-kit-tape.gridka.de:2880"
+      }
+    },
+    "rcsite": "FZK-LCG2"
+  },
+  "GR-01-AUTH_SE_0_ATLAS": {
+    "protocols": {
+      "GR-01-AUTH_SE_0_ATLAS-SRM-se01.grid.auth.gr": {
+        "endpoint": "srm://se01.grid.auth.gr:8446/srm/managerv2?SFN="
+      }
+    },
+    "rcsite": "GR-01-AUTH"
+  },
+  "GR-07-UOI-HEPLAB_SE": {
+    "protocols": {
+      "GR-07-UOI-HEPLAB_SE-SRM-grid02.physics.uoi.gr": {
+        "endpoint": "srm://grid02.physics.uoi.gr:8446"
+      }
+    },
+    "rcsite": "GR-07-UOI-HEPLAB"
+  },
+  "GR-12-TEIKAV_SE_0_ATLAS": {
+    "protocols": {
+      "GR-12-TEIKAV_SE_0_ATLAS-SRM-se.grid.teiemt.gr": {
+        "endpoint": "srm://se.grid.teiemt.gr:8446/srm/managerv2?SFN="
+      }
+    },
+    "rcsite": "GR-12-TEIKAV"
+  },
+  "GRIF_GRIF_IPNO_SE_ALICE": {
+    "protocols": {
+      "GRIF_GRIF_IPNO_SE_ALICE-AliEn-SE-grid-72042.ijclab.in2p3.fr": {
+        "endpoint": "grid-72042.ijclab.in2p3.fr"
+      },
+      "GRIF_GRIF_IPNO_SE_ALICE-AliEn-SE-ipngridxrd0.in2p3.fr": {
+        "endpoint": "ipngridxrd0.in2p3.fr"
+      },
+      "GRIF_GRIF_IPNO_SE_ALICE-XROOTD-ipngridxrd0.in2p3.fr": {
+        "endpoint": "ipngridxrd0.in2p3.fr"
+      }
+    },
+    "rcsite": "GRIF"
+  },
+  "GRIF_GRIF_IRFU_SE_ALICE": {
+    "protocols": {
+      "GRIF_GRIF_IRFU_SE_ALICE-AliEn-SE-eos.grif.fr": {
+        "endpoint": "eos.grif.fr"
+      },
+      "GRIF_GRIF_IRFU_SE_ALICE-AliEn-SE-node12.datagrid.cea.fr": {
+        "endpoint": "node12.datagrid.cea.fr"
+      },
+      "GRIF_GRIF_IRFU_SE_ALICE-XROOTD-node12.datagrid.cea.fr": {
+        "endpoint": "node12.datagrid.cea.fr"
+      }
+    },
+    "rcsite": "GRIF"
+  },
+  "GRIF_LPNHE_SE_0_LHCB": {
+    "protocols": {
+      "GRIF_LPNHE_SE_0_LHCB-WEBDAV-lpnse1.in2p3.fr": {
+        "endpoint": "davs://lpnse1.in2p3.fr:443"
+      },
+      "GRIF_LPNHE_SE_0_LHCB-XROOTD-lpnse1.in2p3.fr": {
+        "endpoint": "root://lpnse1.in2p3.fr:1094"
+      }
+    },
+    "rcsite": "GRIF"
+  },
+  "GRIF_SE": {
+    "protocols": {
+      "GRIF_SE-SRM-ccsrm.in2p3.fr": {
+        "endpoint": "srm://ccsrm.in2p3.fr:8443"
+      },
+      "GRIF_SE-WEBDAV-ccdcatli302.in2p3.fr": {
+        "endpoint": "davs://ccdcatli302.in2p3.fr:2880"
+      }
+    },
+    "rcsite": "GRIF"
+  },
+  "GRIF_SE_3_ATLAS": {
+    "protocols": {
+      "GRIF_SE_3_ATLAS-WEBDAV-eos.grif.fr": {
+        "endpoint": "davs://eos.grif.fr:11000"
+      },
+      "GRIF_SE_3_ATLAS-XROOTD-eos.grif.fr": {
+        "endpoint": "root://eos.grif.fr:1094"
+      }
+    },
+    "rcsite": "GRIF"
+  },
+  "GRIF_SE_ALICE": {
+    "protocols": {
+      "GRIF_SE_ALICE-AliEn-SE-eos.grif.fr": {
+        "endpoint": "eos.grif.fr"
+      }
+    },
+    "rcsite": "GRIF"
+  },
+  "GRIF_SE_LHCB": {
+    "protocols": {
+      "GRIF_SE_LHCB-HTTP-eos.grif.fr": {
+        "endpoint": "https://eos.grif.fr:11000"
+      },
+      "GRIF_SE_LHCB-XROOTD-eos.grif.fr": {
+        "endpoint": "root://eos.grif.fr"
+      }
+    },
+    "rcsite": "GRIF"
+  },
+  "GSI-LCG2_SE_ALICE": {
+    "protocols": {
+      "GSI-LCG2_SE_ALICE-AliEn-SE-alird.gsi.de": {
+        "endpoint": "alird.gsi.de"
+      },
+      "GSI-LCG2_SE_ALICE-AliEn-SE-alise3rd.gsi.de": {
+        "endpoint": "alise3rd.gsi.de"
+      },
+      "GSI-LCG2_SE_ALICE-XROOTD-lxaliafrd.gsi.de": {
+        "endpoint": "lxaliafrd.gsi.de"
+      },
+      "GSI-LCG2_SE_ALICE-XROOTD-lxalird1.gsi.de": {
+        "endpoint": "lxalird1.gsi.de"
+      }
+    },
+    "rcsite": "GSI-LCG2"
+  },
+  "GoeGrid_SE": {
+    "protocols": {
+      "GoeGrid_SE-SRM-se-goegrid.gwdg.de": {
+        "endpoint": "srm://se-goegrid.gwdg.de:8443"
+      }
+    },
+    "rcsite": "GoeGrid"
+  },
+  "GoeGrid_SE_0_ATLAS": {
+    "protocols": {
+      "GoeGrid_SE_0_ATLAS-WEBDAV-se-goegrid.gwdg.de": {
+        "endpoint": "davs://se-goegrid.gwdg.de:2880"
+      },
+      "GoeGrid_SE_0_ATLAS-XROOTD-se-goegrid.gwdg.de": {
+        "endpoint": "root://se-goegrid.gwdg.de:1094"
+      }
+    },
+    "rcsite": "GoeGrid"
+  },
+  "HK-LCG2_SE_0_ATLAS": {
+    "protocols": {
+      "HK-LCG2_SE_0_ATLAS-WEBDAV-se01.atlas.cuhk.edu.hk": {
+        "endpoint": "davs://se01.atlas.cuhk.edu.hk:443"
+      },
+      "HK-LCG2_SE_0_ATLAS-XROOTD-se01.atlas.cuhk.edu.hk": {
+        "endpoint": "root://se01.atlas.cuhk.edu.hk:1094"
+      }
+    },
+    "rcsite": "HK-LCG2"
+  },
+  "Hephy-Vienna_SE": {
+    "protocols": {
+      "Hephy-Vienna_SE-UNKNOWN-se.grid.vbc.ac.at": {
+        "endpoint": "se.grid.vbc.ac.at"
+      }
+    },
+    "rcsite": "Hephy-Vienna"
+  },
+  "IEPSAS-Kosice_SE_0_ATLAS": {
+    "protocols": {
+      "IEPSAS-Kosice_SE_0_ATLAS-WEBDAV-se-iep-grid.saske.sk": {
+        "endpoint": "davs://se-iep-grid.saske.sk:2880"
+      },
+      "IEPSAS-Kosice_SE_0_ATLAS-XROOTD-se-iep-grid.saske.sk": {
+        "endpoint": "root://se-iep-grid.saske.sk:1094"
+      }
+    },
+    "rcsite": "IEPSAS-Kosice"
+  },
+  "IFIC-LCG2_SE_0_ATLAS": {
+    "protocols": {
+      "IFIC-LCG2_SE_0_ATLAS-STORM-srmdav.ific.uv.es": {
+        "endpoint": "storm://srmdav.ific.uv.es:8443"
+      },
+      "IFIC-LCG2_SE_0_ATLAS-WEBDAV-srmdav.ific.uv.es": {
+        "endpoint": "davs://srmdav.ific.uv.es:8443"
+      },
+      "IFIC-LCG2_SE_0_ATLAS-XROOTD-t2fax.ific.uv.es": {
+        "endpoint": "root://t2fax.ific.uv.es:1094"
+      }
+    },
+    "rcsite": "IFIC-LCG2"
+  },
+  "IL-TAU-HEP_SE": {
+    "protocols": {
+      "IL-TAU-HEP_SE-SRM-tau-se.hep.tau.ac.il": {
+        "endpoint": "srm://tau-se.hep.tau.ac.il:8444"
+      }
+    },
+    "rcsite": "IL-TAU-HEP"
+  },
+  "IN2P3-CC_SE": {
+    "protocols": {
+      "IN2P3-CC_SE-GRIDFTP-ccdcalitest10.in2p3.fr": {
+        "endpoint": "gsiftp://ccdcalitest10.in2p3.fr:2811"
+      },
+      "IN2P3-CC_SE-WEBDAV-ccdcalitest10.in2p3.fr": {
+        "endpoint": "davs://ccdcalitest10.in2p3.fr:2880"
+      },
+      "IN2P3-CC_SE-XROOTD-ccdcalitest10.in2p3.fr": {
+        "endpoint": "root://ccdcalitest10.in2p3.fr:1094"
+      }
+    },
+    "rcsite": "IN2P3-CC"
+  },
+  "IN2P3-CC_SE_0_ATLAS": {
+    "protocols": {
+      "IN2P3-CC_SE_0_ATLAS-WEBDAV-ccdavatlas.in2p3.fr": {
+        "endpoint": "davs://ccdavatlas.in2p3.fr:2880"
+      },
+      "IN2P3-CC_SE_0_ATLAS-XROOTD-ccxrootdatlas.in2p3.fr": {
+        "endpoint": "root://ccxrootdatlas.in2p3.fr:1094"
+      }
+    },
+    "rcsite": "IN2P3-CC"
+  },
+  "IN2P3-CC_SE_ALICE": {
+    "protocols": {
+      "IN2P3-CC_SE_ALICE-AliEn-SE-ccxrdralice.in2p3.fr": {
+        "endpoint": "ccxrdralice.in2p3.fr"
+      },
+      "IN2P3-CC_SE_ALICE-XROOTD-ccxrdralice.in2p3.fr": {
+        "endpoint": "ccxrdralice.in2p3.fr"
+      }
+    },
+    "rcsite": "IN2P3-CC"
+  },
+  "IN2P3-CC_SE_ATLAS_TAPE": {
+    "protocols": {
+      "IN2P3-CC_SE_ATLAS_TAPE-WEBDAV-ccdavatlas-tape.in2p3.fr": {
+        "endpoint": "davs://ccdavatlas-tape.in2p3.fr:2880"
+      },
+      "IN2P3-CC_SE_ATLAS_TAPE-XROOTD-ccxrootdatlas.in2p3.fr": {
+        "endpoint": "root://ccxrootdatlas.in2p3.fr:1094"
+      }
+    },
+    "rcsite": "IN2P3-CC"
+  },
+  "IN2P3-CC_SE_LHCB": {
+    "protocols": {
+      "IN2P3-CC_SE_LHCB-HTTP-ccdavlhcb.in2p3.fr": {
+        "endpoint": "https://ccdavlhcb.in2p3.fr:2880"
+      },
+      "IN2P3-CC_SE_LHCB-XROOTD-ccxrootdlhcb.in2p3.fr": {
+        "endpoint": "root://ccxrootdlhcb.in2p3.fr"
+      }
+    },
+    "rcsite": "IN2P3-CC"
+  },
+  "IN2P3-CC_SE_LHCB_TAPE": {
+    "protocols": {
+      "IN2P3-CC_SE_LHCB_TAPE-HTTP-ccdavlhcb-tape.in2p3.fr": {
+        "endpoint": "https://ccdavlhcb-tape.in2p3.fr:2880"
+      },
+      "IN2P3-CC_SE_LHCB_TAPE-HTTP-ccdavlhcb.in2p3.fr": {
+        "endpoint": "https://ccdavlhcb.in2p3.fr:2880"
+      }
+    },
+    "rcsite": "IN2P3-CC"
+  },
+  "IN2P3-CPPM_SE_0_ATLAS": {
+    "protocols": {
+      "IN2P3-CPPM_SE_0_ATLAS-WEBDAV-marsedpm.in2p3.fr": {
+        "endpoint": "davs://marsedpm.in2p3.fr:443"
+      },
+      "IN2P3-CPPM_SE_0_ATLAS-XROOTD-marsedpm.in2p3.fr": {
+        "endpoint": "root://marsedpm.in2p3.fr:1094"
+      }
+    },
+    "rcsite": "IN2P3-CPPM"
+  },
+  "IN2P3-CPPM_SE_LHCB": {
+    "protocols": {
+      "IN2P3-CPPM_SE_LHCB-HTTP-marsedpm.in2p3.fr": {
+        "endpoint": "https://marsedpm.in2p3.fr"
+      },
+      "IN2P3-CPPM_SE_LHCB-XROOTD-marsedpm.in2p3.fr": {
+        "endpoint": "root://marsedpm.in2p3.fr"
+      }
+    },
+    "rcsite": "IN2P3-CPPM"
+  },
+  "IN2P3-IPNL_SE_ALICE": {
+    "protocols": {
+      "IN2P3-IPNL_SE_ALICE-XROOTD-lyoeos.in2p3.fr": {
+        "endpoint": "lyoeos.in2p3.fr"
+      },
+      "IN2P3-IPNL_SE_ALICE-XROOTD-lyoeosalice.in2p3.fr": {
+        "endpoint": "lyoeosalice.in2p3.fr"
+      },
+      "IN2P3-IPNL_SE_ALICE-XROOTD-lyogrid04.in2p3.fr": {
+        "endpoint": "lyogrid04.in2p3.fr"
+      }
+    },
+    "rcsite": "IN2P3-IPNL"
+  },
+  "IN2P3-IRES_SE_ALICE": {
+    "protocols": {
+      "IN2P3-IRES_SE_ALICE-AliEn-SE-sbgse6.in2p3.fr": {
+        "endpoint": "sbgse6.in2p3.fr"
+      },
+      "IN2P3-IRES_SE_ALICE-XROOTD-sbgse6.in2p3.fr": {
+        "endpoint": "sbgse6.in2p3.fr"
+      }
+    },
+    "rcsite": "IN2P3-IRES"
+  },
+  "IN2P3-LAPP_SE_2_ATLAS": {
+    "protocols": {
+      "IN2P3-LAPP_SE_2_ATLAS-WEBDAV-lapp-dccentral01.in2p3.fr": {
+        "endpoint": "davs://lapp-dccentral01.in2p3.fr:443"
+      },
+      "IN2P3-LAPP_SE_2_ATLAS-XROOTD-lapp-dccentral01.in2p3.fr": {
+        "endpoint": "root://lapp-dccentral01.in2p3.fr:1094"
+      }
+    },
+    "rcsite": "IN2P3-LAPP"
+  },
+  "INFN-BARI_SE_ALICE": {
+    "protocols": {
+      "INFN-BARI_SE_ALICE-AliEn-SE-alicegrid2.recas.ba.infn.it": {
+        "endpoint": "alicegrid2.recas.ba.infn.it"
+      },
+      "INFN-BARI_SE_ALICE-XROOTD-alicegrid2.recas.ba.infn.it": {
+        "endpoint": "alicegrid2.recas.ba.infn.it"
+      }
+    },
+    "rcsite": "INFN-BARI"
+  },
+  "INFN-BOLOGNA-T3_SE": {
+    "protocols": {
+      "INFN-BOLOGNA-T3_SE-WEBDAV-xfer.cr.cnaf.infn.it": {
+        "endpoint": "davs://xfer.cr.cnaf.infn.it:8443"
+      }
+    },
+    "rcsite": "INFN-BOLOGNA-T3"
+  },
+  "INFN-COSENZA_SE_0_ATLAS": {
+    "protocols": {
+      "INFN-COSENZA_SE_0_ATLAS-WEBDAV-recas-se-01.cs.infn.it": {
+        "endpoint": "davs://recas-se-01.cs.infn.it:443"
+      },
+      "INFN-COSENZA_SE_0_ATLAS-XROOTD-recas-se-01.cs.infn.it": {
+        "endpoint": "root://recas-se-01.cs.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-COSENZA"
+  },
+  "INFN-FRASCATI_SE": {
+    "protocols": {
+      "INFN-FRASCATI_SE-SRM-atlasse.lnf.infn.it": {
+        "endpoint": "srm://atlasse.lnf.infn.it:8446"
+      }
+    },
+    "rcsite": "INFN-FRASCATI"
+  },
+  "INFN-FRASCATI_SE_0_ATLAS": {
+    "protocols": {
+      "INFN-FRASCATI_SE_0_ATLAS-WEBDAV-atlasse.lnf.infn.it": {
+        "endpoint": "davs://atlasse.lnf.infn.it:443"
+      },
+      "INFN-FRASCATI_SE_0_ATLAS-XROOTD-atlasse.lnf.infn.it": {
+        "endpoint": "root://atlasse.lnf.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-FRASCATI"
+  },
+  "INFN-GENOVA_SE_0_ATLAS": {
+    "protocols": {
+      "INFN-GENOVA_SE_0_ATLAS-WEBDAV-grid03.ge.infn.it": {
+        "endpoint": "davs://grid03.ge.infn.it:8443"
+      }
+    },
+    "rcsite": "INFN-GENOVA"
+  },
+  "INFN-GENOVA_SE_1_ATLAS": {
+    "protocols": {
+      "INFN-GENOVA_SE_1_ATLAS-WEBDAV-gridse01.ge.infn.it": {
+        "endpoint": "davs://gridse01.ge.infn.it:8443"
+      }
+    },
+    "rcsite": "INFN-GENOVA"
+  },
+  "INFN-LNL-2_SE_ALICE": {
+    "protocols": {
+      "INFN-LNL-2_SE_ALICE-AliEn-SE-t2-xrdrd.lnl.infn.it": {
+        "endpoint": "t2-xrdrd.lnl.infn.it"
+      },
+      "INFN-LNL-2_SE_ALICE-XROOTD-t2-xrdrd.lnl.infn.it": {
+        "endpoint": "t2-xrdrd.lnl.infn.it"
+      }
+    },
+    "rcsite": "INFN-LNL-2"
+  },
+  "INFN-MILANO-ATLASC_SE_1_ATLAS": {
+    "protocols": {
+      "INFN-MILANO-ATLASC_SE_1_ATLAS-WEBDAV-dcache.mi.infn.it": {
+        "endpoint": "davs://dcache.mi.infn.it:2880"
+      },
+      "INFN-MILANO-ATLASC_SE_1_ATLAS-XROOTD-dcache.mi.infn.it": {
+        "endpoint": "root://dcache.mi.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-MILANO-ATLASC"
+  },
+  "INFN-NAPOLI-ATLAS_SE_0_ATLAS": {
+    "protocols": {
+      "INFN-NAPOLI-ATLAS_SE_0_ATLAS-WEBDAV-t2-dcache-01.na.infn.it": {
+        "endpoint": "davs://t2-dcache-01.na.infn.it"
+      },
+      "INFN-NAPOLI-ATLAS_SE_0_ATLAS-XROOTD-t2-dcache-01.na.infn.it": {
+        "endpoint": "root://t2-dcache-01.na.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-NAPOLI-ATLAS"
+  },
+  "INFN-PISA_SE": {
+    "protocols": {
+      "INFN-PISA_SE-SRM-stormfe1.pi.infn.it": {
+        "endpoint": "srm://stormfe1.pi.infn.it:8444"
+      }
+    },
+    "rcsite": "INFN-PISA"
+  },
+  "INFN-ROMA1_SE_0_ATLAS": {
+    "protocols": {
+      "INFN-ROMA1_SE_0_ATLAS-WEBDAV-atlas-dcache-01.roma1.infn.it": {
+        "endpoint": "davs://atlas-dcache-01.roma1.infn.it:443"
+      },
+      "INFN-ROMA1_SE_0_ATLAS-XROOTD-atlas-dcache-01.roma1.infn.it": {
+        "endpoint": "root://atlas-dcache-01.roma1.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-ROMA1"
+  },
+  "INFN-ROMA2_SE_0_ATLAS": {
+    "protocols": {
+      "INFN-ROMA2_SE_0_ATLAS-WEBDAV-gridvm01.roma2.infn.it": {
+        "endpoint": "davs://gridvm01.roma2.infn.it:8443"
+      }
+    },
+    "rcsite": "INFN-ROMA2"
+  },
+  "INFN-ROMA3_SE_0_ATLAS": {
+    "protocols": {
+      "INFN-ROMA3_SE_0_ATLAS-WEBDAV-gridsrv-06.roma3.infn.it": {
+        "endpoint": "davs://gridsrv-06.roma3.infn.it:8443"
+      },
+      "INFN-ROMA3_SE_0_ATLAS-WEBDAV-gridsrv-07.roma3.infn.it": {
+        "endpoint": "davs://gridsrv-07.roma3.infn.it:8443"
+      }
+    },
+    "rcsite": "INFN-ROMA3"
+  },
+  "INFN-T1_SE_0_ATLAS": {
+    "protocols": {
+      "INFN-T1_SE_0_ATLAS-STORM-xfer-atlas.cr.cnaf.infn.it": {
+        "endpoint": "storm://xfer-atlas.cr.cnaf.infn.it:8443"
+      },
+      "INFN-T1_SE_0_ATLAS-WEBDAV-xfer-atlas.cr.cnaf.infn.it": {
+        "endpoint": "davs://xfer-atlas.cr.cnaf.infn.it:8443"
+      },
+      "INFN-T1_SE_0_ATLAS-XROOTD-xrootd-atlas.cr.cnaf.infn.it": {
+        "endpoint": "root://xrootd-atlas.cr.cnaf.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-T1"
+  },
+  "INFN-T1_SE_ALICE": {
+    "protocols": {
+      "INFN-T1_SE_ALICE-AliEn-SE-alice-test-xrootdgpfs.cr.cnaf.infn.it": {
+        "endpoint": "alice-test-xrootdgpfs.cr.cnaf.infn.it"
+      },
+      "INFN-T1_SE_ALICE-AliEn-SE-alice-xrootd-tsm.cr.cnaf.infn.it": {
+        "endpoint": "alice-xrootd-tsm.cr.cnaf.infn.it"
+      },
+      "INFN-T1_SE_ALICE-XROOTD-alice-test-xrootdgpfs.cr.cnaf.infn.it": {
+        "endpoint": "alice-test-xrootdgpfs.cr.cnaf.infn.it"
+      },
+      "INFN-T1_SE_ALICE-XROOTD-alice-xrootd-tsm.cr.cnaf.infn.it": {
+        "endpoint": "alice-xrootd-tsm.cr.cnaf.infn.it"
+      }
+    },
+    "rcsite": "INFN-T1"
+  },
+  "INFN-T1_SE_ATLAS_TAPE": {
+    "protocols": {
+      "INFN-T1_SE_ATLAS_TAPE-WEBDAV-xfer-tape-atlas.cr.cnaf.infn.it": {
+        "endpoint": "davs://xfer-tape-atlas.cr.cnaf.infn.it:8443"
+      }
+    },
+    "rcsite": "INFN-T1"
+  },
+  "INFN-T1_SE_LHCB": {
+    "protocols": {
+      "INFN-T1_SE_LHCB-HTTP-xfer-lhcb.cr.cnaf.infn.it": {
+        "endpoint": "https://xfer-lhcb.cr.cnaf.infn.it:8443"
+      },
+      "INFN-T1_SE_LHCB-XROOTD-xrootd-lhcb.cr.cnaf.infn.it": {
+        "endpoint": "root://xrootd-lhcb.cr.cnaf.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-T1"
+  },
+  "INFN-T1_SE_LHCB_TAPE": {
+    "protocols": {
+      "INFN-T1_SE_LHCB_TAPE-HTTP-xfer-tape-lhcb.cr.cnaf.infn.it": {
+        "endpoint": "https://xfer-tape-lhcb.cr.cnaf.infn.it:8443"
+      }
+    },
+    "rcsite": "INFN-T1"
+  },
+  "INFN-TORINO_SE": {
+    "protocols": {
+      "INFN-TORINO_SE-SRM-se-srm-00.to.infn.it": {
+        "endpoint": "srm://se-srm-00.to.infn.it:8444"
+      }
+    },
+    "rcsite": "INFN-TORINO"
+  },
+  "INFN-TORINO_SE_ALICE": {
+    "protocols": {
+      "INFN-TORINO_SE_ALICE-AliEn-SE-ali-nxrd.to.infn.it": {
+        "endpoint": "ali-nxrd.to.infn.it"
+      },
+      "INFN-TORINO_SE_ALICE-XROOTD-ali-nxrd.to.infn.it": {
+        "endpoint": "ali-nxrd.to.infn.it"
+      },
+      "INFN-TORINO_SE_ALICE-XROOTD-alice-xrd.to.infn.it": {
+        "endpoint": "alice-xrd.to.infn.it"
+      }
+    },
+    "rcsite": "INFN-TORINO"
+  },
+  "INFN-TRIESTE_SE_0_ATLAS": {
+    "protocols": {
+      "INFN-TRIESTE_SE_0_ATLAS-WEBDAV-gridsrm.ts.infn.it": {
+        "endpoint": "davs://gridsrm.ts.infn.it:8443"
+      }
+    },
+    "rcsite": "INFN-TRIESTE"
+  },
+  "INFN-TRIESTE_SE_ALICE": {
+    "protocols": {
+      "INFN-TRIESTE_SE_ALICE-XROOTD-alired.ts.infn.it": {
+        "endpoint": "alired.ts.infn.it"
+      }
+    },
+    "rcsite": "INFN-TRIESTE"
+  },
+  "JINR-LCG2_SE_0_ATLAS": {
+    "protocols": {
+      "JINR-LCG2_SE_0_ATLAS-WEBDAV-lcgsedr07.jinr.ru": {
+        "endpoint": "davs://lcgsedr07.jinr.ru:2880"
+      },
+      "JINR-LCG2_SE_0_ATLAS-XROOTD-lcgsedr01.jinr.ru": {
+        "endpoint": "root://lcgsedr01.jinr.ru:1094"
+      }
+    },
+    "rcsite": "JINR-LCG2"
+  },
+  "JINR-T1_SE": {
+    "protocols": {
+      "JINR-T1-WEBDAV-se-wbdv.jinr-t1.ru": {
+        "endpoint": "se-wbdv.jinr-t1.ru"
+      },
+      "JINR-T1_SE-SRM-srm-cms-mss.jinr-t1.ru": {
+        "endpoint": "srm://srm-cms-mss.jinr-t1.ru:8443"
+      },
+      "JINR-T1_SE-SRM-srm-cms.jinr-t1.ru": {
+        "endpoint": "srm://srm-cms.jinr-t1.ru:8443"
+      }
+    },
+    "rcsite": "JINR-T1"
+  },
+  "JP-KEK-CRC-02_SE": {
+    "protocols": {
+      "JP-KEK-CRC-02_SE-SRM-kek2-se02.cc.kek.jp": {
+        "endpoint": "srm://kek2-se02.cc.kek.jp:8444"
+      },
+      "JP-KEK-CRC-02_SE-SRM-kek2-se03.cc.kek.jp": {
+        "endpoint": "srm://kek2-se03.cc.kek.jp:8444"
+      }
+    },
+    "rcsite": "JP-KEK-CRC-02"
+  },
+  "JP-KEK-CRC-02_SE_BELLE2-ANALYSIS": {
+    "protocols": {
+      "JP-KEK-CRC-02_SE_BELLE2-ANALYSIS-WEBDAV-belle2-webdav-analysis-data.cc.kek.jp": {
+        "endpoint": "davs://belle2-webdav-analysis-data.cc.kek.jp"
+      }
+    },
+    "rcsite": "JP-KEK-CRC-02"
+  },
+  "JP-KEK-CRC-02_SE_BELLE2-RAW": {
+    "protocols": {
+      "JP-KEK-CRC-02_SE_BELLE2-RAW-WEBDAV-belle2-webdav-raw-data.cc.kek.jp": {
+        "endpoint": "davs://belle2-webdav-raw-data.cc.kek.jp"
+      }
+    },
+    "rcsite": "JP-KEK-CRC-02"
+  },
+  "KIT-T2_SE_ATLAS": {
+    "protocols": {
+      "KIT-T2_SE_ATLAS-WEBDAV-atlasdcache-kit-t2.gridka.de": {
+        "endpoint": "davs://atlasdcache-kit-t2.gridka.de:2880"
+      },
+      "KIT-T2_SE_ATLAS-XROOTD-atlasdcache-kit-t2.gridka.de": {
+        "endpoint": "root://atlasdcache-kit-t2.gridka.de:1094"
+      }
+    },
+    "rcsite": "KIT-T2"
+  },
+  "KR-KISTI-GSDC-01_SE": {
+    "protocols": {
+      "KR-KISTI-GSDC-01_SE-SRM-belle-se-head.sdfarm.kr": {
+        "endpoint": "srm://belle-se-head.sdfarm.kr:8446"
+      }
+    },
+    "rcsite": "KR-KISTI-GSDC-01"
+  },
+  "KR-KISTI-GSDC-01_SE_ALICE": {
+    "protocols": {
+      "KR-KISTI-GSDC-01_SE_ALICE-AliEn-SE-alice-t1-eos-mgm01.sdfarm.kr": {
+        "endpoint": "alice-t1-eos-mgm01.sdfarm.kr"
+      },
+      "KR-KISTI-GSDC-01_SE_ALICE-AliEn-SE-alice-t1-xrdr01.sdfarm.kr": {
+        "endpoint": "alice-t1-xrdr01.sdfarm.kr"
+      },
+      "KR-KISTI-GSDC-01_SE_ALICE-AliEn-SE-eos-archive.sdfarm.kr": {
+        "endpoint": "eos-archive.sdfarm.kr"
+      },
+      "KR-KISTI-GSDC-01_SE_ALICE-AliEn-SE-eos-disk.sdfarm.kr": {
+        "endpoint": "eos-disk.sdfarm.kr"
+      },
+      "KR-KISTI-GSDC-01_SE_ALICE-AliEn-SE-rbod-mgmt-01.sdfarm.kr": {
+        "endpoint": "rbod-mgmt-01.sdfarm.kr"
+      },
+      "KR-KISTI-GSDC-01_SE_ALICE-AliEn-SE-xht1201.sdfarm.kr": {
+        "endpoint": "xht1201.sdfarm.kr"
+      },
+      "KR-KISTI-GSDC-01_SE_ALICE-XROOTD-alice-t1-eos-mgm01.sdfarm.kr": {
+        "endpoint": "alice-t1-eos-mgm01.sdfarm.kr"
+      },
+      "KR-KISTI-GSDC-01_SE_ALICE-XROOTD-alice-t1-xrdr01.sdfarm.kr": {
+        "endpoint": "alice-t1-xrdr01.sdfarm.kr"
+      },
+      "KR-KISTI-GSDC-01_SE_ALICE-XROOTD-eos-archive.sdfarm.kr": {
+        "endpoint": "eos-archive.sdfarm.kr"
+      },
+      "KR-KISTI-GSDC-01_SE_ALICE-XROOTD-xht1201.sdfarm.kr": {
+        "endpoint": "xht1201.sdfarm.kr"
+      }
+    },
+    "rcsite": "KR-KISTI-GSDC-01"
+  },
+  "LBL_HPCS_LBL_HPCS_SE_ALICE": {
+    "protocols": {
+      "LBL_HPCS_LBL_HPCS_SE_ALICE-AliEn-SE-aliceafmgm0.lbl.gov": {
+        "endpoint": "aliceafmgm0.lbl.gov"
+      },
+      "LBL_HPCS_LBL_HPCS_SE_ALICE-AliEn-SE-alicemgm0.lbl.gov": {
+        "endpoint": "alicemgm0.lbl.gov"
+      },
+      "LBL_HPCS_LBL_HPCS_SE_ALICE-XROOTD-alicemgm0.lbl.gov": {
+        "endpoint": "alicemgm0.lbl.gov"
+      }
+    },
+    "rcsite": "LBL_HPCS"
+  },
+  "LHCb-HLTFARM_SE_LHCB": {
+    "protocols": {
+      "LHCb-HLTFARM_SE_LHCB-HTTP-lbdevgrid01.cern.ch": {
+        "endpoint": "https://lbdevgrid01.cern.ch:1094"
+      }
+    },
+    "rcsite": "LHCb-HLTFARM"
+  },
+  "LRZ-LMU_SE_0_ATLAS": {
+    "protocols": {
+      "LRZ-LMU_SE_0_ATLAS-WEBDAV-lcg-lrz-http.grid.lrz.de": {
+        "endpoint": "davs://lcg-lrz-http.grid.lrz.de:443"
+      },
+      "LRZ-LMU_SE_0_ATLAS-XROOTD-lcg-lrz-rootd.grid.lrz.de": {
+        "endpoint": "root://lcg-lrz-rootd.grid.lrz.de:1094"
+      }
+    },
+    "rcsite": "LRZ-LMU"
+  },
+  "LZU-T2_SE_LHCB": {
+    "protocols": {
+      "LZU-T2_SE_LHCB-HTTP-lzueos.hep.lzu.edu.cn": {
+        "endpoint": "https://lzueos.hep.lzu.edu.cn:9000"
+      },
+      "LZU-T2_SE_LHCB-XROOTD-lzueos.hep.lzu.edu.cn": {
+        "endpoint": "root://lzueos.hep.lzu.edu.cn"
+      }
+    },
+    "rcsite": "LZU-T2"
+  },
+  "MIT_CMS_SE": {
+    "protocols": {
+      "MIT_CMS_SE-GRIDFTP-se01.cmsaf.mit.edu": {
+        "endpoint": "gsiftp://se01.cmsaf.mit.edu:2811"
+      }
+    },
+    "rcsite": "MIT_CMS"
+  },
+  "MIT_LHCb_SE_LHCB": {
+    "protocols": {
+      "MIT_LHCb_SE_LHCB-HTTP-t2dsk0011.cmsaf.mit.edu": {
+        "endpoint": "https://t2dsk0011.cmsaf.mit.edu:1094"
+      },
+      "MIT_LHCb_SE_LHCB-XROOTD-t2dsk0011.cmsaf.mit.edu": {
+        "endpoint": "root://t2dsk0011.cmsaf.mit.edu"
+      }
+    },
+    "rcsite": "MIT_LHCb"
+  },
+  "MPPMU_SE_0_ATLAS": {
+    "protocols": {
+      "MPPMU_SE_0_ATLAS-WEBDAV-grid-dav.t2.mpcdf.mpg.de": {
+        "endpoint": "davs://grid-dav.t2.mpcdf.mpg.de:2880"
+      },
+      "MPPMU_SE_0_ATLAS-XROOTD-grid-dc.t2.mpcdf.mpg.de": {
+        "endpoint": "root://grid-dc.t2.mpcdf.mpg.de:1094"
+      }
+    },
+    "rcsite": "MPPMU"
+  },
+  "MWT2_SE": {
+    "protocols": {
+      "MWT2_SE-GRIDFTP-uct2-gridftp.mwt2.org": {
+        "endpoint": "gsiftp://uct2-gridftp.mwt2.org:2811"
+      },
+      "MWT2_SE-SRM-osgserv04.slac.stanford.edu": {
+        "endpoint": "srm://osgserv04.slac.stanford.edu:8443"
+      }
+    },
+    "rcsite": "MWT2"
+  },
+  "MWT2_SE_0_ATLAS": {
+    "protocols": {
+      "MWT2_SE_0_ATLAS-WEBDAV-webdav.mwt2.org": {
+        "endpoint": "davs://webdav.mwt2.org:2881"
+      },
+      "MWT2_SE_0_ATLAS-XROOTD-fax.mwt2.org": {
+        "endpoint": "root://fax.mwt2.org:1094"
+      }
+    },
+    "rcsite": "MWT2"
+  },
+  "MWT2_SE_1_ATLAS": {
+    "protocols": {
+      "MWT2_SE_1_ATLAS-WEBDAV-opendata.mwt2.org": {
+        "endpoint": "davs://opendata.mwt2.org:2881"
+      },
+      "MWT2_SE_1_ATLAS-XROOTD-opendata.mwt2.org": {
+        "endpoint": "root://opendata.mwt2.org:1094"
+      }
+    },
+    "rcsite": "MWT2"
+  },
+  "NCBJ-CIS_SE_LHCB": {
+    "protocols": {
+      "NCBJ-CIS_SE_LHCB-HTTP-se.cis.gov.pl": {
+        "endpoint": "https://se.cis.gov.pl:2880"
+      },
+      "NCBJ-CIS_SE_LHCB-XROOTD-se.cis.gov.pl": {
+        "endpoint": "root://se.cis.gov.pl"
+      }
+    },
+    "rcsite": "NCBJ-CIS"
+  },
+  "NCBJ-CIS_SE_LHCB_TAPE": {
+    "protocols": {
+      "NCBJ-CIS_SE_LHCB_TAPE-HTTP-tape.cis.gov.pl": {
+        "endpoint": "https://tape.cis.gov.pl:2880"
+      }
+    },
+    "rcsite": "NCBJ-CIS"
+  },
+  "NCG-INGRID-PT_SE_0_ATLAS": {
+    "protocols": {
+      "NCG-INGRID-PT_SE_0_ATLAS-STORM-gftp05.a.incd.pt": {
+        "endpoint": "storm://gftp05.a.incd.pt:8443"
+      },
+      "NCG-INGRID-PT_SE_0_ATLAS-WEBDAV-gftp05.a.incd.pt": {
+        "endpoint": "davs://gftp05.a.incd.pt:8443"
+      },
+      "NCG-INGRID-PT_SE_0_ATLAS-XROOTD-xroot01.ncg.ingrid.pt": {
+        "endpoint": "root://xroot01.ncg.ingrid.pt:1094"
+      }
+    },
+    "rcsite": "NCG-INGRID-PT"
+  },
+  "NCP-LCG2_SE": {
+    "protocols": {
+      "NCP-LCG2_SE-SRM-pcncp22.ncp.edu.pk": {
+        "endpoint": "srm://pcncp22.ncp.edu.pk:8446"
+      }
+    },
+    "rcsite": "NCP-LCG2"
+  },
+  "NDGF-T1_SE": {
+    "protocols": {
+      "NDGF-T1_SE-SRM-srm.ndgf.org": {
+        "endpoint": "srm://srm.ndgf.org:8443"
+      },
+      "NDGF-T1_SE-WEBDAV-preprod-srm.ndgf.org": {
+        "endpoint": "davs://preprod-srm.ndgf.org:443"
+      }
+    },
+    "rcsite": "NDGF-T1"
+  },
+  "NDGF-T1_SE_0_ATLAS": {
+    "protocols": {
+      "NDGF-T1_SE_0_ATLAS-WEBDAV-preprod-srm.ndgf.org": {
+        "endpoint": "davs://preprod-srm.ndgf.org:443"
+      }
+    },
+    "rcsite": "NDGF-T1"
+  },
+  "NDGF-T1_SE_1_ATLAS": {
+    "protocols": {
+      "NDGF-T1_SE_1_ATLAS-WEBDAV-dav.ndgf.org": {
+        "endpoint": "davs://dav.ndgf.org:443"
+      },
+      "NDGF-T1_SE_1_ATLAS-XROOTD-ftp1.ndgf.org": {
+        "endpoint": "root://ftp1.ndgf.org:1094"
+      }
+    },
+    "rcsite": "NDGF-T1"
+  },
+  "NDGF-T1_SE_ALICE": {
+    "protocols": {
+      "NDGF-T1_SE_ALICE-AliEn-SE-srm.ndgf.org": {
+        "endpoint": "srm.ndgf.org"
+      },
+      "NDGF-T1_SE_ALICE-XROOTD-preprod-srm.ndgf.org": {
+        "endpoint": "preprod-srm.ndgf.org"
+      },
+      "NDGF-T1_SE_ALICE-XROOTD-srm.ndgf.org": {
+        "endpoint": "srm.ndgf.org"
+      }
+    },
+    "rcsite": "NDGF-T1"
+  },
+  "NDGF-T1_SE_ATLAS_TAPE": {
+    "protocols": {
+      "NDGF-T1_SE_ATLAS_TAPE-WEBDAV-dav-tape.ndgf.org": {
+        "endpoint": "davs://dav-tape.ndgf.org:443"
+      }
+    },
+    "rcsite": "NDGF-T1"
+  },
+  "NERSC-PDSF_SE_0_ATLAS": {
+    "protocols": {
+      "NERSC-PDSF_SE_0_ATLAS-XROOTD-dtn114.nersc.gov": {
+        "endpoint": "root://dtn114.nersc.gov:1094"
+      }
+    },
+    "rcsite": "NERSC-PDSF"
+  },
+  "NET2_SE_0_ATLAS": {
+    "protocols": {
+      "NET2_SE_0_ATLAS-WEBDAV-webdav.data.net2.mghpcc.org": {
+        "endpoint": "davs://webdav.data.net2.mghpcc.org:2880"
+      },
+      "NET2_SE_0_ATLAS-XROOTD-xrootd.data.net2.mghpcc.org": {
+        "endpoint": "root://xrootd.data.net2.mghpcc.org:1094"
+      }
+    },
+    "rcsite": "NET2"
+  },
+  "NET2_SE_ATLAS_TAPE": {
+    "protocols": {
+      "NET2_SE_ATLAS_TAPE-WEBDAV-tape.data.net2.mghpcc.org": {
+        "endpoint": "davs://tape.data.net2.mghpcc.org:2880"
+      }
+    },
+    "rcsite": "NET2"
+  },
+  "NIHAM_SE_ALICE": {
+    "protocols": {
+      "NIHAM_SE_ALICE-AliEn-SE-neos.nipne.ro": {
+        "endpoint": "neos.nipne.ro"
+      },
+      "NIHAM_SE_ALICE-XROOTD-neos.nipne.ro": {
+        "endpoint": "neos.nipne.ro"
+      }
+    },
+    "rcsite": "NIHAM"
+  },
+  "NIKHEF-ELPROD_SE_1_ATLAS": {
+    "protocols": {
+      "NIKHEF-ELPROD_SE_1_ATLAS-WEBDAV-atlas.dcache.nikhef.nl": {
+        "endpoint": "davs://atlas.dcache.nikhef.nl:2880"
+      },
+      "NIKHEF-ELPROD_SE_1_ATLAS-XROOTD-atlas.dcache.nikhef.nl": {
+        "endpoint": "root://atlas.dcache.nikhef.nl:1094"
+      }
+    },
+    "rcsite": "NIKHEF-ELPROD"
+  },
+  "NIKHEF-ELPROD_SE_LHCB": {
+    "protocols": {
+      "NIKHEF-ELPROD_SE_LHCB-HTTP-lhcb.dcache.nikhef.nl": {
+        "endpoint": "https://lhcb.dcache.nikhef.nl:2880"
+      },
+      "NIKHEF-ELPROD_SE_LHCB-XROOTD-lhcb.dcache.nikhef.nl": {
+        "endpoint": "root://lhcb.dcache.nikhef.nl:1094"
+      }
+    },
+    "rcsite": "NIKHEF-ELPROD"
+  },
+  "Nebraska_SE": {
+    "protocols": {
+      "Nebraska_SE-WEBDAV-red-gridftp12.unl.edu": {
+        "endpoint": "davs://red-gridftp12.unl.edu:1094"
+      },
+      "Nebraska_SE-WEBDAV-xrootd-local.unl.edu": {
+        "endpoint": "davs://xrootd-local.unl.edu:1094"
+      },
+      "Nebraska_SE-XROOTD-red-gridftp12.unl.edu": {
+        "endpoint": "root://red-gridftp12.unl.edu:1094"
+      }
+    },
+    "rcsite": "Nebraska"
+  },
+  "ORNL_SE_ALICE": {
+    "protocols": {
+      "ORNL_SE_ALICE-AliEn-SE-ornl-eos-01.ornl.gov": {
+        "endpoint": "ornl-eos-01.ornl.gov"
+      },
+      "ORNL_SE_ALICE-AliEn-SE-ornl-eosprf-01.ornl.gov": {
+        "endpoint": "ornl-eosprf-01.ornl.gov"
+      },
+      "ORNL_SE_ALICE-XROOTD-ornl-eos-01.ornl.gov": {
+        "endpoint": "ornl-eos-01.ornl.gov"
+      }
+    },
+    "rcsite": "ORNL"
+  },
+  "OUHEP_OSG_SE_0_ATLAS": {
+    "protocols": {
+      "OUHEP_OSG_SE_0_ATLAS-SRM-ouhep2.nhn.ou.edu": {
+        "endpoint": "srm://ouhep2.nhn.ou.edu:8443/srm/v2/server?SFN="
+      }
+    },
+    "rcsite": "OUHEP_OSG"
+  },
+  "OU_OSCER_ATLAS_SE_0_ATLAS": {
+    "protocols": {
+      "OU_OSCER_ATLAS_SE_0_ATLAS-WEBDAV-se1.oscer.ou.edu": {
+        "endpoint": "davs://se1.oscer.ou.edu:1094"
+      },
+      "OU_OSCER_ATLAS_SE_0_ATLAS-XROOTD-dms.oscer.ou.edu": {
+        "endpoint": "root://dms.oscer.ou.edu:1094"
+      },
+      "OU_OSCER_ATLAS_SE_0_ATLAS-XROOTD-se1.oscer.ou.edu": {
+        "endpoint": "root://se1.oscer.ou.edu:1094"
+      }
+    },
+    "rcsite": "OU_OSCER_ATLAS"
+  },
+  "OU_OSCER_ATLAS_SE_1_ATLAS": {
+    "protocols": {
+      "OU_OSCER_ATLAS_SE_1_ATLAS-STORM-example.com": {
+        "endpoint": "storm://example.com:0"
+      },
+      "OU_OSCER_ATLAS_SE_1_ATLAS-WEBDAV-se0.oscer.ou.edu": {
+        "endpoint": "davs://se0.oscer.ou.edu:1094"
+      },
+      "OU_OSCER_ATLAS_SE_1_ATLAS-XROOTD-se0.oscer.ou.edu": {
+        "endpoint": "root://se0.oscer.ou.edu:1094"
+      }
+    },
+    "rcsite": "OU_OSCER_ATLAS"
+  },
+  "PRUE-SE-DXCACHE-NODE_ATLAS": {
+    "protocols": {
+      "PRUE-SE-DXCACHE-NODE_ATLAS-XROOTD-dlreunode01.jinr.ru": {
+        "endpoint": "root://dlreunode01.jinr.ru:1094/"
+      }
+    },
+    "rcsite": "ru-PRUE_XCACHE_NODES"
+  },
+  "PSNC_SE_ALICE": {
+    "protocols": {
+      "PSNC_SE_ALICE-AliEn-SE-eos01.egee.man.poznan.pl": {
+        "endpoint": "eos01.egee.man.poznan.pl"
+      },
+      "PSNC_SE_ALICE-AliEn-SE-xrootd.reef.man.poznan.pl": {
+        "endpoint": "xrootd.reef.man.poznan.pl"
+      }
+    },
+    "rcsite": "PSNC"
+  },
+  "PennT3_SE_0_ATLAS": {
+    "protocols": {
+      "PennT3_SE_0_ATLAS-SRMv2-srm.hep.upenn.edu": {
+        "endpoint": "srm://srm.hep.upenn.edu:8443/srm/v2/server?SFN="
+      }
+    },
+    "rcsite": "PennT3"
+  },
+  "RAL-LCG2_SE": {
+    "protocols": {
+      "RAL-LCG2_SE-XROOTD-rdr.echo.stfc.ac.uk:": {
+        "endpoint": "root://rdr.echo.stfc.ac.uk::1094"
+      }
+    },
+    "rcsite": "RAL-LCG2"
+  },
+  "RAL-LCG2_SE_187_ATLAS": {
+    "protocols": {
+      "RAL-LCG2_SE_187_ATLAS-WEBDAV-rdr.echo.stfc.ac.uk": {
+        "endpoint": "davs://rdr.echo.stfc.ac.uk:1094"
+      }
+    },
+    "rcsite": "RAL-LCG2"
+  },
+  "RAL-LCG2_SE_1_ATLAS": {
+    "protocols": {
+      "RAL-LCG2_SE_1_ATLAS-WEBDAV-rdr.echo.stfc.ac.uk": {
+        "endpoint": "davs://rdr.echo.stfc.ac.uk:1094"
+      },
+      "RAL-LCG2_SE_1_ATLAS-WEBDAV-webdav.echo.stfc.ac.uk": {
+        "endpoint": "davs://webdav.echo.stfc.ac.uk:1094"
+      },
+      "RAL-LCG2_SE_1_ATLAS-XROOTD-webdav.echo.stfc.ac.uk": {
+        "endpoint": "root://webdav.echo.stfc.ac.uk:1094"
+      },
+      "RAL-LCG2_SE_1_ATLAS-XROOTD-xrootd.echo.stfc.ac.uk": {
+        "endpoint": "root://xrootd.echo.stfc.ac.uk:1094"
+      }
+    },
+    "rcsite": "RAL-LCG2"
+  },
+  "RAL-LCG2_SE_CTA_ATLAS_TAPE": {
+    "protocols": {
+      "RAL-LCG2_SE_CTA_ATLAS_TAPE-WEBDAV-antares.stfc.ac.uk": {
+        "endpoint": "davs://antares.stfc.ac.uk:9000"
+      }
+    },
+    "rcsite": "RAL-LCG2"
+  },
+  "RAL-LCG2_SE_LHCB": {
+    "protocols": {
+      "RAL-LCG2_SE_LHCB-HTTP-webdav.echo.stfc.ac.uk": {
+        "endpoint": "https://webdav.echo.stfc.ac.uk:1094"
+      },
+      "RAL-LCG2_SE_LHCB-XROOTD-xrootd.echo.stfc.ac.uk": {
+        "endpoint": "root://xrootd.echo.stfc.ac.uk"
+      }
+    },
+    "rcsite": "RAL-LCG2"
+  },
+  "RAL-LCG2_SE_LHCB_TAPE": {
+    "protocols": {
+      "RAL-LCG2_SE_LHCB_TAPE-HTTP-antares.stfc.ac.uk": {
+        "endpoint": "https://antares.stfc.ac.uk:9000"
+      },
+      "RAL-LCG2_SE_LHCB_TAPE-XROOTD-antares.stfc.ac.uk": {
+        "endpoint": "root://antares.stfc.ac.uk"
+      }
+    },
+    "rcsite": "RAL-LCG2"
+  },
+  "RO-03-UPB_SE_ALICE": {
+    "protocols": {
+      "RO-03-UPB_SE_ALICE-AliEn-SE-cds-mgm-01.grid.pub.ro": {
+        "endpoint": "cds-mgm-01.grid.pub.ro"
+      },
+      "RO-03-UPB_SE_ALICE-AliEn-SE-eos-mgm-1.grid.pub.ro": {
+        "endpoint": "eos-mgm-1.grid.pub.ro"
+      },
+      "RO-03-UPB_SE_ALICE-AliEn-SE-eos-mgm.grid.pub.ro": {
+        "endpoint": "eos-mgm.grid.pub.ro"
+      },
+      "RO-03-UPB_SE_ALICE-XROOTD-eos-mgm.grid.pub.ro": {
+        "endpoint": "eos-mgm.grid.pub.ro"
+      }
+    },
+    "rcsite": "RO-03-UPB"
+  },
+  "RO-07-NIPNE_SE_0_ATLAS": {
+    "protocols": {
+      "RO-07-NIPNE_SE_0_ATLAS-WEBDAV-tbit00.nipne.ro": {
+        "endpoint": "davs://tbit00.nipne.ro:443"
+      },
+      "RO-07-NIPNE_SE_0_ATLAS-XROOTD-tbit00.nipne.ro": {
+        "endpoint": "root://tbit00.nipne.ro:1094"
+      }
+    },
+    "rcsite": "RO-07-NIPNE"
+  },
+  "RO-07-NIPNE_SE_ALICE": {
+    "protocols": {
+      "RO-07-NIPNE_SE_ALICE-AliEn-SE-eos.nipne.ro": {
+        "endpoint": "eos.nipne.ro"
+      },
+      "RO-07-NIPNE_SE_ALICE-XROOTD-eos.nipne.ro": {
+        "endpoint": "eos.nipne.ro"
+      }
+    },
+    "rcsite": "RO-07-NIPNE"
+  },
+  "RO-07-NIPNE_SE_LHCB": {
+    "protocols": {
+      "RO-07-NIPNE_SE_LHCB-HTTP-tbit00.nipne.ro": {
+        "endpoint": "https://tbit00.nipne.ro"
+      },
+      "RO-07-NIPNE_SE_LHCB-XROOTD-tbit00.nipne.ro": {
+        "endpoint": "root://tbit00.nipne.ro"
+      }
+    },
+    "rcsite": "RO-07-NIPNE"
+  },
+  "RWTH-Aachen_SE": {
+    "protocols": {
+      "RWTH-Aachen_SE-SRM-grid-srm.physik.rwth-aachen.de": {
+        "endpoint": "srm://grid-srm.physik.rwth-aachen.de:8443"
+      }
+    },
+    "rcsite": "RWTH-Aachen"
+  },
+  "SAMPA_SE_ALICE": {
+    "protocols": {
+      "SAMPA_SE_ALICE-WEBDAV-sampaeos.if.usp.br": {
+        "endpoint": "davs://sampaeos.if.usp.br:9000"
+      },
+      "SAMPA_SE_ALICE-XROOTD-sampaeos.if.usp.br": {
+        "endpoint": "sampaeos.if.usp.br"
+      },
+      "SAMPA_SE_ALICE-XROOTD-sampafst01.if.usp.br": {
+        "endpoint": "sampafst01.if.usp.br"
+      }
+    },
+    "rcsite": "SAMPA"
+  },
+  "SAMPA_SE_ATLAS_ATLAS": {
+    "protocols": {
+      "SAMPA_SE_ATLAS_ATLAS-WEBDAV-sampa-eosatl.if.usp.br": {
+        "endpoint": "davs://sampa-eosatl.if.usp.br:9000"
+      },
+      "SAMPA_SE_ATLAS_ATLAS-XROOTD-sampa-eosatl.if.usp.br": {
+        "endpoint": "root://sampa-eosatl.if.usp.br:1094"
+      }
+    },
+    "rcsite": "SAMPA"
+  },
+  "SARA-MATRIX_SE": {
+    "protocols": {
+      "SARA-MATRIX_SE-SRM-srm.grid.sara.nl": {
+        "endpoint": "srm://srm.grid.sara.nl:8443"
+      },
+      "SARA-MATRIX_SE-WEBDAV-dolphin12.grid.surfsara.nl": {
+        "endpoint": "davs://dolphin12.grid.surfsara.nl:2882"
+      }
+    },
+    "rcsite": "SARA-MATRIX"
+  },
+  "SARA-MATRIX_SE_0_ATLAS": {
+    "protocols": {
+      "SARA-MATRIX_SE_0_ATLAS-WEBDAV-webdav.grid.surfsara.nl": {
+        "endpoint": "davs://webdav.grid.surfsara.nl:2882"
+      },
+      "SARA-MATRIX_SE_0_ATLAS-XROOTD-xrootd.grid.sara.nl": {
+        "endpoint": "root://xrootd.grid.sara.nl:1094"
+      }
+    },
+    "rcsite": "SARA-MATRIX"
+  },
+  "SARA-MATRIX_SE_ALICE": {
+    "protocols": {
+      "SARA-MATRIX_SE_ALICE-AliEn-SE-srm.grid.sara.nl": {
+        "endpoint": "srm.grid.sara.nl"
+      },
+      "SARA-MATRIX_SE_ALICE-XROOTD-srm.grid.sara.nl": {
+        "endpoint": "srm.grid.sara.nl"
+      }
+    },
+    "rcsite": "SARA-MATRIX"
+  },
+  "SARA-MATRIX_SE_ATLAS_TAPE": {
+    "protocols": {
+      "SARA-MATRIX_SE_ATLAS_TAPE-WEBDAV-webdav-tape.grid.surfsara.nl": {
+        "endpoint": "davs://webdav-tape.grid.surfsara.nl:2882"
+      }
+    },
+    "rcsite": "SARA-MATRIX"
+  },
+  "SARA-MATRIX_SE_LHCB": {
+    "protocols": {
+      "SARA-MATRIX_SE_LHCB-HTTP-webdav.grid.surfsara.nl": {
+        "endpoint": "https://webdav.grid.surfsara.nl:2883"
+      },
+      "SARA-MATRIX_SE_LHCB-XROOTD-xrootd.grid.surfsara.nl": {
+        "endpoint": "root://xrootd.grid.surfsara.nl"
+      }
+    },
+    "rcsite": "SARA-MATRIX"
+  },
+  "SARA-MATRIX_SE_LHCB_TAPE": {
+    "protocols": {
+      "SARA-MATRIX_SE_LHCB_TAPE-HTTP-webdav-tape.grid.surfsara.nl": {
+        "endpoint": "https://webdav-tape.grid.surfsara.nl:2882"
+      }
+    },
+    "rcsite": "SARA-MATRIX"
+  },
+  "SPRACE_SE": {
+    "protocols": {
+      "SPRACE_SE-SRM-osg-se.sprace.org.br": {
+        "endpoint": "srm://osg-se.sprace.org.br:8443"
+      }
+    },
+    "rcsite": "SPRACE"
+  },
+  "SWT2_CPB_SE_ATLAS": {
+    "protocols": {
+      "SWT2_CPB_SE_ATLAS-WEBDAV-gridftp.atlas-swt2.org": {
+        "endpoint": "davs://gridftp.atlas-swt2.org:1094"
+      },
+      "SWT2_CPB_SE_ATLAS-XROOTD-gridftp.atlas-swt2.org": {
+        "endpoint": "root://gridftp.atlas-swt2.org:1094"
+      },
+      "SWT2_CPB_SE_ATLAS-XROOTD-xrdb.local": {
+        "endpoint": "root://xrdb.local:1094"
+      }
+    },
+    "rcsite": "SWT2_CPB"
+  },
+  "SWT2_CPB_SE_TEST_ATLAS": {
+    "protocols": {
+      "SWT2_CPB_SE_TEST_ATLAS-WEBDAV-gridftp.swt2.uta.edu": {
+        "endpoint": "davs://gridftp.swt2.uta.edu:1094"
+      },
+      "SWT2_CPB_SE_TEST_ATLAS-XROOTD-gridftp.swt2.uta.edu": {
+        "endpoint": "root://gridftp.swt2.uta.edu:1094"
+      },
+      "SWT2_CPB_SE_TEST_ATLAS-XROOTD-xrdb.local": {
+        "endpoint": "root://xrdb.local:1094"
+      }
+    },
+    "rcsite": "SWT2_CPB"
+  },
+  "SiGNET_SE": {
+    "protocols": {
+      "SiGNET_SE-SRM-dcache.ijs.si": {
+        "endpoint": "srm://dcache.ijs.si:8443"
+      }
+    },
+    "rcsite": "SiGNET"
+  },
+  "T0_CH_CERN_SE_CMS": {
+    "protocols": {
+      "T0_CH_CERN_SE_CMS-SRM-eoscmsftp.cern.ch": {
+        "endpoint": "eoscmsftp.cern.ch:2811"
+      },
+      "T0_CH_CERN_SE_CMS-WEBDAV-eoscms.cern.ch": {
+        "endpoint": "eoscms.cern.ch:443"
+      },
+      "T0_CH_CERN_SE_CMS-WEBDAV-eosctacms.cern.ch": {
+        "endpoint": "eosctacms.cern.ch:8444"
+      },
+      "T0_CH_CERN_SE_CMS-WEBDAV-eospilot.cern.ch": {
+        "endpoint": "eospilot.cern.ch:443"
+      },
+      "T0_CH_CERN_SE_CMS-XROOTD-eoscms-gsi.cern.ch": {
+        "endpoint": "eoscms-gsi.cern.ch:9999"
+      },
+      "T0_CH_CERN_SE_CMS-XROOTD-eoscms.cern.ch": {
+        "endpoint": "eoscms.cern.ch:1094"
+      },
+      "T0_CH_CERN_SE_CMS-XROOTD-eoscmsgsi.cern.ch": {
+        "endpoint": "eoscmsgsi.cern.ch:1099"
+      },
+      "T0_CH_CERN_SE_CMS-XROOTD-eosctacms.cern.ch": {
+        "endpoint": "eosctacms.cern.ch:1094"
+      },
+      "T0_CH_CERN_SE_CMS-XROOTD-eospilot.cern.ch": {
+        "endpoint": "eospilot.cern.ch:1094"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "T1_DE_KIT_SE_CMS": {
+    "protocols": {
+      "T1_DE_KIT_SE_CMS-SRM-cmssrm-kit-tape.gridka.de": {
+        "endpoint": "cmssrm-kit-tape.gridka.de:8443"
+      },
+      "T1_DE_KIT_SE_CMS-SRM-cmssrm-kit.gridka.de": {
+        "endpoint": "cmssrm-kit.gridka.de:8443"
+      },
+      "T1_DE_KIT_SE_CMS-WEBDAV-cmsdcache-kit-disk.gridka.de": {
+        "endpoint": "cmsdcache-kit-disk.gridka.de:2880"
+      },
+      "T1_DE_KIT_SE_CMS-WEBDAV-cmsdcache-kit-tape.gridka.de": {
+        "endpoint": "cmsdcache-kit-tape.gridka.de:2880"
+      },
+      "T1_DE_KIT_SE_CMS-WEBDAV-cmswebdav-kit-disk.gridka.de": {
+        "endpoint": "cmswebdav-kit-disk.gridka.de:2880"
+      },
+      "T1_DE_KIT_SE_CMS-WEBDAV-cmswebdav-kit-tape.gridka.de": {
+        "endpoint": "cmswebdav-kit-tape.gridka.de:2880"
+      },
+      "T1_DE_KIT_SE_CMS-WEBDAV-cmswebdav-kit.gridka.de": {
+        "endpoint": "cmswebdav-kit.gridka.de:2880"
+      },
+      "T1_DE_KIT_SE_CMS-XROOTD-cmsdcache-kit-disk.gridka.de": {
+        "endpoint": "cmsdcache-kit-disk.gridka.de:1094"
+      },
+      "T1_DE_KIT_SE_CMS-XROOTD-cmsxrootd-kit-disk.gridka.de": {
+        "endpoint": "cmsxrootd-kit-disk.gridka.de:1094"
+      },
+      "T1_DE_KIT_SE_CMS-XROOTD-cmsxrootd-kit.gridka.de": {
+        "endpoint": "cmsxrootd-kit.gridka.de:1094"
+      },
+      "T1_DE_KIT_SE_CMS-XROOTD-cmsxrootd-redirectors.gridka.de": {
+        "endpoint": "cmsxrootd-redirectors.gridka.de:1094"
+      }
+    },
+    "rcsite": "FZK-LCG2"
+  },
+  "T1_ES_PIC_SE_CMS": {
+    "protocols": {
+      "T1_ES_PIC_SE_CMS-SRM-srmcms.pic.es": {
+        "endpoint": "srmcms.pic.es:8443"
+      },
+      "T1_ES_PIC_SE_CMS-WEBDAV-srmcms.pic.es": {
+        "endpoint": "srmcms.pic.es:8459"
+      },
+      "T1_ES_PIC_SE_CMS-WEBDAV-webdav-cms-tape.pic.es": {
+        "endpoint": "webdav-cms-tape.pic.es:8450"
+      },
+      "T1_ES_PIC_SE_CMS-WEBDAV-webdav-cms.pic.es": {
+        "endpoint": "webdav-cms.pic.es:8459"
+      },
+      "T1_ES_PIC_SE_CMS-XROOTD-xrootd-cmst1-door.pic.es": {
+        "endpoint": "xrootd-cmst1-door.pic.es:1094"
+      },
+      "T1_ES_PIC_SE_CMS-XROOTD-xrootd01-cmst1.pic.es": {
+        "endpoint": "xrootd01-cmst1.pic.es:1095"
+      },
+      "T1_ES_PIC_SE_CMS-XROOTD-xrootd02-cmst1.pic.es": {
+        "endpoint": "xrootd02-cmst1.pic.es:1095"
+      }
+    },
+    "rcsite": "pic"
+  },
+  "T1_FR_CCIN2P3_SE_CMS": {
+    "protocols": {
+      "T1_FR_CCIN2P3_SE_CMS-SRM-ccsrm.in2p3.fr": {
+        "endpoint": "ccsrm.in2p3.fr:8443"
+      },
+      "T1_FR_CCIN2P3_SE_CMS-WEBDAV-ccdavcms-tape.in2p3.fr": {
+        "endpoint": "ccdavcms-tape.in2p3.fr:2880"
+      },
+      "T1_FR_CCIN2P3_SE_CMS-WEBDAV-ccdavcms.in2p3.fr": {
+        "endpoint": "ccdavcms.in2p3.fr:2880"
+      },
+      "T1_FR_CCIN2P3_SE_CMS-XROOTD-ccdcacli317.in2p3.fr": {
+        "endpoint": "ccdcacli317.in2p3.fr:1095"
+      },
+      "T1_FR_CCIN2P3_SE_CMS-XROOTD-ccdcacli501.in2p3.fr": {
+        "endpoint": "ccdcacli501.in2p3.fr:1094"
+      },
+      "T1_FR_CCIN2P3_SE_CMS-XROOTD-ccxrdcms.in2p3.fr": {
+        "endpoint": "ccxrdcms.in2p3.fr:1094"
+      }
+    },
+    "rcsite": "IN2P3-CC"
+  },
+  "T1_IT_CNAF_SE_CMS": {
+    "protocols": {
+      "T1_IT_CNAF_SE_CMS-WEBDAV-xfer-cms.cr.cnaf.infn.it": {
+        "endpoint": "xfer-cms.cr.cnaf.infn.it:8443"
+      },
+      "T1_IT_CNAF_SE_CMS-WEBDAV-xfer-tape-cms.cr.cnaf.infn.it": {
+        "endpoint": "xfer-tape-cms.cr.cnaf.infn.it:8443"
+      },
+      "T1_IT_CNAF_SE_CMS-XROOTD-xrootd-cms-01.cr.cnaf.infn.it": {
+        "endpoint": "xrootd-cms-01.cr.cnaf.infn.it:1094"
+      },
+      "T1_IT_CNAF_SE_CMS-XROOTD-xrootd-cms-02.cr.cnaf.infn.it": {
+        "endpoint": "xrootd-cms-02.cr.cnaf.infn.it:1094"
+      },
+      "T1_IT_CNAF_SE_CMS-XROOTD-xrootd-cms.infn.it": {
+        "endpoint": "xrootd-cms.infn.it:1194"
+      }
+    },
+    "rcsite": "INFN-T1"
+  },
+  "T1_PL_NCBJ_SE_CMS": {
+    "protocols": {
+      "T1_PL_NCBJ_SE_CMS-WEBDAV-se.cis.gov.pl": {
+        "endpoint": "se.cis.gov.pl:2880"
+      },
+      "T1_PL_NCBJ_SE_CMS-WEBDAV-tape-cms.cis.gov.pl": {
+        "endpoint": "tape-cms.cis.gov.pl:2880"
+      },
+      "T1_PL_NCBJ_SE_CMS-XROOTD-cms-xrootd.cis.gov.pl": {
+        "endpoint": "cms-xrootd.cis.gov.pl:1095"
+      },
+      "T1_PL_NCBJ_SE_CMS-XROOTD-se.cis.gov.pl": {
+        "endpoint": "se.cis.gov.pl:1094"
+      },
+      "T1_PL_NCBJ_SE_CMS-XROOTD-tape-cms.cis.gov.pl": {
+        "endpoint": "tape-cms.cis.gov.pl:1094"
+      }
+    },
+    "rcsite": "NCBJ-CIS"
+  },
+  "T1_RU_JINR_SE_CMS": {
+    "protocols": {
+      "T1_RU_JINR_SE_CMS-SRM-srm-cms-mss.jinr-t1.ru": {
+        "endpoint": "srm-cms-mss.jinr-t1.ru:8443"
+      },
+      "T1_RU_JINR_SE_CMS-SRM-srm-cms.jinr-t1.ru": {
+        "endpoint": "srm-cms.jinr-t1.ru:8443"
+      },
+      "T1_RU_JINR_SE_CMS-WEBDAV-se-wbdv-mss.jinr-t1.ru": {
+        "endpoint": "se-wbdv-mss.jinr-t1.ru:2880"
+      },
+      "T1_RU_JINR_SE_CMS-WEBDAV-se-wbdv.jinr-t1.ru": {
+        "endpoint": "se-wbdv.jinr-t1.ru:2880"
+      },
+      "T1_RU_JINR_SE_CMS-XROOTD-se-xrd01.jinr-t1.ru": {
+        "endpoint": "se-xrd01.jinr-t1.ru:1095"
+      },
+      "T1_RU_JINR_SE_CMS-XROOTD-xrootd01.jinr-t1.ru": {
+        "endpoint": "xrootd01.jinr-t1.ru:1094"
+      }
+    },
+    "rcsite": "JINR-T1"
+  },
+  "T1_UK_RAL_SE_CMS": {
+    "protocols": {
+      "T1_UK_RAL_SE_CMS-WEBDAV-antares.stfc.ac.uk": {
+        "endpoint": "antares.stfc.ac.uk:9000"
+      },
+      "T1_UK_RAL_SE_CMS-WEBDAV-ceph-dev-gw4.gridpp.rl.ac.uk": {
+        "endpoint": "ceph-dev-gw4.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-WEBDAV-rdr.echo.stfc.ac.uk": {
+        "endpoint": "rdr.echo.stfc.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-WEBDAV-webdav.echo.stfc.ac.uk": {
+        "endpoint": "webdav.echo.stfc.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-WEBDAV-xrootd.echo.stfc.ac.uk": {
+        "endpoint": "xrootd.echo.stfc.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-antares-eos01.scd.rl.ac.uk": {
+        "endpoint": "antares-eos01.scd.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-antares.stfc.ac.uk": {
+        "endpoint": "antares.stfc.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-ceph-dev-gw4.gridpp.rl.ac.uk": {
+        "endpoint": "ceph-dev-gw4.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-ceph-gw10.gridpp.rl.ac.uk": {
+        "endpoint": "ceph-gw10.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-ceph-gw11.gridpp.rl.ac.uk": {
+        "endpoint": "ceph-gw11.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-ceph-svc06.gridpp.rl.ac.uk": {
+        "endpoint": "ceph-svc06.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-ceph-svc20.gridpp.rl.ac.uk": {
+        "endpoint": "ceph-svc20.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-ceph-svc41.gridpp.rl.ac.uk": {
+        "endpoint": "ceph-svc41.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-ceph-svc42.gridpp.rl.ac.uk": {
+        "endpoint": "ceph-svc42.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-cms-aaa-manager01.gridpp.rl.ac.uk": {
+        "endpoint": "cms-aaa-manager01.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-cms-aaa-manager02.gridpp.rl.ac.uk": {
+        "endpoint": "cms-aaa-manager02.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-rdr.echo.stfc.ac.uk": {
+        "endpoint": "rdr.echo.stfc.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-xrootd-cms-uk-2.gridpp.rl.ac.uk": {
+        "endpoint": "xrootd-cms-uk-2.gridpp.rl.ac.uk:1094"
+      },
+      "T1_UK_RAL_SE_CMS-XROOTD-xrootd.echo.stfc.ac.uk": {
+        "endpoint": "xrootd.echo.stfc.ac.uk:1094"
+      }
+    },
+    "rcsite": "RAL-LCG2"
+  },
+  "T1_US_FNAL_SE_CMS": {
+    "protocols": {
+      "T1_US_FNAL_SE_CMS-SRM-cmsdcadisk.fnal.gov": {
+        "endpoint": "cmsdcadisk.fnal.gov:8443"
+      },
+      "T1_US_FNAL_SE_CMS-SRM-cmsdcatape.fnal.gov": {
+        "endpoint": "cmsdcatape.fnal.gov:8443"
+      },
+      "T1_US_FNAL_SE_CMS-SRM-cmsdcatapeitb01.fnal.gov": {
+        "endpoint": "cmsdcatapeitb01.fnal.gov:8443"
+      },
+      "T1_US_FNAL_SE_CMS-WEBDAV-cmscta-eosmgm-01.fnal.gov": {
+        "endpoint": "cmscta-eosmgm-01.fnal.gov:9000"
+      },
+      "T1_US_FNAL_SE_CMS-WEBDAV-cmsdcadisk.fnal.gov": {
+        "endpoint": "cmsdcadisk.fnal.gov:2880"
+      },
+      "T1_US_FNAL_SE_CMS-WEBDAV-cmsdcatape.fnal.gov": {
+        "endpoint": "cmsdcatape.fnal.gov:2880"
+      },
+      "T1_US_FNAL_SE_CMS-WEBDAV-cmsdcatapeitb01.fnal.gov": {
+        "endpoint": "cmsdcatapeitb01.fnal.gov:2880"
+      },
+      "T1_US_FNAL_SE_CMS-WEBDAV-cmsnoted1-test.fnal.gov": {
+        "endpoint": "cmsnoted1-test.fnal.gov:2880"
+      },
+      "T1_US_FNAL_SE_CMS-WEBDAV-cmssense4-origin-2842-1.fnal.gov": {
+        "endpoint": "cmssense4-origin-2842-1.fnal.gov:2880"
+      },
+      "T1_US_FNAL_SE_CMS-XROOTD-cmsdcadisk.fnal.gov": {
+        "endpoint": "cmsdcadisk.fnal.gov:1094"
+      },
+      "T1_US_FNAL_SE_CMS-XROOTD-cmsdcatapeitb01.fnal.gov": {
+        "endpoint": "cmsdcatapeitb01.fnal.gov:1095"
+      },
+      "T1_US_FNAL_SE_CMS-XROOTD-cmssrv608.fnal.gov": {
+        "endpoint": "cmssrv608.fnal.gov:1094"
+      },
+      "T1_US_FNAL_SE_CMS-XROOTD-cmsxrootd-site1.fnal.gov": {
+        "endpoint": "cmsxrootd-site1.fnal.gov:1094"
+      },
+      "T1_US_FNAL_SE_CMS-XROOTD-cmsxrootd-site2.fnal.gov": {
+        "endpoint": "cmsxrootd-site2.fnal.gov:1094"
+      },
+      "T1_US_FNAL_SE_CMS-XROOTD-cmsxrootd-site3.fnal.gov": {
+        "endpoint": "cmsxrootd-site3.fnal.gov:1094"
+      }
+    },
+    "rcsite": "USCMS-FNAL-WC1"
+  },
+  "T2_AT_Vienna_SE_CMS": {
+    "protocols": {
+      "T2_AT_Vienna_SE_CMS-SRM-se.grid.vbc.ac.at": {
+        "endpoint": "se.grid.vbc.ac.at:2811"
+      },
+      "T2_AT_Vienna_SE_CMS-WEBDAV-eos.grid.vbc.ac.at": {
+        "endpoint": "eos.grid.vbc.ac.at:8443"
+      },
+      "T2_AT_Vienna_SE_CMS-XROOTD-eos.grid.vbc.ac.at": {
+        "endpoint": "eos.grid.vbc.ac.at:1094"
+      }
+    },
+    "rcsite": "Hephy-Vienna"
+  },
+  "T2_BE_IIHE_SE_CMS": {
+    "protocols": {
+      "T2_BE_IIHE_SE_CMS-SRM-dcache6-shadow.iihe.ac.be": {
+        "endpoint": "dcache6-shadow.iihe.ac.be:8443"
+      },
+      "T2_BE_IIHE_SE_CMS-SRM-maite.iihe.ac.be": {
+        "endpoint": "maite.iihe.ac.be:8443"
+      },
+      "T2_BE_IIHE_SE_CMS-WEBDAV-maite.iihe.ac.be": {
+        "endpoint": "maite.iihe.ac.be:2880"
+      },
+      "T2_BE_IIHE_SE_CMS-XROOTD-maite.iihe.ac.be": {
+        "endpoint": "maite.iihe.ac.be:1095"
+      }
+    },
+    "rcsite": "BEgrid-ULB-VUB"
+  },
+  "T2_BE_UCL_SE_CMS": {
+    "protocols": {
+      "T2_BE_UCL_SE_CMS-SRM-ingrid-se02.cism.ucl.ac.be": {
+        "endpoint": "ingrid-se02.cism.ucl.ac.be:8444"
+      },
+      "T2_BE_UCL_SE_CMS-WEBDAV-ingrid-se02.cism.ucl.ac.be": {
+        "endpoint": "ingrid-se02.cism.ucl.ac.be:1094"
+      },
+      "T2_BE_UCL_SE_CMS-WEBDAV-ingrid-se03.cism.ucl.ac.be": {
+        "endpoint": "ingrid-se03.cism.ucl.ac.be:1094"
+      },
+      "T2_BE_UCL_SE_CMS-WEBDAV-ingrid-se04.cism.ucl.ac.be": {
+        "endpoint": "ingrid-se04.cism.ucl.ac.be:1094"
+      },
+      "T2_BE_UCL_SE_CMS-WEBDAV-ingrid-se08.cism.ucl.ac.be": {
+        "endpoint": "ingrid-se08.cism.ucl.ac.be:1094"
+      },
+      "T2_BE_UCL_SE_CMS-XROOTD-ingrid-se03.cism.ucl.ac.be": {
+        "endpoint": "ingrid-se03.cism.ucl.ac.be:1094"
+      },
+      "T2_BE_UCL_SE_CMS-XROOTD-ingrid-se04.cism.ucl.ac.be": {
+        "endpoint": "ingrid-se04.cism.ucl.ac.be:1094"
+      },
+      "T2_BE_UCL_SE_CMS-XROOTD-ingrid-se05.cism.ucl.ac.be": {
+        "endpoint": "ingrid-se05.cism.ucl.ac.be:1094"
+      },
+      "T2_BE_UCL_SE_CMS-XROOTD-ingrid-se06.cism.ucl.ac.be": {
+        "endpoint": "ingrid-se06.cism.ucl.ac.be:1094"
+      }
+    },
+    "rcsite": "BelGrid-UCL"
+  },
+  "T2_BR_SPRACE_SE_CMS": {
+    "protocols": {
+      "T2_BR_SPRACE_SE_CMS-SRM-osg-se.sprace.org.br": {
+        "endpoint": "osg-se.sprace.org.br:8443"
+      },
+      "T2_BR_SPRACE_SE_CMS-WEBDAV-osg-se.sprace.org.br": {
+        "endpoint": "osg-se.sprace.org.br:1094"
+      },
+      "T2_BR_SPRACE_SE_CMS-WEBDAV-webdav.sprace.org.br": {
+        "endpoint": "webdav.sprace.org.br:2880"
+      },
+      "T2_BR_SPRACE_SE_CMS-XROOTD-osg-se.sprace.org.br": {
+        "endpoint": "osg-se.sprace.org.br:1094"
+      },
+      "T2_BR_SPRACE_SE_CMS-XROOTD-webdav.sprace.org.br": {
+        "endpoint": "webdav.sprace.org.br:1094"
+      }
+    },
+    "rcsite": "SPRACE"
+  },
+  "T2_BR_UERJ_SE_CMS": {
+    "protocols": {
+      "T2_BR_UERJ_SE_CMS-SRM-gridftp.hepgrid.uerj.br": {
+        "endpoint": "gridftp.hepgrid.uerj.br:2811"
+      },
+      "T2_BR_UERJ_SE_CMS-WEBDAV-xrootd.hepgrid.uerj.br": {
+        "endpoint": "xrootd.hepgrid.uerj.br:1094"
+      },
+      "T2_BR_UERJ_SE_CMS-WEBDAV-xrootd2.hepgrid.uerj.br": {
+        "endpoint": "xrootd2.hepgrid.uerj.br:1094"
+      },
+      "T2_BR_UERJ_SE_CMS-XROOTD-xrootd.hepgrid.uerj.br": {
+        "endpoint": "xrootd.hepgrid.uerj.br:1094"
+      },
+      "T2_BR_UERJ_SE_CMS-XROOTD-xrootd2.hepgrid.uerj.br": {
+        "endpoint": "xrootd2.hepgrid.uerj.br:1094"
+      }
+    },
+    "rcsite": "UERJ"
+  },
+  "T2_CH_CERN_SE_CMS": {
+    "protocols": {
+      "T2_CH_CERN_SE_CMS-SRM-eoscmsftp.cern.ch": {
+        "endpoint": "eoscmsftp.cern.ch:2811"
+      },
+      "T2_CH_CERN_SE_CMS-WEBDAV-eoscms.cern.ch": {
+        "endpoint": "eoscms.cern.ch:443"
+      },
+      "T2_CH_CERN_SE_CMS-WEBDAV-eospilot.cern.ch": {
+        "endpoint": "eospilot.cern.ch:443"
+      },
+      "T2_CH_CERN_SE_CMS-WEBDAV-eospps.cern.ch": {
+        "endpoint": "eospps.cern.ch:443"
+      },
+      "T2_CH_CERN_SE_CMS-XROOTD-eoscms.cern.ch": {
+        "endpoint": "eoscms.cern.ch:1094"
+      },
+      "T2_CH_CERN_SE_CMS-XROOTD-eospilot.cern.ch": {
+        "endpoint": "eospilot.cern.ch:1094"
+      },
+      "T2_CH_CERN_SE_CMS-XROOTD-eospps.cern.ch": {
+        "endpoint": "eospps.cern.ch:1094"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "T2_CH_CSCS_SE_CMS": {
+    "protocols": {
+      "T2_CH_CSCS_SE_CMS-WEBDAV-storage01.lcg.cscs.ch": {
+        "endpoint": "storage01.lcg.cscs.ch:2880"
+      },
+      "T2_CH_CSCS_SE_CMS-XROOTD-cms02.lcg.cscs.ch": {
+        "endpoint": "cms02.lcg.cscs.ch:1094"
+      },
+      "T2_CH_CSCS_SE_CMS-XROOTD-cms03.lcg.cscs.ch": {
+        "endpoint": "cms03.lcg.cscs.ch:1094"
+      },
+      "T2_CH_CSCS_SE_CMS-XROOTD-storage01.lcg.cscs.ch": {
+        "endpoint": "storage01.lcg.cscs.ch:1096"
+      }
+    },
+    "rcsite": "CSCS-LCG2"
+  },
+  "T2_CN_Beijing_SE_CMS": {
+    "protocols": {
+      "T2_CN_Beijing_SE_CMS-SRM-ccsrm.ihep.ac.cn": {
+        "endpoint": "ccsrm.ihep.ac.cn:2811"
+      },
+      "T2_CN_Beijing_SE_CMS-WEBDAV-cceos.ihep.ac.cn": {
+        "endpoint": "cceos.ihep.ac.cn:9000"
+      },
+      "T2_CN_Beijing_SE_CMS-WEBDAV-ccsrm.ihep.ac.cn": {
+        "endpoint": "ccsrm.ihep.ac.cn:443"
+      },
+      "T2_CN_Beijing_SE_CMS-XROOTD-cceos.ihep.ac.cn": {
+        "endpoint": "cceos.ihep.ac.cn:1094"
+      },
+      "T2_CN_Beijing_SE_CMS-XROOTD-ccsrm.ihep.ac.cn": {
+        "endpoint": "ccsrm.ihep.ac.cn:11001"
+      },
+      "T2_CN_Beijing_SE_CMS-XROOTD-cmsfed.ihep.ac.cn": {
+        "endpoint": "cmsfed.ihep.ac.cn:1094"
+      }
+    },
+    "rcsite": "BEIJING-LCG2"
+  },
+  "T2_DE_DESY_SE_CMS": {
+    "protocols": {
+      "T2_DE_DESY_SE_CMS-SRM-dcache-se-cms.desy.de": {
+        "endpoint": "dcache-se-cms.desy.de:8443"
+      },
+      "T2_DE_DESY_SE_CMS-WEBDAV-dcache-cms-tape.desy.de": {
+        "endpoint": "dcache-cms-tape.desy.de:2880"
+      },
+      "T2_DE_DESY_SE_CMS-WEBDAV-dcache-cms-webdav-wan.desy.de": {
+        "endpoint": "dcache-cms-webdav-wan.desy.de:2880"
+      },
+      "T2_DE_DESY_SE_CMS-WEBDAV-dcache-cms-webdav.desy.de": {
+        "endpoint": "dcache-cms-webdav.desy.de:2880"
+      },
+      "T2_DE_DESY_SE_CMS-XROOTD-dcache-cms-xrootd.desy.de": {
+        "endpoint": "dcache-cms-xrootd.desy.de:1094"
+      },
+      "T2_DE_DESY_SE_CMS-XROOTD-t2-cms-xrootd01.desy.de": {
+        "endpoint": "t2-cms-xrootd01.desy.de:1094"
+      },
+      "T2_DE_DESY_SE_CMS-XROOTD-t2-cms-xrootd02.desy.de": {
+        "endpoint": "t2-cms-xrootd02.desy.de:1094"
+      },
+      "T2_DE_DESY_SE_CMS-XROOTD-t2-cms-xrootd03.desy.de": {
+        "endpoint": "t2-cms-xrootd03.desy.de:1094"
+      }
+    },
+    "rcsite": "DESY-HH"
+  },
+  "T2_DE_RWTH_SE_CMS": {
+    "protocols": {
+      "T2_DE_RWTH_SE_CMS-SRM-grid-srm.physik.rwth-aachen.de": {
+        "endpoint": "grid-srm.physik.rwth-aachen.de:8443"
+      },
+      "T2_DE_RWTH_SE_CMS-WEBDAV-grid-webdav.physik.rwth-aachen.de": {
+        "endpoint": "grid-webdav.physik.rwth-aachen.de:2889"
+      },
+      "T2_DE_RWTH_SE_CMS-XROOTD-grid-cms-xrootd.physik.rwth-aachen.de": {
+        "endpoint": "grid-cms-xrootd.physik.rwth-aachen.de:1094"
+      },
+      "T2_DE_RWTH_SE_CMS-XROOTD-grid-dcache.physik.rwth-aachen.de": {
+        "endpoint": "grid-dcache.physik.rwth-aachen.de:1094"
+      }
+    },
+    "rcsite": "RWTH-Aachen"
+  },
+  "T2_EE_Estonia_SE_CMS": {
+    "protocols": {
+      "T2_EE_Estonia_SE_CMS-SRM-ganymede.hep.kbfi.ee": {
+        "endpoint": "ganymede.hep.kbfi.ee:2811"
+      },
+      "T2_EE_Estonia_SE_CMS-WEBDAV-xrootd.hep.kbfi.ee": {
+        "endpoint": "xrootd.hep.kbfi.ee:1094"
+      },
+      "T2_EE_Estonia_SE_CMS-XROOTD-xrootd.hep.kbfi.ee": {
+        "endpoint": "xrootd.hep.kbfi.ee:1094"
+      }
+    },
+    "rcsite": "T2_Estonia"
+  },
+  "T2_ES_CIEMAT_SE_CMS": {
+    "protocols": {
+      "T2_ES_CIEMAT_SE_CMS-SRM-srm.ciemat.es": {
+        "endpoint": "srm.ciemat.es:8443"
+      },
+      "T2_ES_CIEMAT_SE_CMS-WEBDAV-srm.ciemat.es": {
+        "endpoint": "srm.ciemat.es:2880"
+      },
+      "T2_ES_CIEMAT_SE_CMS-XROOTD-gaexrdoor.ciemat.es": {
+        "endpoint": "gaexrdoor.ciemat.es:1094"
+      },
+      "T2_ES_CIEMAT_SE_CMS-XROOTD-gaexroot01.ciemat.es": {
+        "endpoint": "gaexroot01.ciemat.es:1095"
+      },
+      "T2_ES_CIEMAT_SE_CMS-XROOTD-xrootd-es-cie.ciemat.es": {
+        "endpoint": "xrootd-es-cie.ciemat.es:1095"
+      }
+    },
+    "rcsite": "CIEMAT-LCG2"
+  },
+  "T2_ES_IFCA_SE_CMS": {
+    "protocols": {
+      "T2_ES_IFCA_SE_CMS-SRM-storm.ifca.es": {
+        "endpoint": "storm.ifca.es:8444"
+      },
+      "T2_ES_IFCA_SE_CMS-WEBDAV-webdav.ifca.es": {
+        "endpoint": "webdav.ifca.es:1094"
+      },
+      "T2_ES_IFCA_SE_CMS-XROOTD-gridftp.ifca.es": {
+        "endpoint": "gridftp.ifca.es:1094"
+      },
+      "T2_ES_IFCA_SE_CMS-XROOTD-pool01.ifca.es": {
+        "endpoint": "pool01.ifca.es:1094"
+      },
+      "T2_ES_IFCA_SE_CMS-XROOTD-pool02.ifca.es": {
+        "endpoint": "pool02.ifca.es:1094"
+      },
+      "T2_ES_IFCA_SE_CMS-XROOTD-pool03.ifca.es": {
+        "endpoint": "pool03.ifca.es:1094"
+      },
+      "T2_ES_IFCA_SE_CMS-XROOTD-pool04.ifca.es": {
+        "endpoint": "pool04.ifca.es:1094"
+      },
+      "T2_ES_IFCA_SE_CMS-XROOTD-pool05.ifca.es": {
+        "endpoint": "pool05.ifca.es:1094"
+      },
+      "T2_ES_IFCA_SE_CMS-XROOTD-pool06.ifca.es": {
+        "endpoint": "pool06.ifca.es:1094"
+      },
+      "T2_ES_IFCA_SE_CMS-XROOTD-pool07.ifca.es": {
+        "endpoint": "pool07.ifca.es:1094"
+      },
+      "T2_ES_IFCA_SE_CMS-XROOTD-pool08.ifca.es": {
+        "endpoint": "pool08.ifca.es:1094"
+      }
+    },
+    "rcsite": "IFCA-LCG2"
+  },
+  "T2_FI_HIP_SE_CMS": {
+    "protocols": {
+      "T2_FI_HIP_SE_CMS-WEBDAV-hip-cms-se.csc.fi": {
+        "endpoint": "hip-cms-se.csc.fi:2880"
+      },
+      "T2_FI_HIP_SE_CMS-XROOTD-hip-cms-se.csc.fi": {
+        "endpoint": "hip-cms-se.csc.fi:1094"
+      },
+      "T2_FI_HIP_SE_CMS-XROOTD-hip-cms1.csc.fi": {
+        "endpoint": "hip-cms1.csc.fi:1094"
+      },
+      "T2_FI_HIP_SE_CMS-XROOTD-hip-cms2.csc.fi": {
+        "endpoint": "hip-cms2.csc.fi:1094"
+      }
+    },
+    "rcsite": "FI_HIP_T2"
+  },
+  "T2_FR_GRIF_SE_CMS": {
+    "protocols": {
+      "T2_FR_GRIF_SE_CMS-SRM-node12.datagrid.cea.fr": {
+        "endpoint": "node12.datagrid.cea.fr:2811"
+      },
+      "T2_FR_GRIF_SE_CMS-WEBDAV-eos.grif.fr": {
+        "endpoint": "eos.grif.fr:11000"
+      },
+      "T2_FR_GRIF_SE_CMS-WEBDAV-node12.datagrid.cea.fr": {
+        "endpoint": "node12.datagrid.cea.fr:26633"
+      },
+      "T2_FR_GRIF_SE_CMS-XROOTD-eos.grif.fr": {
+        "endpoint": "eos.grif.fr:1094"
+      },
+      "T2_FR_GRIF_SE_CMS-XROOTD-grid67.ijclab.in2p3.fr": {
+        "endpoint": "grid67.ijclab.in2p3.fr:1098"
+      },
+      "T2_FR_GRIF_SE_CMS-XROOTD-llrpp01.in2p3.fr": {
+        "endpoint": "llrpp01.in2p3.fr:11001"
+      },
+      "T2_FR_GRIF_SE_CMS-XROOTD-llrsquid9.in2p3.fr": {
+        "endpoint": "llrsquid9.in2p3.fr:1094"
+      }
+    },
+    "rcsite": "GRIF"
+  },
+  "T2_FR_IPHC_SE_CMS": {
+    "protocols": {
+      "T2_FR_IPHC_SE_CMS-WEBDAV-sbgdcache.in2p3.fr": {
+        "endpoint": "sbgdcache.in2p3.fr:443"
+      },
+      "T2_FR_IPHC_SE_CMS-WEBDAV-sbgse1.in2p3.fr": {
+        "endpoint": "sbgse1.in2p3.fr:443"
+      },
+      "T2_FR_IPHC_SE_CMS-XROOTD-sbgdcache.in2p3.fr": {
+        "endpoint": "sbgdcache.in2p3.fr:1094"
+      },
+      "T2_FR_IPHC_SE_CMS-XROOTD-sbgse1.in2p3.fr": {
+        "endpoint": "sbgse1.in2p3.fr:11001"
+      }
+    },
+    "rcsite": "IN2P3-IRES"
+  },
+  "T2_HU_Budapest_SE_CMS": {
+    "protocols": {
+      "T2_HU_Budapest_SE_CMS-SRM-grid143.kfki.hu": {
+        "endpoint": "grid143.kfki.hu:2811"
+      },
+      "T2_HU_Budapest_SE_CMS-WEBDAV-grid143.kfki.hu": {
+        "endpoint": "grid143.kfki.hu:443"
+      },
+      "T2_HU_Budapest_SE_CMS-XROOTD-grid143.kfki.hu": {
+        "endpoint": "grid143.kfki.hu:1095"
+      }
+    },
+    "rcsite": "BUDAPEST"
+  },
+  "T2_IN_TIFR_SE_CMS": {
+    "protocols": {
+      "T2_IN_TIFR_SE_CMS-WEBDAV-t2se.indiacms.res.in": {
+        "endpoint": "t2se.indiacms.res.in:443"
+      },
+      "T2_IN_TIFR_SE_CMS-XROOTD-t2se-indiacms.res.in": {
+        "endpoint": "t2se-indiacms.res.in:1092"
+      },
+      "T2_IN_TIFR_SE_CMS-XROOTD-t2se.indiacms.res.in": {
+        "endpoint": "t2se.indiacms.res.in:1094"
+      }
+    },
+    "rcsite": "INDIACMS-TIFR"
+  },
+  "T2_IT_Bari_SE_CMS": {
+    "protocols": {
+      "T2_IT_Bari_SE_CMS-SRM-storm-se-01.ba.infn.it": {
+        "endpoint": "storm-se-01.ba.infn.it:8444"
+      },
+      "T2_IT_Bari_SE_CMS-SRM-storm-upg.recas.ba.infn.it": {
+        "endpoint": "storm-upg.recas.ba.infn.it:8444"
+      },
+      "T2_IT_Bari_SE_CMS-WEBDAV-storm-upg.recas.ba.infn.it": {
+        "endpoint": "storm-upg.recas.ba.infn.it:8443"
+      },
+      "T2_IT_Bari_SE_CMS-WEBDAV-webdav.recas.ba.infn.it": {
+        "endpoint": "webdav.recas.ba.infn.it:8443"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-ss-01.recas.ba.infn.it": {
+        "endpoint": "ss-01.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-ss-02.recas.ba.infn.it": {
+        "endpoint": "ss-02.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-ss-03.recas.ba.infn.it": {
+        "endpoint": "ss-03.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-webdav-7-3-23.recas.ba.infn.it": {
+        "endpoint": "webdav-7-3-23.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-webdav-7-3-24.recas.ba.infn.it": {
+        "endpoint": "webdav-7-3-24.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-webdav-7-3-25.recas.ba.infn.it": {
+        "endpoint": "webdav-7-3-25.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-webdav-7-4-23.recas.ba.infn.it": {
+        "endpoint": "webdav-7-4-23.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-webdav-7-4-24.recas.ba.infn.it": {
+        "endpoint": "webdav-7-4-24.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-xr-1-1-13-1.recas.ba.infn.it": {
+        "endpoint": "xr-1-1-13-1.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-xr-3-10-18-a.recas.ba.infn.it": {
+        "endpoint": "xr-3-10-18-a.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-xr-3-10-19-a.recas.ba.infn.it": {
+        "endpoint": "xr-3-10-19-a.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-xr-4-4-9-3.recas.ba.infn.it": {
+        "endpoint": "xr-4-4-9-3.recas.ba.infn.it:8080"
+      },
+      "T2_IT_Bari_SE_CMS-XROOTD-xrootd.ba.infn.it": {
+        "endpoint": "xrootd.ba.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-BARI"
+  },
+  "T2_IT_Legnaro_SE_CMS": {
+    "protocols": {
+      "T2_IT_Legnaro_SE_CMS-SRM-t2-srm-02.lnl.infn.it": {
+        "endpoint": "t2-srm-02.lnl.infn.it:8443"
+      },
+      "T2_IT_Legnaro_SE_CMS-WEBDAV-t2-xrdcms.lnl.infn.it": {
+        "endpoint": "t2-xrdcms.lnl.infn.it:2880"
+      },
+      "T2_IT_Legnaro_SE_CMS-XROOTD-t2-xrdcms.lnl.infn.it": {
+        "endpoint": "t2-xrdcms.lnl.infn.it:7070"
+      }
+    },
+    "rcsite": "INFN-LNL-2"
+  },
+  "T2_IT_Pisa_SE_CMS": {
+    "protocols": {
+      "T2_IT_Pisa_SE_CMS-SRM-stormfe1.pi.infn.it": {
+        "endpoint": "stormfe1.pi.infn.it:8444"
+      },
+      "T2_IT_Pisa_SE_CMS-WEBDAV-stormgf2.pi.infn.it": {
+        "endpoint": "stormgf2.pi.infn.it:8443"
+      },
+      "T2_IT_Pisa_SE_CMS-WEBDAV-stormwd1.pi.infn.it": {
+        "endpoint": "stormwd1.pi.infn.it:8443"
+      },
+      "T2_IT_Pisa_SE_CMS-WEBDAV-stormwd2.pi.infn.it": {
+        "endpoint": "stormwd2.pi.infn.it:8443"
+      },
+      "T2_IT_Pisa_SE_CMS-WEBDAV-stormwd3.pi.infn.it": {
+        "endpoint": "stormwd3.pi.infn.it:8443"
+      },
+      "T2_IT_Pisa_SE_CMS-WEBDAV-stormwd4.pi.infn.it": {
+        "endpoint": "stormwd4.pi.infn.it:8443"
+      },
+      "T2_IT_Pisa_SE_CMS-WEBDAV-stwebdav.pi.infn.it": {
+        "endpoint": "stwebdav.pi.infn.it:8443"
+      },
+      "T2_IT_Pisa_SE_CMS-XROOTD-stormgf1.pi.infn.it": {
+        "endpoint": "stormgf1.pi.infn.it:1094"
+      },
+      "T2_IT_Pisa_SE_CMS-XROOTD-stormgf2.pi.infn.it": {
+        "endpoint": "stormgf2.pi.infn.it:1094"
+      },
+      "T2_IT_Pisa_SE_CMS-XROOTD-stormgf3.pi.infn.it": {
+        "endpoint": "stormgf3.pi.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-PISA"
+  },
+  "T2_IT_Rome_SE_CMS": {
+    "protocols": {
+      "T2_IT_Rome_SE_CMS-SRM-cmsrm-se01.roma1.infn.it": {
+        "endpoint": "cmsrm-se01.roma1.infn.it:8443"
+      },
+      "T2_IT_Rome_SE_CMS-WEBDAV-cmsrm-webdav.roma1.infn.it": {
+        "endpoint": "cmsrm-webdav.roma1.infn.it:2880"
+      },
+      "T2_IT_Rome_SE_CMS-WEBDAV-cmsrm-xrootd01.roma1.infn.it": {
+        "endpoint": "cmsrm-xrootd01.roma1.infn.it:2880"
+      },
+      "T2_IT_Rome_SE_CMS-WEBDAV-cmsrm-xrootd02.roma1.infn.it": {
+        "endpoint": "cmsrm-xrootd02.roma1.infn.it:2880"
+      },
+      "T2_IT_Rome_SE_CMS-WEBDAV-cmsrm-xrootd03.roma1.infn.it": {
+        "endpoint": "cmsrm-xrootd03.roma1.infn.it:2880"
+      },
+      "T2_IT_Rome_SE_CMS-XROOTD-cmsrm-xrootd01.roma1.infn.it": {
+        "endpoint": "cmsrm-xrootd01.roma1.infn.it:7070"
+      },
+      "T2_IT_Rome_SE_CMS-XROOTD-cmsrm-xrootd02.roma1.infn.it": {
+        "endpoint": "cmsrm-xrootd02.roma1.infn.it:7070"
+      },
+      "T2_IT_Rome_SE_CMS-XROOTD-cmsrm-xrootd03.roma1.infn.it": {
+        "endpoint": "cmsrm-xrootd03.roma1.infn.it:7070"
+      }
+    },
+    "rcsite": "INFN-ROMA1-CMS"
+  },
+  "T2_KR_KISTI_SE_CMS": {
+    "protocols": {
+      "T2_KR_KISTI_SE_CMS-SRM-cms-t2-se01.sdfarm.kr": {
+        "endpoint": "cms-t2-se01.sdfarm.kr:8443"
+      },
+      "T2_KR_KISTI_SE_CMS-WEBDAV-cms-t2-se01.sdfarm.kr": {
+        "endpoint": "cms-t2-se01.sdfarm.kr:2880"
+      },
+      "T2_KR_KISTI_SE_CMS-XROOTD-cms-t2-se01.sdfarm.kr": {
+        "endpoint": "cms-t2-se01.sdfarm.kr:1095"
+      }
+    },
+    "rcsite": "KR-KISTI-GSDC-02"
+  },
+  "T2_LB_HPC4L_SE_CMS": {
+    "protocols": {
+      "T2_LB_HPC4L_SE_CMS-WEBDAV-mgm.hpc4l.org": {
+        "endpoint": "mgm.hpc4l.org:8444"
+      },
+      "T2_LB_HPC4L_SE_CMS-XROOTD-mgm.hpc4l.org": {
+        "endpoint": "mgm.hpc4l.org:1094"
+      }
+    },
+    "rcsite": "HPC4L"
+  },
+  "T2_LV_HPCNET_SE_CMS": {
+    "protocols": {
+      "T2_LV_HPCNET_SE_CMS-WEBDAV-xrootd.tier2.hpc-net.lv": {
+        "endpoint": "xrootd.tier2.hpc-net.lv:1094"
+      },
+      "T2_LV_HPCNET_SE_CMS-XROOTD-xrootd.tier2.hpc-net.lv": {
+        "endpoint": "xrootd.tier2.hpc-net.lv:1094"
+      }
+    },
+    "rcsite": "RTU"
+  },
+  "T2_PK_NCP_SE_CMS": {
+    "protocols": {
+      "T2_PK_NCP_SE_CMS-SRM-pcncp22.ncp.edu.pk": {
+        "endpoint": "pcncp22.ncp.edu.pk:2811"
+      },
+      "T2_PK_NCP_SE_CMS-WEBDAV-pcncp22.ncp.edu.pk": {
+        "endpoint": "pcncp22.ncp.edu.pk:443"
+      },
+      "T2_PK_NCP_SE_CMS-XROOTD-pcncp22.ncp.edu.pk": {
+        "endpoint": "pcncp22.ncp.edu.pk:11001"
+      }
+    },
+    "rcsite": "NCP-LCG2"
+  },
+  "T2_PL_Cyfronet_SE_CMS": {
+    "protocols": {
+      "T2_PL_Cyfronet_SE_CMS-WEBDAV-eos01.grid.cyfronet.pl": {
+        "endpoint": "eos01.grid.cyfronet.pl:8443"
+      },
+      "T2_PL_Cyfronet_SE_CMS-WEBDAV-se02.grid.cyfronet.pl": {
+        "endpoint": "se02.grid.cyfronet.pl:443"
+      },
+      "T2_PL_Cyfronet_SE_CMS-XROOTD-eos01.grid.cyfronet.pl": {
+        "endpoint": "eos01.grid.cyfronet.pl:1094"
+      },
+      "T2_PL_Cyfronet_SE_CMS-XROOTD-se02.grid.cyfronet.pl": {
+        "endpoint": "se02.grid.cyfronet.pl:11001"
+      }
+    },
+    "rcsite": "CYFRONET-LCG2"
+  },
+  "T2_PT_NCG_Lisbon_SE_CMS": {
+    "protocols": {
+      "T2_PT_NCG_Lisbon_SE_CMS-SRM-srm01.ncg.ingrid.pt": {
+        "endpoint": "srm01.ncg.ingrid.pt:8444"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-SRM-srm02.ncg.ingrid.pt": {
+        "endpoint": "srm02.ncg.ingrid.pt:8444"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-WEBDAV-gftp01.ncg.ingrid.pt": {
+        "endpoint": "gftp01.ncg.ingrid.pt:8443"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-WEBDAV-gftp03.ncg.ingrid.pt": {
+        "endpoint": "gftp03.ncg.ingrid.pt:8443"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-WEBDAV-gftp06.a.incd.pt": {
+        "endpoint": "gftp06.a.incd.pt:8443"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-WEBDAV-gftp06.ncg.ingrid.pt": {
+        "endpoint": "gftp06.ncg.ingrid.pt:8443"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-XROOTD-xroot-data06.ncg.ingrid.pt": {
+        "endpoint": "xroot-data06.ncg.ingrid.pt:1094"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-XROOTD-xroot-data08.ncg.ingrid.pt": {
+        "endpoint": "xroot-data08.ncg.ingrid.pt:1094"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-XROOTD-xroot.ncg.ingrid.pt": {
+        "endpoint": "xroot.ncg.ingrid.pt:1094"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-XROOTD-xroot01.ncg.ingrid.pt": {
+        "endpoint": "xroot01.ncg.ingrid.pt:1094"
+      },
+      "T2_PT_NCG_Lisbon_SE_CMS-XROOTD-xroot02.ncg.ingrid.pt": {
+        "endpoint": "xroot02.ncg.ingrid.pt:1094"
+      }
+    },
+    "rcsite": "NCG-INGRID-PT"
+  },
+  "T2_RU_IHEP_SE_CMS": {
+    "protocols": {
+      "T2_RU_IHEP_SE_CMS-SRM-dp0015.m45.ihep.su": {
+        "endpoint": "dp0015.m45.ihep.su:8443"
+      },
+      "T2_RU_IHEP_SE_CMS-WEBDAV-dp0015.m45.ihep.su": {
+        "endpoint": "dp0015.m45.ihep.su:2880"
+      },
+      "T2_RU_IHEP_SE_CMS-XROOTD-dp0015.m45.ihep.su": {
+        "endpoint": "dp0015.m45.ihep.su:1094"
+      },
+      "T2_RU_IHEP_SE_CMS-XROOTD-vobox0002.m45.ihep.su": {
+        "endpoint": "vobox0002.m45.ihep.su:1095"
+      }
+    },
+    "rcsite": "RU-Protvino-IHEP"
+  },
+  "T2_RU_INR_SE_CMS": {
+    "protocols": {
+      "T2_RU_INR_SE_CMS-SRM-grse001.inr.troitsk.ru": {
+        "endpoint": "grse001.inr.troitsk.ru:8446"
+      },
+      "T2_RU_INR_SE_CMS-WEBDAV-grse001.inr.troitsk.ru": {
+        "endpoint": "grse001.inr.troitsk.ru:443"
+      },
+      "T2_RU_INR_SE_CMS-XROOTD-grinr06.inr.troitsk.ru": {
+        "endpoint": "grinr06.inr.troitsk.ru:1095"
+      },
+      "T2_RU_INR_SE_CMS-XROOTD-grse001.inr.troitsk.ru": {
+        "endpoint": "grse001.inr.troitsk.ru:1094"
+      }
+    },
+    "rcsite": "Ru-Troitsk-INR-LCG2"
+  },
+  "T2_RU_ITEP_SE_CMS": {
+    "protocols": {
+      "T2_RU_ITEP_SE_CMS-SRM-se3.itep.ru": {
+        "endpoint": "se3.itep.ru:8443"
+      },
+      "T2_RU_ITEP_SE_CMS-WEBDAV-se3.itep.ru": {
+        "endpoint": "se3.itep.ru:2880"
+      },
+      "T2_RU_ITEP_SE_CMS-XROOTD-se3.itep.ru": {
+        "endpoint": "se3.itep.ru:1095"
+      },
+      "T2_RU_ITEP_SE_CMS-XROOTD-xrd00.itep.ru": {
+        "endpoint": "xrd00.itep.ru:1095"
+      }
+    },
+    "rcsite": "ITEP"
+  },
+  "T2_RU_JINR_SE_CMS": {
+    "protocols": {
+      "T2_RU_JINR_SE_CMS-SRM-lcgsedc01.jinr.ru": {
+        "endpoint": "lcgsedc01.jinr.ru:8443"
+      },
+      "T2_RU_JINR_SE_CMS-WEBDAV-lcgsedr08.jinr.ru": {
+        "endpoint": "lcgsedr08.jinr.ru:2880"
+      },
+      "T2_RU_JINR_SE_CMS-XROOTD-lcgsedr01.jinr.ru": {
+        "endpoint": "lcgsedr01.jinr.ru:1094"
+      },
+      "T2_RU_JINR_SE_CMS-XROOTD-lcgsexrd.jinr.ru": {
+        "endpoint": "lcgsexrd.jinr.ru:1095"
+      }
+    },
+    "rcsite": "JINR-LCG2"
+  },
+  "T2_TR_METU_SE_CMS": {
+    "protocols": {
+      "T2_TR_METU_SE_CMS-SRM-eymir.grid.metu.edu.tr": {
+        "endpoint": "eymir.grid.metu.edu.tr:8446"
+      },
+      "T2_TR_METU_SE_CMS-WEBDAV-eymir.grid.metu.edu.tr": {
+        "endpoint": "eymir.grid.metu.edu.tr:443"
+      },
+      "T2_TR_METU_SE_CMS-XROOTD-eymir-redir.grid.metu.edu.tr": {
+        "endpoint": "eymir-redir.grid.metu.edu.tr:11001"
+      },
+      "T2_TR_METU_SE_CMS-XROOTD-eymir.grid.metu.edu.tr": {
+        "endpoint": "eymir.grid.metu.edu.tr:1094"
+      }
+    },
+    "rcsite": "TR-03-METU"
+  },
+  "T2_TW_NCHC_SE_CMS": {
+    "protocols": {
+      "T2_TW_NCHC_SE_CMS-SRM-se01.grid.nchc.org.tw": {
+        "endpoint": "se01.grid.nchc.org.tw:8446"
+      },
+      "T2_TW_NCHC_SE_CMS-WEBDAV-se01.grid.nchc.org.tw": {
+        "endpoint": "se01.grid.nchc.org.tw:2880"
+      },
+      "T2_TW_NCHC_SE_CMS-XROOTD-se01.grid.nchc.org.tw": {
+        "endpoint": "se01.grid.nchc.org.tw:1094"
+      }
+    },
+    "rcsite": "TW-NCHC"
+  },
+  "T2_UA_KIPT_SE_CMS": {
+    "protocols": {
+      "T2_UA_KIPT_SE_CMS-SRM-cms-se0.kipt.kharkov.ua": {
+        "endpoint": "cms-se0.kipt.kharkov.ua:8446"
+      },
+      "T2_UA_KIPT_SE_CMS-WEBDAV-cms-se0.kipt.kharkov.ua": {
+        "endpoint": "cms-se0.kipt.kharkov.ua:443"
+      },
+      "T2_UA_KIPT_SE_CMS-XROOTD-cms-se0.kipt.kharkov.ua": {
+        "endpoint": "cms-se0.kipt.kharkov.ua:11001"
+      }
+    },
+    "rcsite": "Kharkov-KIPT-LCG2"
+  },
+  "T2_UK_London_Brunel_SE_CMS": {
+    "protocols": {
+      "T2_UK_London_Brunel_SE_CMS-SRM-dc2-grid-64.brunel.ac.uk": {
+        "endpoint": "dc2-grid-64.brunel.ac.uk:2811"
+      },
+      "T2_UK_London_Brunel_SE_CMS-WEBDAV-dc2-grid-64.brunel.ac.uk": {
+        "endpoint": "dc2-grid-64.brunel.ac.uk:443"
+      },
+      "T2_UK_London_Brunel_SE_CMS-WEBDAV-dc2-grid-e6-000.brunel.ac.uk": {
+        "endpoint": "dc2-grid-e6-000.brunel.ac.uk:1094"
+      },
+      "T2_UK_London_Brunel_SE_CMS-WEBDAV-dc2-grid-e6-001.brunel.ac.uk": {
+        "endpoint": "dc2-grid-e6-001.brunel.ac.uk:1094"
+      },
+      "T2_UK_London_Brunel_SE_CMS-WEBDAV-xrootdgw.brunel.ac.uk": {
+        "endpoint": "xrootdgw.brunel.ac.uk:1094"
+      },
+      "T2_UK_London_Brunel_SE_CMS-XROOTD-dc2-grid-64.brunel.ac.uk": {
+        "endpoint": "dc2-grid-64.brunel.ac.uk:11001"
+      },
+      "T2_UK_London_Brunel_SE_CMS-XROOTD-dc2-grid-e6-000.brunel.ac.uk": {
+        "endpoint": "dc2-grid-e6-000.brunel.ac.uk:1094"
+      },
+      "T2_UK_London_Brunel_SE_CMS-XROOTD-dc2-grid-e6-001.brunel.ac.uk": {
+        "endpoint": "dc2-grid-e6-001.brunel.ac.uk:1094"
+      },
+      "T2_UK_London_Brunel_SE_CMS-XROOTD-dc2-grid-e6-002.brunel.ac.uk": {
+        "endpoint": "dc2-grid-e6-002.brunel.ac.uk:1094"
+      },
+      "T2_UK_London_Brunel_SE_CMS-XROOTD-xrootdgw.brunel.ac.uk": {
+        "endpoint": "xrootdgw.brunel.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-LT2-Brunel"
+  },
+  "T2_UK_London_IC_SE_CMS": {
+    "protocols": {
+      "T2_UK_London_IC_SE_CMS-SRM-gfe02.grid.hep.ph.ic.ac.uk": {
+        "endpoint": "gfe02.grid.hep.ph.ic.ac.uk:8443"
+      },
+      "T2_UK_London_IC_SE_CMS-WEBDAV-gfe02.grid.hep.ph.ic.ac.uk": {
+        "endpoint": "gfe02.grid.hep.ph.ic.ac.uk:2880"
+      },
+      "T2_UK_London_IC_SE_CMS-XROOTD-gfe02.grid.hep.ph.ic.ac.uk": {
+        "endpoint": "gfe02.grid.hep.ph.ic.ac.uk:1097"
+      }
+    },
+    "rcsite": "UKI-LT2-IC-HEP"
+  },
+  "T2_UK_SGrid_RALPP_SE_CMS": {
+    "protocols": {
+      "T2_UK_SGrid_RALPP_SE_CMS-SRM-heplnx204.pp.rl.ac.uk": {
+        "endpoint": "heplnx204.pp.rl.ac.uk:8443"
+      },
+      "T2_UK_SGrid_RALPP_SE_CMS-SRM-mover.pp.rl.ac.uk": {
+        "endpoint": "mover.pp.rl.ac.uk:2811"
+      },
+      "T2_UK_SGrid_RALPP_SE_CMS-WEBDAV-mover.pp.rl.ac.uk": {
+        "endpoint": "mover.pp.rl.ac.uk:2880"
+      },
+      "T2_UK_SGrid_RALPP_SE_CMS-XROOTD-heplnx228.pp.rl.ac.uk": {
+        "endpoint": "heplnx228.pp.rl.ac.uk:1094"
+      },
+      "T2_UK_SGrid_RALPP_SE_CMS-XROOTD-heplnx229.pp.rl.ac.uk": {
+        "endpoint": "heplnx229.pp.rl.ac.uk:1094"
+      },
+      "T2_UK_SGrid_RALPP_SE_CMS-XROOTD-mover.pp.rl.ac.uk": {
+        "endpoint": "mover.pp.rl.ac.uk:1094"
+      },
+      "T2_UK_SGrid_RALPP_SE_CMS-XROOTD-xroot.pp.rl.ac.uk": {
+        "endpoint": "xroot.pp.rl.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-SOUTHGRID-RALPP"
+  },
+  "T2_US_Caltech_SE_CMS": {
+    "protocols": {
+      "T2_US_Caltech_SE_CMS-SRM-transfer-10.ultralight.org": {
+        "endpoint": "transfer-10.ultralight.org:2811"
+      },
+      "T2_US_Caltech_SE_CMS-SRM-transfer-lb.ultralight.org": {
+        "endpoint": "transfer-lb.ultralight.org:2811"
+      },
+      "T2_US_Caltech_SE_CMS-SRM-transfer.ultralight.org": {
+        "endpoint": "transfer.ultralight.org:2811"
+      },
+      "T2_US_Caltech_SE_CMS-WEBDAV-k8s-redir-stageout.ultralight.org": {
+        "endpoint": "k8s-redir-stageout.ultralight.org:1094"
+      },
+      "T2_US_Caltech_SE_CMS-WEBDAV-xrootd-redir-stageout.ultralight.org": {
+        "endpoint": "xrootd-redir-stageout.ultralight.org:1095"
+      },
+      "T2_US_Caltech_SE_CMS-WEBDAV-xrootd-redir.ultralight.org": {
+        "endpoint": "xrootd-redir.ultralight.org:1094"
+      },
+      "T2_US_Caltech_SE_CMS-WEBDAV-xrootd.ultralight.org": {
+        "endpoint": "xrootd.ultralight.org:1094"
+      },
+      "T2_US_Caltech_SE_CMS-XROOTD-k8s-redir.ultralight.org": {
+        "endpoint": "k8s-redir.ultralight.org:1094"
+      },
+      "T2_US_Caltech_SE_CMS-XROOTD-xrootd-redir.ultralight.org": {
+        "endpoint": "xrootd-redir.ultralight.org:1094"
+      },
+      "T2_US_Caltech_SE_CMS-XROOTD-xrootd.ultralight.org": {
+        "endpoint": "xrootd.ultralight.org:1094"
+      }
+    },
+    "rcsite": "CIT_CMS_T2"
+  },
+  "T2_US_Florida_SE_CMS": {
+    "protocols": {
+      "T2_US_Florida_SE_CMS-SRM-cmsio.rc.ufl.edu": {
+        "endpoint": "cmsio.rc.ufl.edu:2811"
+      },
+      "T2_US_Florida_SE_CMS-WEBDAV-cmsio2.rc.ufl.edu": {
+        "endpoint": "cmsio2.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-WEBDAV-cmsio3.rc.ufl.edu": {
+        "endpoint": "cmsio3.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-WEBDAV-cmsio4.rc.ufl.edu": {
+        "endpoint": "cmsio4.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-WEBDAV-cmsio5.rc.ufl.edu": {
+        "endpoint": "cmsio5.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-WEBDAV-cmsio7.rc.ufl.edu": {
+        "endpoint": "cmsio7.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-WEBDAV-cmsio9.rc.ufl.edu": {
+        "endpoint": "cmsio9.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-XROOTD-cmsio2.rc.ufl.edu": {
+        "endpoint": "cmsio2.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-XROOTD-cmsio3.rc.ufl.edu": {
+        "endpoint": "cmsio3.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-XROOTD-cmsio5.rc.ufl.edu": {
+        "endpoint": "cmsio5.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-XROOTD-cmsio7.rc.ufl.edu": {
+        "endpoint": "cmsio7.rc.ufl.edu:1094"
+      },
+      "T2_US_Florida_SE_CMS-XROOTD-cmsio9.rc.ufl.edu": {
+        "endpoint": "cmsio9.rc.ufl.edu:1094"
+      }
+    },
+    "rcsite": "UFlorida-HPC"
+  },
+  "T2_US_MIT_SE_CMS": {
+    "protocols": {
+      "T2_US_MIT_SE_CMS-SRM-se01.cmsaf.mit.edu": {
+        "endpoint": "se01.cmsaf.mit.edu:2811"
+      },
+      "T2_US_MIT_SE_CMS-SRM-tapesrm.cmsaf.mit.edu": {
+        "endpoint": "tapesrm.cmsaf.mit.edu:2811"
+      },
+      "T2_US_MIT_SE_CMS-SRM-tapesrmcms.nese.rc.fas.harvard.edu": {
+        "endpoint": "tapesrmcms.nese.rc.fas.harvard.edu:2811"
+      },
+      "T2_US_MIT_SE_CMS-WEBDAV-dtn20.nese.mghpcc.org": {
+        "endpoint": "dtn20.nese.mghpcc.org:443"
+      },
+      "T2_US_MIT_SE_CMS-WEBDAV-dtn20.nese.rc.fas.harvard.edu": {
+        "endpoint": "dtn20.nese.rc.fas.harvard.edu:1094"
+      },
+      "T2_US_MIT_SE_CMS-WEBDAV-t2dsk0011.cmsaf.mit.edu": {
+        "endpoint": "t2dsk0011.cmsaf.mit.edu:8443"
+      },
+      "T2_US_MIT_SE_CMS-WEBDAV-tapexrd.cmsaf.mit.edu": {
+        "endpoint": "tapexrd.cmsaf.mit.edu:1094"
+      },
+      "T2_US_MIT_SE_CMS-WEBDAV-xrootd.cmsaf.mit.edu": {
+        "endpoint": "xrootd.cmsaf.mit.edu:1094"
+      },
+      "T2_US_MIT_SE_CMS-WEBDAV-xrootd18.cmsaf.mit.edu": {
+        "endpoint": "xrootd18.cmsaf.mit.edu:1094"
+      },
+      "T2_US_MIT_SE_CMS-XROOTD-dtn20.nese.mghpcc.org": {
+        "endpoint": "dtn20.nese.mghpcc.org:1094"
+      },
+      "T2_US_MIT_SE_CMS-XROOTD-dtn20.nese.rc.fas.harvard.edu": {
+        "endpoint": "dtn20.nese.rc.fas.harvard.edu:1094"
+      },
+      "T2_US_MIT_SE_CMS-XROOTD-t2dsk0011.cmsaf.mit.edu": {
+        "endpoint": "t2dsk0011.cmsaf.mit.edu:1094"
+      },
+      "T2_US_MIT_SE_CMS-XROOTD-tapexrd.cmsaf.mit.edu": {
+        "endpoint": "tapexrd.cmsaf.mit.edu:1094"
+      },
+      "T2_US_MIT_SE_CMS-XROOTD-xrootd.cmsaf.mit.edu": {
+        "endpoint": "xrootd.cmsaf.mit.edu:1094"
+      },
+      "T2_US_MIT_SE_CMS-XROOTD-xrootd18.cmsaf.mit.edu": {
+        "endpoint": "xrootd18.cmsaf.mit.edu:1094"
+      }
+    },
+    "rcsite": "MIT_CMS"
+  },
+  "T2_US_Nebraska_SE_CMS": {
+    "protocols": {
+      "T2_US_Nebraska_SE_CMS-SRM-red-gridftp.unl.edu": {
+        "endpoint": "red-gridftp.unl.edu:2811"
+      },
+      "T2_US_Nebraska_SE_CMS-WEBDAV-xrootd-local.unl.edu": {
+        "endpoint": "xrootd-local.unl.edu:1094"
+      },
+      "T2_US_Nebraska_SE_CMS-XROOTD-xrootd-local.unl.edu": {
+        "endpoint": "xrootd-local.unl.edu:1094"
+      }
+    },
+    "rcsite": "Nebraska"
+  },
+  "T2_US_Purdue_SE_CMS": {
+    "protocols": {
+      "T2_US_Purdue_SE_CMS-SRM-cms-gridftp.rcac.purdue.edu": {
+        "endpoint": "cms-gridftp.rcac.purdue.edu:2811"
+      },
+      "T2_US_Purdue_SE_CMS-WEBDAV-eos.cms.rcac.purdue.edu": {
+        "endpoint": "eos.cms.rcac.purdue.edu:9000"
+      },
+      "T2_US_Purdue_SE_CMS-WEBDAV-xrootd.rcac.purdue.edu": {
+        "endpoint": "xrootd.rcac.purdue.edu:1094"
+      },
+      "T2_US_Purdue_SE_CMS-XROOTD-eos.cms.rcac.purdue.edu": {
+        "endpoint": "eos.cms.rcac.purdue.edu:1094"
+      },
+      "T2_US_Purdue_SE_CMS-XROOTD-xrootd.rcac.purdue.edu": {
+        "endpoint": "xrootd.rcac.purdue.edu:1094"
+      }
+    },
+    "rcsite": "Purdue"
+  },
+  "T2_US_UCSD_SE_CMS": {
+    "protocols": {
+      "T2_US_UCSD_SE_CMS-SRM-gftp.t2.ucsd.edu": {
+        "endpoint": "gftp.t2.ucsd.edu:2811"
+      },
+      "T2_US_UCSD_SE_CMS-WEBDAV-redir.t2.ucsd.edu": {
+        "endpoint": "redir.t2.ucsd.edu:1095"
+      },
+      "T2_US_UCSD_SE_CMS-WEBDAV-redirector.t2.ucsd.edu": {
+        "endpoint": "redirector.t2.ucsd.edu:1095"
+      },
+      "T2_US_UCSD_SE_CMS-XROOTD-redir.t2.ucsd.edu": {
+        "endpoint": "redir.t2.ucsd.edu:1095"
+      },
+      "T2_US_UCSD_SE_CMS-XROOTD-redirector.t2.ucsd.edu": {
+        "endpoint": "redirector.t2.ucsd.edu:1095"
+      }
+    },
+    "rcsite": "UCSDT2"
+  },
+  "T2_US_Vanderbilt_SE_CMS": {
+    "protocols": {
+      "T2_US_Vanderbilt_SE_CMS-SRM-gridftp-vanderbilt.sites.opensciencegrid.org": {
+        "endpoint": "gridftp-vanderbilt.sites.opensciencegrid.org:2811"
+      },
+      "T2_US_Vanderbilt_SE_CMS-SRM-gridftp.accre.vanderbilt.edu": {
+        "endpoint": "gridftp.accre.vanderbilt.edu:2811"
+      },
+      "T2_US_Vanderbilt_SE_CMS-WEBDAV-seb.accre.vanderbilt.edu": {
+        "endpoint": "seb.accre.vanderbilt.edu:1094"
+      },
+      "T2_US_Vanderbilt_SE_CMS-WEBDAV-xrootd-redir1-vanderbilt.sites.opensciencegrid.org": {
+        "endpoint": "xrootd-redir1-vanderbilt.sites.opensciencegrid.org:1094"
+      },
+      "T2_US_Vanderbilt_SE_CMS-WEBDAV-xrootd-vanderbilt.sites.opensciencegrid.org": {
+        "endpoint": "xrootd-vanderbilt.sites.opensciencegrid.org:1094"
+      },
+      "T2_US_Vanderbilt_SE_CMS-XROOTD-xrootd-redir1-vanderbilt.sites.opensciencegrid.org": {
+        "endpoint": "xrootd-redir1-vanderbilt.sites.opensciencegrid.org:1094"
+      },
+      "T2_US_Vanderbilt_SE_CMS-XROOTD-xrootd-vanderbilt.sites.opensciencegrid.org": {
+        "endpoint": "xrootd-vanderbilt.sites.opensciencegrid.org:1094"
+      },
+      "T2_US_Vanderbilt_SE_CMS-XROOTD-xrootd.accre.vanderbilt.edu": {
+        "endpoint": "xrootd.accre.vanderbilt.edu:1094"
+      }
+    },
+    "rcsite": "Vanderbilt"
+  },
+  "T2_US_Wisconsin_SE_CMS": {
+    "protocols": {
+      "T2_US_Wisconsin_SE_CMS-SRM-cms-lvs-gridftp.hep.wisc.edu": {
+        "endpoint": "cms-lvs-gridftp.hep.wisc.edu:2811"
+      },
+      "T2_US_Wisconsin_SE_CMS-WEBDAV-cmsxrootd.hep.wisc.edu": {
+        "endpoint": "cmsxrootd.hep.wisc.edu:1094"
+      },
+      "T2_US_Wisconsin_SE_CMS-XROOTD-cmsxrootd.hep.wisc.edu": {
+        "endpoint": "cmsxrootd.hep.wisc.edu:1094"
+      },
+      "T2_US_Wisconsin_SE_CMS-XROOTD-g34n02.hep.wisc.edu": {
+        "endpoint": "g34n02.hep.wisc.edu:1094"
+      },
+      "T2_US_Wisconsin_SE_CMS-XROOTD-pubxrootd.hep.wisc.edu": {
+        "endpoint": "pubxrootd.hep.wisc.edu:1094"
+      }
+    },
+    "rcsite": "GLOW"
+  },
+  "T3_BG_UNI_SOFIA_SE_CMS": {
+    "protocols": {
+      "T3_BG_UNI_SOFIA_SE_CMS-WEBDAV-se01.grid.uni-sofia.bg": {
+        "endpoint": "se01.grid.uni-sofia.bg:443"
+      },
+      "T3_BG_UNI_SOFIA_SE_CMS-XROOTD-se01.grid.uni-sofia.bg": {
+        "endpoint": "se01.grid.uni-sofia.bg:1094"
+      }
+    },
+    "rcsite": "BG05-SUGrid"
+  },
+  "T3_CH_CERNBOX_SE_CMS": {
+    "protocols": {
+      "T3_CH_CERNBOX_SE_CMS-SRM-eosuserftp.cern.ch": {
+        "endpoint": "eosuserftp.cern.ch:2811"
+      },
+      "T3_CH_CERNBOX_SE_CMS-WEBDAV-eoshome-": {
+        "endpoint": "eoshome-:443"
+      },
+      "T3_CH_CERNBOX_SE_CMS-WEBDAV-eoshome-l.cern.ch": {
+        "endpoint": "eoshome-l.cern.ch:8444"
+      },
+      "T3_CH_CERNBOX_SE_CMS-WEBDAV-eosuser.cern.ch": {
+        "endpoint": "eosuser.cern.ch:8444"
+      },
+      "T3_CH_CERNBOX_SE_CMS-WEBDAV-eosuserhttp.cern.ch": {
+        "endpoint": "eosuserhttp.cern.ch:443"
+      },
+      "T3_CH_CERNBOX_SE_CMS-XROOTD-eosuser.cern.ch": {
+        "endpoint": "eosuser.cern.ch:1094"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "T3_CH_CERN_DOMA_SE_CMS": {
+    "protocols": {
+      "T3_CH_CERN_DOMA_SE_CMS-XROOTD-eulake.cern.ch": {
+        "endpoint": "eulake.cern.ch:1094"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "T3_CH_CERN_OpenData_SE_CMS": {
+    "protocols": {
+      "T3_CH_CERN_OpenData_SE_CMS-SRM-eospublicftp.cern.ch": {
+        "endpoint": "eospublicftp.cern.ch:2811"
+      },
+      "T3_CH_CERN_OpenData_SE_CMS-WEBDAV-eospublic.cern.ch": {
+        "endpoint": "eospublic.cern.ch:443"
+      },
+      "T3_CH_CERN_OpenData_SE_CMS-XROOTD-eospublic.cern.ch": {
+        "endpoint": "eospublic.cern.ch:1094"
+      }
+    },
+    "rcsite": "CERN-PROD"
+  },
+  "T3_CH_PSI_SE_CMS": {
+    "protocols": {
+      "T3_CH_PSI_SE_CMS-SRM-t3se01.psi.ch": {
+        "endpoint": "t3se01.psi.ch:8443"
+      },
+      "T3_CH_PSI_SE_CMS-WEBDAV-t3se01.psi.ch": {
+        "endpoint": "t3se01.psi.ch:2880"
+      },
+      "T3_CH_PSI_SE_CMS-XROOTD-t3se01.psi.ch": {
+        "endpoint": "t3se01.psi.ch:1095"
+      }
+    },
+    "rcsite": "T3_CH_PSI"
+  },
+  "T3_CY_UCY_SE_CMS": {
+    "protocols": {
+      "T3_CY_UCY_SE_CMS-WEBDAV-heptaur2.ucy.ac.cy": {
+        "endpoint": "heptaur2.ucy.ac.cy:1094"
+      },
+      "T3_CY_UCY_SE_CMS-WEBDAV-heptaur3.ucy.ac.cy": {
+        "endpoint": "heptaur3.ucy.ac.cy:1094"
+      },
+      "T3_CY_UCY_SE_CMS-XROOTD-heptaur2.ucy.ac.cy": {
+        "endpoint": "heptaur2.ucy.ac.cy:1094"
+      },
+      "T3_CY_UCY_SE_CMS-XROOTD-heptaur3.ucy.ac.cy": {
+        "endpoint": "heptaur3.ucy.ac.cy:1094"
+      }
+    },
+    "rcsite": "CY-01-KIMON"
+  },
+  "T3_FR_IPNL_SE_CMS": {
+    "protocols": {
+      "T3_FR_IPNL_SE_CMS-SRM-lyogrid06.in2p3.fr": {
+        "endpoint": "lyogrid06.in2p3.fr:8446"
+      },
+      "T3_FR_IPNL_SE_CMS-WEBDAV-lyoeos.in2p3.fr": {
+        "endpoint": "lyoeos.in2p3.fr:8443"
+      },
+      "T3_FR_IPNL_SE_CMS-WEBDAV-lyoeos.in2p3.fr.fr": {
+        "endpoint": "lyoeos.in2p3.fr.fr:8443"
+      },
+      "T3_FR_IPNL_SE_CMS-XROOTD-lyoeos-redir.in2p3.fr": {
+        "endpoint": "lyoeos-redir.in2p3.fr:11001"
+      },
+      "T3_FR_IPNL_SE_CMS-XROOTD-lyoeos.in2p3.fr": {
+        "endpoint": "lyoeos.in2p3.fr:1094"
+      },
+      "T3_FR_IPNL_SE_CMS-XROOTD-lyoeos.in2p3.fr.fr": {
+        "endpoint": "lyoeos.in2p3.fr.fr:1094"
+      },
+      "T3_FR_IPNL_SE_CMS-XROOTD-lyogrid06.in2p3.fr": {
+        "endpoint": "lyogrid06.in2p3.fr:11001"
+      }
+    },
+    "rcsite": "IN2P3-IPNL"
+  },
+  "T3_HR_IRB_SE_CMS": {
+    "protocols": {
+      "T3_HR_IRB_SE_CMS-SRM-lorienmaster.irb.hr": {
+        "endpoint": "lorienmaster.irb.hr:8444"
+      },
+      "T3_HR_IRB_SE_CMS-WEBDAV-lorienmaster.irb.hr": {
+        "endpoint": "lorienmaster.irb.hr:8443"
+      }
+    },
+    "rcsite": "egee.irb.hr"
+  },
+  "T3_IR_IPM_SE_CMS": {
+    "protocols": {
+      "T3_IR_IPM_SE_CMS-SRM-se1.hep.ipm.ir": {
+        "endpoint": "se1.hep.ipm.ir:2811"
+      },
+      "T3_IR_IPM_SE_CMS-WEBDAV-se1.hep.ipm.ir": {
+        "endpoint": "se1.hep.ipm.ir:443"
+      },
+      "T3_IR_IPM_SE_CMS-XROOTD-se1.hep.ipm.ir": {
+        "endpoint": "se1.hep.ipm.ir:1094"
+      }
+    },
+    "rcsite": "IR-IPM-HEP"
+  },
+  "T3_IT_MIB_SE_CMS": {
+    "protocols": {
+      "T3_IT_MIB_SE_CMS-SRM-storm.mib.infn.it": {
+        "endpoint": "storm.mib.infn.it:8444"
+      },
+      "T3_IT_MIB_SE_CMS-WEBDAV-storm.mib.infn.it": {
+        "endpoint": "storm.mib.infn.it:8443"
+      },
+      "T3_IT_MIB_SE_CMS-XROOTD-storm.mib.infn.it": {
+        "endpoint": "storm.mib.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-MIB"
+  },
+  "T3_IT_Trieste_SE_CMS": {
+    "protocols": {
+      "T3_IT_Trieste_SE_CMS-SRM-srm-eosinfnts.ts.infn.it": {
+        "endpoint": "srm-eosinfnts.ts.infn.it:2811"
+      },
+      "T3_IT_Trieste_SE_CMS-WEBDAV-cmsxrd.ts.infn.it": {
+        "endpoint": "cmsxrd.ts.infn.it:1094"
+      },
+      "T3_IT_Trieste_SE_CMS-XROOTD-cmsxrd.ts.infn.it": {
+        "endpoint": "cmsxrd.ts.infn.it:1094"
+      }
+    },
+    "rcsite": "INFN-TRIESTE"
+  },
+  "T3_KR_KISTI_SE_CMS": {
+    "protocols": {
+      "T3_KR_KISTI_SE_CMS-SRM-cms-se.sdfarm.kr": {
+        "endpoint": "cms-se.sdfarm.kr:2811"
+      },
+      "T3_KR_KISTI_SE_CMS-WEBDAV-cms-xrdr.sdfarm.kr": {
+        "endpoint": "cms-xrdr.sdfarm.kr:2880"
+      },
+      "T3_KR_KISTI_SE_CMS-XROOTD-cms-xrdr.sdfarm.kr": {
+        "endpoint": "cms-xrdr.sdfarm.kr:1094"
+      }
+    },
+    "rcsite": "T3_KR_KISTI"
+  },
+  "T3_KR_KNU_SE_CMS": {
+    "protocols": {
+      "T3_KR_KNU_SE_CMS-SRM-cluster142.knu.ac.kr": {
+        "endpoint": "cluster142.knu.ac.kr:2811"
+      },
+      "T3_KR_KNU_SE_CMS-WEBDAV-cluster142.knu.ac.kr": {
+        "endpoint": "cluster142.knu.ac.kr:2880"
+      },
+      "T3_KR_KNU_SE_CMS-XROOTD-cluster142.knu.ac.kr": {
+        "endpoint": "cluster142.knu.ac.kr:1094"
+      }
+    },
+    "rcsite": "KR-KNU-T3"
+  },
+  "T3_KR_UOS_SE_CMS": {
+    "protocols": {
+      "T3_KR_UOS_SE_CMS-SRM-cms.sscc.uos.ac.kr": {
+        "endpoint": "cms.sscc.uos.ac.kr:2811"
+      },
+      "T3_KR_UOS_SE_CMS-WEBDAV-cms.sscc.uos.ac.kr": {
+        "endpoint": "cms.sscc.uos.ac.kr:1094"
+      },
+      "T3_KR_UOS_SE_CMS-XROOTD-cms.sscc.uos.ac.kr": {
+        "endpoint": "cms.sscc.uos.ac.kr:1094"
+      }
+    },
+    "rcsite": "KR-UOS-SSCC"
+  },
+  "T3_MX_Cinvestav_SE_CMS": {
+    "protocols": {
+      "T3_MX_Cinvestav_SE_CMS-SRM-proton.fis.cinvestav.mx": {
+        "endpoint": "proton.fis.cinvestav.mx:2811"
+      },
+      "T3_MX_Cinvestav_SE_CMS-WEBDAV-proton.fis.cinvestav.mx": {
+        "endpoint": "proton.fis.cinvestav.mx:1094"
+      },
+      "T3_MX_Cinvestav_SE_CMS-XROOTD-proton.fis.cinvestav.mx": {
+        "endpoint": "proton.fis.cinvestav.mx:1094"
+      }
+    },
+    "rcsite": "cinvestav"
+  },
+  "T3_TW_NTU_HEP_SE_CMS": {
+    "protocols": {
+      "T3_TW_NTU_HEP_SE_CMS-SRM-ntugrid6.phys.ntu.edu.tw": {
+        "endpoint": "ntugrid6.phys.ntu.edu.tw:2811"
+      },
+      "T3_TW_NTU_HEP_SE_CMS-WEBDAV-ntugrid6.phys.ntu.edu.tw": {
+        "endpoint": "ntugrid6.phys.ntu.edu.tw:443"
+      },
+      "T3_TW_NTU_HEP_SE_CMS-WEBDAV-ntugrid9.phys.ntu.edu.tw": {
+        "endpoint": "ntugrid9.phys.ntu.edu.tw:443"
+      },
+      "T3_TW_NTU_HEP_SE_CMS-XROOTD-ntugrid6.phys.ntu.edu.tw": {
+        "endpoint": "ntugrid6.phys.ntu.edu.tw:11000"
+      }
+    },
+    "rcsite": "TW-NTU-HEP"
+  },
+  "T3_TW_TIDC_SE_CMS": {
+    "protocols": {
+      "T3_TW_TIDC_SE_CMS-WEBDAV-tidc-smstor1.grid.sinica.edu.tw": {
+        "endpoint": "tidc-smstor1.grid.sinica.edu.tw:9000"
+      },
+      "T3_TW_TIDC_SE_CMS-XROOTD-tidc-smstor1.grid.sinica.edu.tw": {
+        "endpoint": "tidc-smstor1.grid.sinica.edu.tw:1094"
+      }
+    },
+    "rcsite": "TW_TIDC_T3"
+  },
+  "T3_UK_SGrid_Bristol_SE_CMS": {
+    "protocols": {
+      "T3_UK_SGrid_Bristol_SE_CMS-WEBDAV-xrootd.phy.bris.ac.uk": {
+        "endpoint": "xrootd.phy.bris.ac.uk:1094"
+      },
+      "T3_UK_SGrid_Bristol_SE_CMS-XROOTD-xrootd.phy.bris.ac.uk": {
+        "endpoint": "xrootd.phy.bris.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-SOUTHGRID-BRIS-HEP"
+  },
+  "T3_US_Baylor_SE_CMS": {
+    "protocols": {
+      "T3_US_Baylor_SE_CMS-SRM-kodiak-se.baylor.edu": {
+        "endpoint": "kodiak-se.baylor.edu:2811"
+      },
+      "T3_US_Baylor_SE_CMS-WEBDAV-kodiak-se.baylor.edu": {
+        "endpoint": "kodiak-se.baylor.edu:1094"
+      },
+      "T3_US_Baylor_SE_CMS-XROOTD-kodiak-se.baylor.edu": {
+        "endpoint": "kodiak-se.baylor.edu:1094"
+      }
+    },
+    "rcsite": "Baylor-Kodiak"
+  },
+  "T3_US_Brown_SE_CMS": {
+    "protocols": {
+      "T3_US_Brown_SE_CMS-SRM-brux11.hep.brown.edu": {
+        "endpoint": "brux11.hep.brown.edu:2811"
+      },
+      "T3_US_Brown_SE_CMS-SRM-pbrux30cit.hep.brown.edu": {
+        "endpoint": "pbrux30cit.hep.brown.edu:2811"
+      },
+      "T3_US_Brown_SE_CMS-WEBDAV-bruxmg.hep.brown.edu": {
+        "endpoint": "bruxmg.hep.brown.edu:1094"
+      },
+      "T3_US_Brown_SE_CMS-WEBDAV-pbrux30cit.hep.brown.edu": {
+        "endpoint": "pbrux30cit.hep.brown.edu:1094"
+      },
+      "T3_US_Brown_SE_CMS-XROOTD-brux11.hep.brown.edu": {
+        "endpoint": "brux11.hep.brown.edu:1094"
+      },
+      "T3_US_Brown_SE_CMS-XROOTD-bruxmg.hep.brown.edu": {
+        "endpoint": "bruxmg.hep.brown.edu:1094"
+      },
+      "T3_US_Brown_SE_CMS-XROOTD-pbrux30cit.hep.brown.edu": {
+        "endpoint": "pbrux30cit.hep.brown.edu:1094"
+      }
+    },
+    "rcsite": "brown-cms"
+  },
+  "T3_US_CMU_SE_CMS": {
+    "protocols": {
+      "T3_US_CMU_SE_CMS-SRM-cmsdata.phys.cmu.edu": {
+        "endpoint": "cmsdata.phys.cmu.edu:2811"
+      },
+      "T3_US_CMU_SE_CMS-WEBDAV-cmsdata.phys.cmu.edu": {
+        "endpoint": "cmsdata.phys.cmu.edu:1094"
+      },
+      "T3_US_CMU_SE_CMS-XROOTD-cmsdata.phys.cmu.edu": {
+        "endpoint": "cmsdata.phys.cmu.edu:1094"
+      }
+    },
+    "rcsite": "T3_US_CMU"
+  },
+  "T3_US_Colorado_SE_CMS": {
+    "protocols": {
+      "T3_US_Colorado_SE_CMS-SRM-gridftp-hadoop-colorado.sites.opensciencegrid.org": {
+        "endpoint": "gridftp-hadoop-colorado.sites.opensciencegrid.org:2811"
+      },
+      "T3_US_Colorado_SE_CMS-SRM-gridftp-hadoop.colorado.edu": {
+        "endpoint": "gridftp-hadoop.colorado.edu:2811"
+      },
+      "T3_US_Colorado_SE_CMS-WEBDAV-hepxrd01-colorado.sites.opensciencegrid.org": {
+        "endpoint": "hepxrd01-colorado.sites.opensciencegrid.org:1094"
+      },
+      "T3_US_Colorado_SE_CMS-XROOTD-hepxrd01-colorado.sites.opensciencegrid.org": {
+        "endpoint": "hepxrd01-colorado.sites.opensciencegrid.org:1094"
+      },
+      "T3_US_Colorado_SE_CMS-XROOTD-hepxrd01.colorado.edu": {
+        "endpoint": "hepxrd01.colorado.edu:1094"
+      }
+    },
+    "rcsite": "UColorado_HEP"
+  },
+  "T3_US_FNALLPC_SE_CMS": {
+    "protocols": {
+      "T3_US_FNALLPC_SE_CMS-SRM-cmseos-gridftp.fnal.gov": {
+        "endpoint": "cmseos-gridftp.fnal.gov:2811"
+      },
+      "T3_US_FNALLPC_SE_CMS-SRM-cmseos.fnal.gov": {
+        "endpoint": "cmseos.fnal.gov:8443"
+      },
+      "T3_US_FNALLPC_SE_CMS-WEBDAV-cmseos.fnal.gov": {
+        "endpoint": "cmseos.fnal.gov:9000"
+      },
+      "T3_US_FNALLPC_SE_CMS-XROOTD-cmseos.fnal.gov": {
+        "endpoint": "cmseos.fnal.gov:1094"
+      }
+    },
+    "rcsite": "USCMS-FNAL-WC1"
+  },
+  "T3_US_MIT_SE_CMS": {
+    "protocols": {
+      "T3_US_MIT_SE_CMS-SRM-t3serv010.mit.edu": {
+        "endpoint": "t3serv010.mit.edu:2811"
+      },
+      "T3_US_MIT_SE_CMS-WEBDAV-submit50.mit.edu": {
+        "endpoint": "submit50.mit.edu:1094"
+      },
+      "T3_US_MIT_SE_CMS-WEBDAV-submit55.mit.edu": {
+        "endpoint": "submit55.mit.edu:1094"
+      },
+      "T3_US_MIT_SE_CMS-WEBDAV-t3serv017.mit.edu": {
+        "endpoint": "t3serv017.mit.edu:1094"
+      },
+      "T3_US_MIT_SE_CMS-XROOTD-submit50.mit.edu": {
+        "endpoint": "submit50.mit.edu:1094"
+      },
+      "T3_US_MIT_SE_CMS-XROOTD-submit55.mit.edu": {
+        "endpoint": "submit55.mit.edu:1094"
+      }
+    },
+    "rcsite": "MIT_CMS_T3"
+  },
+  "T3_US_NotreDame_SE_CMS": {
+    "protocols": {
+      "T3_US_NotreDame_SE_CMS-SRM-deepthought.crc.nd.edu": {
+        "endpoint": "deepthought.crc.nd.edu:2811"
+      },
+      "T3_US_NotreDame_SE_CMS-WEBDAV-deepthought.crc.nd.edu": {
+        "endpoint": "deepthought.crc.nd.edu:1094"
+      },
+      "T3_US_NotreDame_SE_CMS-WEBDAV-hactar01.crc.nd.edu": {
+        "endpoint": "hactar01.crc.nd.edu:1094"
+      },
+      "T3_US_NotreDame_SE_CMS-WEBDAV-skynet013.crc.nd.edu": {
+        "endpoint": "skynet013.crc.nd.edu:1094"
+      },
+      "T3_US_NotreDame_SE_CMS-XROOTD-deepthought.crc.nd.edu": {
+        "endpoint": "deepthought.crc.nd.edu:1094"
+      },
+      "T3_US_NotreDame_SE_CMS-XROOTD-hactar01.crc.nd.edu": {
+        "endpoint": "hactar01.crc.nd.edu:1094"
+      },
+      "T3_US_NotreDame_SE_CMS-XROOTD-skynet013.crc.nd.edu": {
+        "endpoint": "skynet013.crc.nd.edu:1094"
+      }
+    },
+    "rcsite": "NWICG_NDCMS"
+  },
+  "T3_US_Princeton_ICSE_SE_CMS": {
+    "protocols": {
+      "T3_US_Princeton_ICSE_SE_CMS-SRM-cmssw3.princeton.edu": {
+        "endpoint": "cmssw3.princeton.edu:2811"
+      },
+      "T3_US_Princeton_ICSE_SE_CMS-WEBDAV-cmssw3.princeton.edu": {
+        "endpoint": "cmssw3.princeton.edu:8443"
+      }
+    },
+    "rcsite": "Princeton_ICSE_T3_CMS"
+  },
+  "T3_US_PuertoRico_SE_CMS": {
+    "protocols": {
+      "T3_US_PuertoRico_SE_CMS-SRM-cms-se.hep.uprm.edu": {
+        "endpoint": "cms-se.hep.uprm.edu:2811"
+      },
+      "T3_US_PuertoRico_SE_CMS-WEBDAV-cms-se.hep.uprm.edu": {
+        "endpoint": "cms-se.hep.uprm.edu:1094"
+      },
+      "T3_US_PuertoRico_SE_CMS-XROOTD-cms-se.hep.uprm.edu": {
+        "endpoint": "cms-se.hep.uprm.edu:1094"
+      }
+    },
+    "rcsite": "uprm-cms"
+  },
+  "T3_US_Rice_SE_CMS": {
+    "protocols": {
+      "T3_US_Rice_SE_CMS-SRM-bonner07.rice.edu": {
+        "endpoint": "bonner07.rice.edu:2811"
+      },
+      "T3_US_Rice_SE_CMS-XROOTD-bonner04.rice.edu": {
+        "endpoint": "bonner04.rice.edu:1094"
+      }
+    },
+    "rcsite": "Rice"
+  },
+  "T3_US_Rutgers_SE_CMS": {
+    "protocols": {
+      "T3_US_Rutgers_SE_CMS-SRM-ruhex-osgce.rutgers.edu": {
+        "endpoint": "ruhex-osgce.rutgers.edu:2811"
+      },
+      "T3_US_Rutgers_SE_CMS-WEBDAV-ruhex-osgce.rutgers.edu": {
+        "endpoint": "ruhex-osgce.rutgers.edu:1094"
+      },
+      "T3_US_Rutgers_SE_CMS-XROOTD-ruhex-osgce.rutgers.edu": {
+        "endpoint": "ruhex-osgce.rutgers.edu:1094"
+      }
+    },
+    "rcsite": "rutgers-cms"
+  },
+  "T3_US_UMD_SE_CMS": {
+    "protocols": {
+      "T3_US_UMD_SE_CMS-SRM-hepcms-gridftp.umd.edu": {
+        "endpoint": "hepcms-gridftp.umd.edu:2811"
+      },
+      "T3_US_UMD_SE_CMS-SRM-hepcms-gridftp2.umd.edu": {
+        "endpoint": "hepcms-gridftp2.umd.edu:2811"
+      },
+      "T3_US_UMD_SE_CMS-WEBDAV-hepcms-se.umd.edu": {
+        "endpoint": "hepcms-se.umd.edu:1094"
+      },
+      "T3_US_UMD_SE_CMS-WEBDAV-hepcms-se2.umd.edu": {
+        "endpoint": "hepcms-se2.umd.edu:1094"
+      },
+      "T3_US_UMD_SE_CMS-XROOTD-hepcms-0.umd.edu": {
+        "endpoint": "hepcms-0.umd.edu:1094"
+      },
+      "T3_US_UMD_SE_CMS-XROOTD-hepcms-se.umd.edu": {
+        "endpoint": "hepcms-se.umd.edu:1094"
+      },
+      "T3_US_UMD_SE_CMS-XROOTD-hepcms-se2.umd.edu": {
+        "endpoint": "hepcms-se2.umd.edu:1094"
+      }
+    },
+    "rcsite": "umd-cms"
+  },
+  "T3_US_UMiss_SE_CMS": {
+    "protocols": {
+      "T3_US_UMiss_SE_CMS-SRM-umiss005.hep.olemiss.edu": {
+        "endpoint": "umiss005.hep.olemiss.edu:2811"
+      },
+      "T3_US_UMiss_SE_CMS-WEBDAV-umiss005.hep.olemiss.edu": {
+        "endpoint": "umiss005.hep.olemiss.edu:1094"
+      },
+      "T3_US_UMiss_SE_CMS-XROOTD-umiss005.hep.olemiss.edu": {
+        "endpoint": "umiss005.hep.olemiss.edu:1094"
+      }
+    },
+    "rcsite": "UMissHEP"
+  },
+  "TECHNION-HEP_SE_0_ATLAS": {
+    "protocols": {
+      "TECHNION-HEP_SE_0_ATLAS-STORM-tech-gftp.hep.technion.ac.il": {
+        "endpoint": "storm://tech-gftp.hep.technion.ac.il:8443"
+      },
+      "TECHNION-HEP_SE_0_ATLAS-WEBDAV-tech-gftp.hep.technion.ac.il": {
+        "endpoint": "davs://tech-gftp.hep.technion.ac.il:8443"
+      },
+      "TECHNION-HEP_SE_0_ATLAS-XROOTD-tech-gftp.hep.technion.ac.il": {
+        "endpoint": "root://tech-gftp.hep.technion.ac.il:1094"
+      }
+    },
+    "rcsite": "TECHNION-HEP"
+  },
+  "TOKYO-LCG2_SE": {
+    "protocols": {
+      "TOKYO-LCG2_SE-SRM-lcg-se01.icepp.jp": {
+        "endpoint": "srm://lcg-se01.icepp.jp:8446"
+      }
+    },
+    "rcsite": "TOKYO-LCG2"
+  },
+  "TOKYO-LCG2_SE_0_ATLAS": {
+    "protocols": {
+      "TOKYO-LCG2_SE_0_ATLAS-WEBDAV-lcg-se01.icepp.jp": {
+        "endpoint": "davs://lcg-se01.icepp.jp:18443"
+      },
+      "TOKYO-LCG2_SE_0_ATLAS-XROOTD-lcg-se01.icepp.jp": {
+        "endpoint": "root://lcg-se01.icepp.jp:1094"
+      }
+    },
+    "rcsite": "TOKYO-LCG2"
+  },
+  "TR-10-ULAKBIM_SE": {
+    "protocols": {
+      "TR-10-ULAKBIM_SE-SRM-torik1.ulakbim.gov.tr": {
+        "endpoint": "srm://torik1.ulakbim.gov.tr:8446"
+      }
+    },
+    "rcsite": "TR-10-ULAKBIM"
+  },
+  "TR-10-ULAKBIM_SE_0_ATLAS": {
+    "protocols": {
+      "TR-10-ULAKBIM_SE_0_ATLAS-WEBDAV-torik1.ulakbim.gov.tr": {
+        "endpoint": "davs://torik1.ulakbim.gov.tr:443"
+      },
+      "TR-10-ULAKBIM_SE_0_ATLAS-XROOTD-torik1.ulakbim.gov.tr": {
+        "endpoint": "root://torik1.ulakbim.gov.tr:1094"
+      }
+    },
+    "rcsite": "TR-10-ULAKBIM"
+  },
+  "TRIUMF-LCG2_SE": {
+    "protocols": {
+      "TRIUMF-LCG2_SE-SRM-srm.triumf.ca": {
+        "endpoint": "srm://srm.triumf.ca:8443"
+      }
+    },
+    "rcsite": "TRIUMF-LCG2"
+  },
+  "TRIUMF-LCG2_SE_0_ATLAS": {
+    "protocols": {
+      "TRIUMF-LCG2_SE_0_ATLAS-WEBDAV-webdav-lan.lcg.triumf.ca": {
+        "endpoint": "davs://webdav-lan.lcg.triumf.ca:2880"
+      },
+      "TRIUMF-LCG2_SE_0_ATLAS-WEBDAV-webdav.lcg.triumf.ca": {
+        "endpoint": "davs://webdav.lcg.triumf.ca:2880"
+      },
+      "TRIUMF-LCG2_SE_0_ATLAS-XROOTD-xrootd.lcg.triumf.ca": {
+        "endpoint": "root://xrootd.lcg.triumf.ca:1094"
+      }
+    },
+    "rcsite": "TRIUMF-LCG2"
+  },
+  "TRIUMF-LCG2_SE_1_ATLAS": {
+    "protocols": {
+      "TRIUMF-LCG2_SE_1_ATLAS-DCAP-ppshead.lcg.triumf.ca": {
+        "endpoint": "dcap://ppshead.lcg.triumf.ca"
+      },
+      "TRIUMF-LCG2_SE_1_ATLAS-SRM-ppshead.lcg.triumf.ca": {
+        "endpoint": "srm://ppshead.lcg.triumf.ca:8443/srm/managerv2?SFN="
+      }
+    },
+    "rcsite": "TRIUMF-LCG2"
+  },
+  "TRIUMF-LCG2_SE_ATLAS_TAPE": {
+    "protocols": {
+      "TRIUMF-LCG2_SE_ATLAS_TAPE-WEBDAV-webdav-tape.lcg.triumf.ca": {
+        "endpoint": "davs://webdav-tape.lcg.triumf.ca:2880"
+      }
+    },
+    "rcsite": "TRIUMF-LCG2"
+  },
+  "TRIUMF-LCG2_SE_TAPE_PPS_ATLAS": {
+    "protocols": {
+      "TRIUMF-LCG2_SE_TAPE_PPS_ATLAS-SRM-ppshead.lcg.triumf.ca": {
+        "endpoint": "srm://ppshead.lcg.triumf.ca:8443/srm/managerv2?SFN="
+      }
+    },
+    "rcsite": "TRIUMF-LCG2"
+  },
+  "TW-FTT_SE_ATLAS": {
+    "protocols": {
+      "TW-FTT_SE_ATLAS-WEBDAV-eos01.grid.sinica.edu.tw": {
+        "endpoint": "davs://eos01.grid.sinica.edu.tw:9000"
+      },
+      "TW-FTT_SE_ATLAS-XROOTD-eos01.grid.sinica.edu.tw": {
+        "endpoint": "root://eos01.grid.sinica.edu.tw:1094"
+      }
+    },
+    "rcsite": "TW-FTT"
+  },
+  "UAEU_SE_0_ATLAS": {
+    "protocols": {
+      "UAEU_SE_0_ATLAS-WEBDAV-ric-cit-dcache1.uaeu.ac.ae": {
+        "endpoint": "davs://ric-cit-dcache1.uaeu.ac.ae:443"
+      },
+      "UAEU_SE_0_ATLAS-XROOTD-ric-cit-dcache1.uaeu.ac.ae": {
+        "endpoint": "root://ric-cit-dcache1.uaeu.ac.ae:1094"
+      }
+    },
+    "rcsite": "UAEU"
+  },
+  "UAM-LCG2_SE_0_ATLAS": {
+    "protocols": {
+      "UAM-LCG2_SE_0_ATLAS-WEBDAV-griddc03.ft.uam.es": {
+        "endpoint": "davs://griddc03.ft.uam.es:8446"
+      },
+      "UAM-LCG2_SE_0_ATLAS-XROOTD-griddc03.ft.uam.es": {
+        "endpoint": "root://griddc03.ft.uam.es:1094"
+      }
+    },
+    "rcsite": "UAM-LCG2"
+  },
+  "UFlorida-HPC_SE": {
+    "protocols": {
+      "UFlorida-HPC_SE-WEBDAV-cmsio3.rc.ufl.edu": {
+        "endpoint": "davs://cmsio3.rc.ufl.edu:1094"
+      }
+    },
+    "rcsite": "UFlorida-HPC"
+  },
+  "UKI-LT2-IC-HEP_SE": {
+    "protocols": {
+      "UKI-LT2-IC-HEP_SE-SRM-gfe02.grid.hep.ph.ic.ac.uk": {
+        "endpoint": "srm://gfe02.grid.hep.ph.ic.ac.uk:8443"
+      }
+    },
+    "rcsite": "UKI-LT2-IC-HEP"
+  },
+  "UKI-LT2-IC-HEP_SE_0_ATLAS": {
+    "protocols": {
+      "UKI-LT2-IC-HEP_SE_0_ATLAS-SRM-gfe02.grid.hep.ph.ic.ac.uk": {
+        "endpoint": "srm://gfe02.grid.hep.ph.ic.ac.uk:8443/srm/managerv2?SFN="
+      },
+      "UKI-LT2-IC-HEP_SE_0_ATLAS-WEBDAV-gfe02.grid.hep.ph.ic.ac.uk": {
+        "endpoint": "davs://gfe02.grid.hep.ph.ic.ac.uk:2880"
+      },
+      "UKI-LT2-IC-HEP_SE_0_ATLAS-XROOTD-gfe02.grid.hep.ph.ic.ac.uk": {
+        "endpoint": "root://gfe02.grid.hep.ph.ic.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-LT2-IC-HEP"
+  },
+  "UKI-LT2-IC-HEP_SE_LHCB": {
+    "protocols": {
+      "UKI-LT2-IC-HEP_SE_LHCB-HTTP-gfe02.grid.hep.ph.ic.ac.uk": {
+        "endpoint": "https://gfe02.grid.hep.ph.ic.ac.uk:2880"
+      },
+      "UKI-LT2-IC-HEP_SE_LHCB-XROOTD-gfe02.grid.hep.ph.ic.ac.uk": {
+        "endpoint": "root://gfe02.grid.hep.ph.ic.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-LT2-IC-HEP"
+  },
+  "UKI-LT2-QMUL_SE": {
+    "protocols": {
+      "UKI-LT2-QMUL_SE-SRM-se03.esc.qmul.ac.uk": {
+        "endpoint": "srm://se03.esc.qmul.ac.uk:8444"
+      }
+    },
+    "rcsite": "UKI-LT2-QMUL"
+  },
+  "UKI-LT2-QMUL_SE_0_ATLAS": {
+    "protocols": {
+      "UKI-LT2-QMUL_SE_0_ATLAS-SRM-se01.esc.qmul.ac.uk": {
+        "endpoint": "srm://se01.esc.qmul.ac.uk:8444/srm/managerv2?SFN="
+      }
+    },
+    "rcsite": "UKI-LT2-QMUL"
+  },
+  "UKI-LT2-QMUL_SE_1_ATLAS": {
+    "protocols": {
+      "UKI-LT2-QMUL_SE_1_ATLAS-STORM-webdav.esc.qmul.ac.uk": {
+        "endpoint": "storm://webdav.esc.qmul.ac.uk:8443"
+      },
+      "UKI-LT2-QMUL_SE_1_ATLAS-WEBDAV-webdav.esc.qmul.ac.uk": {
+        "endpoint": "davs://webdav.esc.qmul.ac.uk:8443"
+      },
+      "UKI-LT2-QMUL_SE_1_ATLAS-XROOTD-xrootd.esc.qmul.ac.uk": {
+        "endpoint": "root://xrootd.esc.qmul.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-LT2-QMUL"
+  },
+  "UKI-LT2-QMUL_SE_LHCB": {
+    "protocols": {
+      "UKI-LT2-QMUL_SE_LHCB-HTTP-webdav.esc.qmul.ac.uk": {
+        "endpoint": "https://webdav.esc.qmul.ac.uk:8443"
+      },
+      "UKI-LT2-QMUL_SE_LHCB-XROOTD-xrootd1.esc.qmul.ac.uk": {
+        "endpoint": "root://xrootd1.esc.qmul.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-LT2-QMUL"
+  },
+  "UKI-NORTHGRID-LANCS-HEP_SE_1_ATLAS": {
+    "protocols": {
+      "UKI-NORTHGRID-LANCS-HEP_SE_1_ATLAS-STORM-example.com": {
+        "endpoint": "storm://example.com:0"
+      },
+      "UKI-NORTHGRID-LANCS-HEP_SE_1_ATLAS-WEBDAV-xgate.hec.lancs.ac.uk": {
+        "endpoint": "davs://xgate.hec.lancs.ac.uk:1094"
+      },
+      "UKI-NORTHGRID-LANCS-HEP_SE_1_ATLAS-XROOTD-xgate.hec.lancs.ac.uk": {
+        "endpoint": "root://xgate.hec.lancs.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-NORTHGRID-LANCS-HEP"
+  },
+  "UKI-NORTHGRID-LIV-HEP_SE_0_ATLAS": {
+    "protocols": {
+      "UKI-NORTHGRID-LIV-HEP_SE_0_ATLAS-WEBDAV-hepgrid11.ph.liv.ac.uk": {
+        "endpoint": "davs://hepgrid11.ph.liv.ac.uk:443"
+      },
+      "UKI-NORTHGRID-LIV-HEP_SE_0_ATLAS-XROOTD-hepgrid11.ph.liv.ac.uk": {
+        "endpoint": "root://hepgrid11.ph.liv.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-NORTHGRID-LIV-HEP"
+  },
+  "UKI-NORTHGRID-LIV-HEP_SE_LHCB": {
+    "protocols": {
+      "UKI-NORTHGRID-LIV-HEP_SE_LHCB-HTTP-hepgrid11.ph.liv.ac.uk": {
+        "endpoint": "https://hepgrid11.ph.liv.ac.uk"
+      },
+      "UKI-NORTHGRID-LIV-HEP_SE_LHCB-XROOTD-hepgrid11.ph.liv.ac.uk": {
+        "endpoint": "root://hepgrid11.ph.liv.ac.uk"
+      }
+    },
+    "rcsite": "UKI-NORTHGRID-LIV-HEP"
+  },
+  "UKI-NORTHGRID-MAN-HEP_SE_1_ATLAS": {
+    "protocols": {
+      "UKI-NORTHGRID-MAN-HEP_SE_1_ATLAS-STORM-example.com": {
+        "endpoint": "storm://example.com:0"
+      },
+      "UKI-NORTHGRID-MAN-HEP_SE_1_ATLAS-WEBDAV-meitner.tier2.hep.manchester.ac.uk": {
+        "endpoint": "davs://meitner.tier2.hep.manchester.ac.uk:1094"
+      },
+      "UKI-NORTHGRID-MAN-HEP_SE_1_ATLAS-XROOTD-meitner.tier2.hep.manchester.ac.uk": {
+        "endpoint": "root://meitner.tier2.hep.manchester.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-NORTHGRID-MAN-HEP"
+  },
+  "UKI-NORTHGRID-MAN-HEP_SE_LHCB": {
+    "protocols": {
+      "UKI-NORTHGRID-MAN-HEP_SE_LHCB-HTTP-meitner.tier2.hep.manchester.ac.uk": {
+        "endpoint": "https://meitner.tier2.hep.manchester.ac.uk:1094"
+      },
+      "UKI-NORTHGRID-MAN-HEP_SE_LHCB-XROOTD-meitner.tier2.hep.manchester.ac.uk": {
+        "endpoint": "root://meitner.tier2.hep.manchester.ac.uk"
+      }
+    },
+    "rcsite": "UKI-NORTHGRID-MAN-HEP"
+  },
+  "UKI-SCOTGRID-GLASGOW_SE_172_ATLAS": {
+    "protocols": {
+      "UKI-SCOTGRID-GLASGOW_SE_172_ATLAS-WEBDAV-cephc04.gla.scotgrid.ac.uk": {
+        "endpoint": "davs://cephc04.gla.scotgrid.ac.uk:1094"
+      },
+      "UKI-SCOTGRID-GLASGOW_SE_172_ATLAS-WEBDAV-cephc08.gla.scotgrid.ac.uk": {
+        "endpoint": "davs://cephc08.gla.scotgrid.ac.uk:1094"
+      },
+      "UKI-SCOTGRID-GLASGOW_SE_172_ATLAS-XROOTD-cephc04.gla.scotgrid.ac.uk": {
+        "endpoint": "root://cephc04.gla.scotgrid.ac.uk:1094"
+      },
+      "UKI-SCOTGRID-GLASGOW_SE_172_ATLAS-XROOTD-cephc08.gla.scotgrid.ac.uk": {
+        "endpoint": "root://cephc08.gla.scotgrid.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-SCOTGRID-GLASGOW"
+  },
+  "UKI-SCOTGRID-GLASGOW_SE_LHCB": {
+    "protocols": {
+      "UKI-SCOTGRID-GLASGOW_SE_LHCB-HTTP-cephc02.gla.scotgrid.ac.uk": {
+        "endpoint": "https://cephc02.gla.scotgrid.ac.uk:1094"
+      },
+      "UKI-SCOTGRID-GLASGOW_SE_LHCB-XROOTD-cephc02.gla.scotgrid.ac.uk": {
+        "endpoint": "root://cephc02.gla.scotgrid.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-SCOTGRID-GLASGOW"
+  },
+  "UKI-SOUTHGRID-BHAM-HEP_SE_0_ATLAS": {
+    "protocols": {
+      "UKI-SOUTHGRID-BHAM-HEP_SE_0_ATLAS-SRM-epgse1.ph.bham.ac.uk": {
+        "endpoint": "srm://epgse1.ph.bham.ac.uk:8446/srm/managerv2?SFN="
+      },
+      "UKI-SOUTHGRID-BHAM-HEP_SE_0_ATLAS-WEBDAV-epgse1.ph.bham.ac.uk": {
+        "endpoint": "davs://epgse1.ph.bham.ac.uk:443"
+      },
+      "UKI-SOUTHGRID-BHAM-HEP_SE_0_ATLAS-XROOTD-epgse1.ph.bham.ac.uk": {
+        "endpoint": "root://epgse1.ph.bham.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-SOUTHGRID-BHAM-HEP"
+  },
+  "UKI-SOUTHGRID-BHAM-HEP_SE_159_ATLAS": {
+    "protocols": {
+      "UKI-SOUTHGRID-BHAM-HEP_SE_159_ATLAS-XROOTD-epgr07.ph.bham.ac.uk": {
+        "endpoint": "root://epgr07.ph.bham.ac.uk:1094/"
+      }
+    },
+    "rcsite": "UKI-SOUTHGRID-BHAM-HEP"
+  },
+  "UKI-SOUTHGRID-BHAM-HEP_SE_ALICE": {
+    "protocols": {
+      "UKI-SOUTHGRID-BHAM-HEP_SE_ALICE-AliEn-SE-epgeos.ph.bham.ac.uk": {
+        "endpoint": "epgeos.ph.bham.ac.uk"
+      },
+      "UKI-SOUTHGRID-BHAM-HEP_SE_ALICE-XROOTD-epgeos.ph.bham.ac.uk": {
+        "endpoint": "epgeos.ph.bham.ac.uk"
+      }
+    },
+    "rcsite": "UKI-SOUTHGRID-BHAM-HEP"
+  },
+  "UKI-SOUTHGRID-RALPP_SE_0_ATLAS": {
+    "protocols": {
+      "UKI-SOUTHGRID-RALPP_SE_0_ATLAS-WEBDAV-mover.pp.rl.ac.uk": {
+        "endpoint": "davs://mover.pp.rl.ac.uk:2880"
+      },
+      "UKI-SOUTHGRID-RALPP_SE_0_ATLAS-XROOTD-mover.pp.rl.ac.uk": {
+        "endpoint": "root://mover.pp.rl.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-SOUTHGRID-RALPP"
+  },
+  "UKI-SOUTHGRID-RALPP_SE_LHCB": {
+    "protocols": {
+      "UKI-SOUTHGRID-RALPP_SE_LHCB-HTTP-mover.pp.rl.ac.uk": {
+        "endpoint": "https://mover.pp.rl.ac.uk:2880"
+      },
+      "UKI-SOUTHGRID-RALPP_SE_LHCB-XROOTD-mover.pp.rl.ac.uk": {
+        "endpoint": "root://mover.pp.rl.ac.uk:1094"
+      }
+    },
+    "rcsite": "UKI-SOUTHGRID-RALPP"
+  },
+  "UNI-BONN_SE_1_ATLAS": {
+    "protocols": {
+      "UNI-BONN_SE_1_ATLAS-WEBDAV-xrootd.physik.uni-bonn.de": {
+        "endpoint": "davs://xrootd.physik.uni-bonn.de:1094"
+      },
+      "UNI-BONN_SE_1_ATLAS-XROOTD-xrootd.physik.uni-bonn.de": {
+        "endpoint": "root://xrootd.physik.uni-bonn.de:1094"
+      }
+    },
+    "rcsite": "UNI-BONN"
+  },
+  "UNI-FREIBURG_SE_0_ATLAS": {
+    "protocols": {
+      "UNI-FREIBURG_SE_0_ATLAS-WEBDAV-webdav.bfg.uni-freiburg.de": {
+        "endpoint": "davs://webdav.bfg.uni-freiburg.de:2880"
+      },
+      "UNI-FREIBURG_SE_0_ATLAS-XROOTD-xrootd.bfg.uni-freiburg.de": {
+        "endpoint": "root://xrootd.bfg.uni-freiburg.de:1094"
+      }
+    },
+    "rcsite": "UNI-FREIBURG"
+  },
+  "UNIGE-DPNC_SE_0_ATLAS": {
+    "protocols": {
+      "UNIGE-DPNC_SE_0_ATLAS-SRM-grid05.unige.ch": {
+        "endpoint": "srm://grid05.unige.ch:8446/srm/managerv2?SFN="
+      },
+      "UNIGE-DPNC_SE_0_ATLAS-WEBDAV-grid05.unige.ch": {
+        "endpoint": "davs://grid05.unige.ch:443"
+      },
+      "UNIGE-DPNC_SE_0_ATLAS-XROOTD-grid05.unige.ch": {
+        "endpoint": "root://grid05.unige.ch:1094"
+      }
+    },
+    "rcsite": "UNIGE-DPNC"
+  },
+  "UPittTier3_SE_0_ATLAS": {
+    "protocols": {
+      "UPittTier3_SE_0_ATLAS-SRMv2-atlas-dtn.phyast.pitt.edu": {
+        "endpoint": "srm://atlas-dtn.phyast.pitt.edu:8443/srm/v2/server?SFN="
+      }
+    },
+    "rcsite": "UPittTier3"
+  },
+  "USCMS-FNAL-WC1_SE": {
+    "protocols": {
+      "USCMS-FNAL-WC1_SE-SRM-cmsdcadisk.fnal.gov": {
+        "endpoint": "srm://cmsdcadisk.fnal.gov:8443"
+      },
+      "USCMS-FNAL-WC1_SE-SRM-cmsdcatape.fnal.gov": {
+        "endpoint": "srm://cmsdcatape.fnal.gov:8443"
+      },
+      "USCMS-FNAL-WC1_SE-SRM-fndca4a.fnal.gov": {
+        "endpoint": "srm://fndca4a.fnal.gov:8443"
+      },
+      "USCMS-FNAL-WC1_SE-WEBDAV-stkendca06a.fnal.gov": {
+        "endpoint": "davs://stkendca06a.fnal.gov:2880"
+      },
+      "USCMS-FNAL-WC1_SE-XROOTD-stkendca06a.fnal.gov": {
+        "endpoint": "root://stkendca06a.fnal.gov:1094"
+      }
+    },
+    "rcsite": "USCMS-FNAL-WC1"
+  },
+  "WISC-ATLAS_SE_0_ATLAS": {
+    "protocols": {
+      "WISC-ATLAS_SE_0_ATLAS-SRMv2-atlas07.chtc.wisc.edu": {
+        "endpoint": "srm://atlas07.chtc.wisc.edu:8443/srm/managerv2?SFN="
+      },
+      "WISC-ATLAS_SE_0_ATLAS-WEBDAV-atlas07.chtc.wisc.edu": {
+        "endpoint": "davs://atlas07.chtc.wisc.edu:2880"
+      },
+      "WISC-ATLAS_SE_0_ATLAS-XROOTD-atlas07.chtc.wisc.edu": {
+        "endpoint": "root://atlas07.chtc.wisc.edu"
+      }
+    },
+    "rcsite": "WISC-ATLAS"
+  },
+  "WT2_SE_ATLAS": {
+    "protocols": {
+      "WT2_SE_ATLAS-WEBDAV-sdfdtn005.slac.stanford.edu": {
+        "endpoint": "davs://sdfdtn005.slac.stanford.edu:2094"
+      },
+      "WT2_SE_ATLAS-XROOTD-sdfdtn005.slac.stanford.edu": {
+        "endpoint": "root://sdfdtn005.slac.stanford.edu:2094"
+      }
+    },
+    "rcsite": "WT2"
+  },
+  "ifae_SE": {
+    "protocols": {
+      "ifae_SE-WEBDAV-dccore01-pps.pic.es": {
+        "endpoint": "davs://dccore01-pps.pic.es:8448"
+      }
+    },
+    "rcsite": "ifae"
+  },
+  "ifae_SE_0_ATLAS": {
+    "protocols": {
+      "ifae_SE_0_ATLAS-WEBDAV-webdav-at2.pic.es": {
+        "endpoint": "davs://webdav-at2.pic.es:8446"
+      },
+      "ifae_SE_0_ATLAS-XROOTD-xrootd-at2-door.pic.es": {
+        "endpoint": "root://xrootd-at2-door.pic.es:1094"
+      }
+    },
+    "rcsite": "ifae"
+  },
+  "mainz_SE_0_ATLAS": {
+    "protocols": {
+      "mainz_SE_0_ATLAS-WEBDAV-gdav1.physik.uni-mainz.de": {
+        "endpoint": "davs://gdav1.physik.uni-mainz.de:8443"
+      }
+    },
+    "rcsite": "mainz"
+  },
+  "mainzgrid_SE_0_ATLAS": {
+    "protocols": {
+      "mainzgrid_SE_0_ATLAS-SRM-mgse1.physik.uni-mainz.de": {
+        "endpoint": "srm://mgse1.physik.uni-mainz.de:8444/srm/managerv2?SFN="
+      },
+      "mainzgrid_SE_0_ATLAS-WEBDAV-mgtest.physik.uni-mainz.de": {
+        "endpoint": "davs://mgtest.physik.uni-mainz.de:8443"
+      }
+    },
+    "rcsite": "mainzgrid"
+  },
+  "pic_SE": {
+    "protocols": {
+      "pic_SE-SRM-srmcms.pic.es": {
+        "endpoint": "srm://srmcms.pic.es:8443"
+      },
+      "pic_SE-SRM-srmifae.pic.es": {
+        "endpoint": "srm://srmifae.pic.es:8443"
+      }
+    },
+    "rcsite": "pic"
+  },
+  "pic_SE_0_ATLAS": {
+    "protocols": {
+      "pic_SE_0_ATLAS-WEBDAV-webdav-at1.pic.es": {
+        "endpoint": "davs://webdav-at1.pic.es:8446"
+      },
+      "pic_SE_0_ATLAS-XROOTD-xrootd-at1-door.pic.es": {
+        "endpoint": "root://xrootd-at1-door.pic.es:1094"
+      }
+    },
+    "rcsite": "pic"
+  },
+  "pic_SE_ATLAS_TAPE": {
+    "protocols": {
+      "pic_SE_ATLAS_TAPE-WEBDAV-dcdoor01-test.pic.es": {
+        "endpoint": "davs://dcdoor01-test.pic.es:8446"
+      },
+      "pic_SE_ATLAS_TAPE-WEBDAV-webdav-at1-tape.pic.es": {
+        "endpoint": "davs://webdav-at1-tape.pic.es:8466"
+      }
+    },
+    "rcsite": "pic"
+  },
+  "pic_SE_LHCB": {
+    "protocols": {
+      "pic_SE_LHCB-HTTP-webdav-lhcbt1.pic.es": {
+        "endpoint": "https://webdav-lhcbt1.pic.es:8446"
+      },
+      "pic_SE_LHCB-XROOTD-xrootd.pic.es": {
+        "endpoint": "root://xrootd.pic.es"
+      }
+    },
+    "rcsite": "pic"
+  },
+  "pic_SE_LHCB_TAPE": {
+    "protocols": {
+      "pic_SE_LHCB_TAPE-HTTP-dcdoor01-test.pic.es": {
+        "endpoint": "https://dcdoor01-test.pic.es:8446"
+      },
+      "pic_SE_LHCB_TAPE-HTTP-webdav-lhcbt1-tape.pic.es": {
+        "endpoint": "https://webdav-lhcbt1-tape.pic.es:8446"
+      }
+    },
+    "rcsite": "pic"
+  },
+  "prague_cesnet_lcg2_SE": {
+    "protocols": {
+      "prague_cesnet_lcg2_SE-SRM-dpm1.egee.cesnet.cz": {
+        "endpoint": "srm://dpm1.egee.cesnet.cz:8446"
+      }
+    },
+    "rcsite": "prague_cesnet_lcg2"
+  },
+  "praguelcg2_SE_0_ATLAS": {
+    "protocols": {
+      "praguelcg2_SE_0_ATLAS-WEBDAV-se1.farm.particle.cz": {
+        "endpoint": "davs://se1.farm.particle.cz:443"
+      },
+      "praguelcg2_SE_0_ATLAS-XROOTD-se1.farm.particle.cz": {
+        "endpoint": "root://se1.farm.particle.cz:1094"
+      }
+    },
+    "rcsite": "praguelcg2"
+  },
+  "praguelcg2_SE_1_ATLAS": {
+    "protocols": {
+      "praguelcg2_SE_1_ATLAS-WEBDAV-se1.farm.particle.cz": {
+        "endpoint": "davs://se1.farm.particle.cz:443"
+      }
+    },
+    "rcsite": "praguelcg2"
+  },
+  "praguelcg2_SE_ALICE": {
+    "protocols": {
+      "praguelcg2_SE_ALICE-AliEn-SE-xrdhead.farm.particle.cz": {
+        "endpoint": "xrdhead.farm.particle.cz"
+      },
+      "praguelcg2_SE_ALICE-XROOTD-xrdhead.farm.particle.cz": {
+        "endpoint": "xrdhead.farm.particle.cz"
+      }
+    },
+    "rcsite": "praguelcg2"
+  },
+  "wuppertalprod_SE": {
+    "protocols": {
+      "wuppertalprod_SE-SRM-grid-se.physik.uni-wuppertal.de": {
+        "endpoint": "srm://grid-se.physik.uni-wuppertal.de:8443"
+      }
+    },
+    "rcsite": "wuppertalprod"
+  },
+  "wuppertalprod_SE_0_ATLAS": {
+    "protocols": {
+      "wuppertalprod_SE_0_ATLAS-WEBDAV-grid-se.physik.uni-wuppertal.de": {
+        "endpoint": "davs://grid-se.physik.uni-wuppertal.de:2881"
+      },
+      "wuppertalprod_SE_0_ATLAS-XROOTD-grid-se.physik.uni-wuppertal.de": {
+        "endpoint": "root://grid-se.physik.uni-wuppertal.de:1094"
+      }
+    },
+    "rcsite": "wuppertalprod"
+  }
+}

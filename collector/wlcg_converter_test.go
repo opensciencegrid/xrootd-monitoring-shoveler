@@ -467,21 +467,21 @@ func TestConvertGStreamToWLCG(t *testing.T) {
 
 func TestTransformCacheEvent(t *testing.T) {
 	raw := map[string]interface{}{
-		"event":      "file_close",
-		"lfn":        "/store/user/matevz/file.root",
-		"size":       float64(2446541517),
-		"blk_size":   float64(131072),
-		"n_blks":     float64(18666),
+		"event":       "file_close",
+		"lfn":         "/store/user/matevz/file.root",
+		"size":        float64(2446541517),
+		"blk_size":    float64(131072),
+		"n_blks":      float64(18666),
 		"n_blks_done": float64(6784),
-		"access_cnt": float64(4),
-		"attach_t":   float64(1688057096),
-		"detach_t":   float64(1688057104),
-		"b_hit":      float64(865075200),
-		"b_miss":     float64(24051712),
-		"b_bypass":   float64(0),
-		"n_cks_errs": float64(0),
-		"b_todisk":   float64(0),
-		"b_prefetch": float64(0),
+		"access_cnt":  float64(4),
+		"attach_t":    float64(1688057096),
+		"detach_t":    float64(1688057104),
+		"b_hit":       float64(865075200),
+		"b_miss":      float64(24051712),
+		"b_bypass":    float64(0),
+		"n_cks_errs":  float64(0),
+		"b_todisk":    float64(0),
+		"b_prefetch":  float64(0),
 	}
 
 	result := TransformCacheEvent(raw)
