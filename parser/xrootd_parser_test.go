@@ -241,6 +241,60 @@ func TestParsePacket_FileCloseRecord(t *testing.T) {
 	assert.Equal(t, int64(500), closeRec.Xfr.Write)
 }
 
+func TestParsePacket_FileCloseRecordOps(t *testing.T) {
+	// Ops stats (48 bytes) are read only when the close record holds them.
+	// A 32-byte close with hasOPS set must not take its ops from the 80-byte
+	// close after it, and that close must still get its own.
+	data := createHeader(PacketTypeFStat, uint16(8+24+32+80))
+
+	fileTOD := make([]byte, 24)
+	fileTOD[0] = RecTypeTime
+	fileTOD[1] = 0x01                            // flags: hasSID
+	binary.BigEndian.PutUint16(fileTOD[2:4], 24) // record size
+	data = append(data, fileTOD...)
+
+	shortClose := make([]byte, 32)
+	shortClose[0] = RecTypeClose
+	shortClose[1] = 0x02                               // flags: hasOPS
+	binary.BigEndian.PutUint16(shortClose[2:4], 32)    // record size: no room for ops
+	binary.BigEndian.PutUint32(shortClose[4:8], 111)   // file id
+	binary.BigEndian.PutUint64(shortClose[8:16], 4096) // Read bytes
+	data = append(data, shortClose...)
+
+	fullClose := make([]byte, 80)
+	fullClose[0] = RecTypeClose
+	fullClose[1] = 0x02                               // flags: hasOPS
+	binary.BigEndian.PutUint16(fullClose[2:4], 80)    // record size: 8 + 24 xfr + 48 ops
+	binary.BigEndian.PutUint32(fullClose[4:8], 222)   // file id
+	binary.BigEndian.PutUint64(fullClose[8:16], 8192) // Read bytes
+	ops := fullClose[32:]
+	binary.BigEndian.PutUint32(ops[0:4], 10)    // read calls
+	binary.BigEndian.PutUint32(ops[4:8], 2)     // readv calls
+	binary.BigEndian.PutUint16(ops[12:14], 3)   // rsMin
+	binary.BigEndian.PutUint16(ops[14:16], 7)   // rsMax
+	binary.BigEndian.PutUint64(ops[16:24], 9)   // rsegs
+	binary.BigEndian.PutUint32(ops[24:28], 512) // rdMin
+	binary.BigEndian.PutUint32(ops[28:32], 2048)
+	data = append(data, fullClose...)
+
+	packet, err := ParsePacket(data)
+
+	require.NoError(t, err)
+	require.Len(t, packet.FileRecords, 3)
+
+	first, ok := packet.FileRecords[1].(FileCloseRecord)
+	require.True(t, ok)
+	assert.Equal(t, uint32(111), first.Header.FileId)
+	assert.Equal(t, int64(4096), first.Xfr.Read)
+	assert.Equal(t, StatOPS{}, first.Ops, "a 32-byte close has no room for ops")
+
+	second, ok := packet.FileRecords[2].(FileCloseRecord)
+	require.True(t, ok)
+	assert.Equal(t, uint32(222), second.Header.FileId)
+	assert.Equal(t, int64(8192), second.Xfr.Read)
+	assert.Equal(t, StatOPS{Read: 10, Readv: 2, RsMin: 3, RsMax: 7, Rsegs: 9, RdMin: 512, RdMax: 2048}, second.Ops)
+}
+
 func TestParsePacket_UnknownType(t *testing.T) {
 	plen := uint16(8)
 	data := createHeader('Z', plen) // Unknown type
