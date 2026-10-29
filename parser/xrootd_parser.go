@@ -815,17 +815,10 @@ parseLoop:
 			break parseLoop // Failed to seek back
 		}
 
-		// Parse based on record type
-		switch commonHeader.RecType {
-		case RecTypeTime:
-			if commonHeader.RecSize < 16 {
-				// Too short to hold tBeg/tEnd; skip it
-				if _, err := reader.Seek(pos+int64(commonHeader.RecSize), io.SeekStart); err != nil {
-					break parseLoop
-				}
-				continue
-			}
-
+		// Parse based on record type. A time record too short to hold
+		// tBeg/tEnd (16 bytes) falls through to default and is skipped.
+		switch {
+		case commonHeader.RecType == RecTypeTime && commonHeader.RecSize >= 16:
 			var timeRec binaryFileTimeRecord
 			if err := binary.Read(reader, binary.BigEndian, &timeRec); err != nil {
 				return records, fmt.Errorf("failed to parse time record: %w", err)
@@ -856,7 +849,7 @@ parseLoop:
 				SID:  int64(sid),
 			})
 
-		case RecTypeClose:
+		case commonHeader.RecType == RecTypeClose:
 			var closeHeader binaryFileCloseRecordHeader
 			if err := binary.Read(reader, binary.BigEndian, &closeHeader); err != nil {
 				return records, fmt.Errorf("failed to parse close record header: %w", err)
@@ -905,7 +898,7 @@ parseLoop:
 			}
 			records = append(records, closeRec)
 
-		case RecTypeOpen:
+		case commonHeader.RecType == RecTypeOpen:
 			var openHeader binaryFileOpenRecordHeader
 			if err := binary.Read(reader, binary.BigEndian, &openHeader); err != nil {
 				return records, fmt.Errorf("failed to parse open record header: %w", err)
@@ -955,7 +948,7 @@ parseLoop:
 			}
 			records = append(records, openRec)
 
-		case RecTypeDisc:
+		case commonHeader.RecType == RecTypeDisc:
 			// Disconnect record - userID field contains the dictid of disconnecting user
 			discRec := FileDisconnectRecord{
 				Header: FileHeader{
