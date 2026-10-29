@@ -934,7 +934,7 @@ parseLoop:
 			// Read remaining bytes as filename
 			currentPos, seekErr := reader.Seek(0, io.SeekCurrent)
 			if seekErr != nil {
-				break
+				break parseLoop
 			}
 			recordEnd := pos + int64(openHeader.RecSize)
 			lfnLen := recordEnd - currentPos
