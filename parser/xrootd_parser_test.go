@@ -228,6 +228,17 @@ func TestGetRequestID(t *testing.T) {
 		},
 	}
 	assert.Equal(t, "close-111-222", closePacket.GetRequestID())
+
+	// f-stream packets lead with a FileTOD; the ID comes from the record after it
+	fstreamPacket := &Packet{
+		FileRecords: []interface{}{
+			FileTimeRecord{SID: 54321},
+			FileCloseRecord{
+				Header: FileHeader{FileId: 111, UserId: 222},
+			},
+		},
+	}
+	assert.Equal(t, "close-111-222", fstreamPacket.GetRequestID())
 }
 
 func TestParsePacket_EmptyPacket(t *testing.T) {

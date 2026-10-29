@@ -990,8 +990,17 @@ func (p *Packet) GetRequestID() string {
 		return fmt.Sprintf("map-%d", p.MapRecord.DictId)
 	}
 
-	if len(p.FileRecords) > 0 {
-		switch rec := p.FileRecords[0].(type) {
+	fileRecs := p.FileRecords
+	// Skip the leading FileTOD every f-stream packet carries: it has no file
+	// ID, so it would give every packet from a server the same request ID
+	if len(fileRecs) > 1 {
+		if _, ok := fileRecs[0].(FileTimeRecord); ok {
+			fileRecs = fileRecs[1:]
+		}
+	}
+
+	if len(fileRecs) > 0 {
+		switch rec := fileRecs[0].(type) {
 		case FileTimeRecord:
 			return fmt.Sprintf("time-%d-%d", rec.Header.FileId, rec.SID)
 		case FileCloseRecord:
