@@ -195,6 +195,7 @@ type Config struct {
 	ProfilePort           int
 	StompCert             string
 	StompCertKey          string
+	StompAllBrokers       bool // One connection to every broker behind the stomp.url alias, not to one of them
 	QueueDir              string
 	QueueMaxMessages      int // queue_max_messages: drop the oldest beyond this (0 = no limit)
 	IpMapAll              string
@@ -568,6 +569,11 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		// Get the STOMP certkey
 		c.StompCertKey = viper.GetString("stomp.certkey")
 		log.Debugln("STOMP CERTKEY:", c.StompCertKey)
+
+		// Connect to every broker behind the stomp.url alias instead of one of them
+		viper.SetDefault("stomp.all_brokers", true)
+		c.StompAllBrokers = viper.GetBool("stomp.all_brokers")
+		log.Debugln("STOMP all brokers:", c.StompAllBrokers)
 	default:
 		log.Panic("MQ option is not one of the allowed ones (amqp, stomp)")
 	}

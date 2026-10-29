@@ -92,6 +92,14 @@ amqp:
 #  topic: mytopic
 #  cert: path/to/cert/file
 #  certkey: path/to/certkey/file
+#  # On by default: open one connection to every broker behind the url alias,
+#  # instead of a single connection to the one DNS picks. Each connection sends
+#  # one message at a time and waits for its broker's receipt, so with 6 brokers
+#  # 6 messages are sent at once. This helps sites far from the brokers, where
+#  # waiting for each receipt is what limits the sending rate. The alias is
+#  # looked up again every 10 minutes and after a failed send. Set to false for
+#  # a single connection.
+#  all_brokers: true
 
 listen:
   port: 9993

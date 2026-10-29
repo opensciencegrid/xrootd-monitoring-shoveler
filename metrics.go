@@ -40,6 +40,16 @@ var (
 		Help: "The number of messages in the queue",
 	})
 
+	StompConnections = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_stomp_connections",
+		Help: "The number of open connections to STOMP brokers",
+	})
+
+	StompRequeued = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_stomp_requeued_total",
+		Help: "Messages put back in the queue after a failed send, for another broker to send (stomp.all_brokers)",
+	})
+
 	// Collector mode metrics
 	PacketsParsedOK = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_packets_parsed_ok",
