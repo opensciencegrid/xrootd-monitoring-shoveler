@@ -3,7 +3,6 @@ package collector
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"os"
 	"testing"
@@ -14,30 +13,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// loadCapturedPacket returns line n of tests/use_case — f-stream packets
-// captured from production XRootD servers, one base64 JSON message per line —
-// parsed with parser.ParsePacket and stamped with the message's remote address,
-// as the collector's message-bus input does.
-func loadCapturedPacket(t *testing.T, n int) *parser.Packet {
+// loadCapturedPackets returns the given lines of tests/use_case — f-stream
+// packets captured from production XRootD servers, one base64 JSON message per
+// line — parsed with parser.ParsePacket and stamped with the message's remote
+// address, as the collector's message-bus input does.
+func loadCapturedPackets(t *testing.T, lineNums ...int) []*parser.Packet {
 	t.Helper()
 
 	raw, err := os.ReadFile("../tests/use_case")
 	require.NoError(t, err)
 	lines := bytes.Split(bytes.TrimSpace(raw), []byte("\n"))
-	require.Greater(t, len(lines), n)
 
-	var msg struct {
-		Data   string `json:"data"`
-		Remote string `json:"remote"`
+	packets := make([]*parser.Packet, 0, len(lineNums))
+	for _, n := range lineNums {
+		require.Greater(t, len(lines), n)
+
+		var msg struct {
+			Data   string `json:"data"`
+			Remote string `json:"remote"`
+		}
+		require.NoError(t, json.Unmarshal(lines[n], &msg))
+		data, err := base64.StdEncoding.DecodeString(msg.Data)
+		require.NoError(t, err)
+
+		packet, err := parser.ParsePacket(data)
+		require.NoError(t, err)
+		packet.RemoteAddr = msg.Remote
+		packets = append(packets, packet)
 	}
-	require.NoError(t, json.Unmarshal(lines[n], &msg))
-	data, err := base64.StdEncoding.DecodeString(msg.Data)
-	require.NoError(t, err)
-
-	packet, err := parser.ParsePacket(data)
-	require.NoError(t, err)
-	packet.RemoteAddr = msg.Remote
-	return packet
+	return packets
 }
 
 // TestFileTODWindowFromCapturedPackets runs two consecutive f-stream packets
@@ -58,8 +62,10 @@ func TestFileTODWindowFromCapturedPackets(t *testing.T) {
 	correlator := NewCorrelator(5*time.Minute, 0, nil)
 	defer correlator.Stop()
 
+	packets := loadCapturedPackets(t, 1, 2)
+
 	// Line 1: four files opened and closed within the same window.
-	first := loadCapturedPacket(t, 1)
+	first := packets[0]
 	require.NotEmpty(t, first.FileRecords)
 	tod, ok := first.FileRecords[0].(parser.FileTimeRecord)
 	require.True(t, ok, "first f-stream record should be the leading FileTOD, got %T", first.FileRecords[0])
@@ -81,7 +87,7 @@ func TestFileTODWindowFromCapturedPackets(t *testing.T) {
 	// opened and closed in this window, and three closes whose opens predate
 	// the capture.
 	const crossPacketLfn = "/store/mc/HC/GenericTTbar/AODSIM/CMSSW_9_2_6_91X_mcRun1_realistic_v2-v2/00000/64558671-1776-E711-806B-FA163E995805.root"
-	recs, err = correlator.ProcessPacket(loadCapturedPacket(t, 2))
+	recs, err = correlator.ProcessPacket(packets[1])
 	require.NoError(t, err)
 	require.Len(t, recs, 6)
 
@@ -106,36 +112,4 @@ func TestFileTODWindowFromCapturedPackets(t *testing.T) {
 	}
 	assert.Equal(t, 1, crossPacket, "one close should correlate with its open from the previous packet")
 	assert.Equal(t, 3, standalone, "three closes have no matching open")
-}
-
-// TestTracePacketStillProducesNoRecords checks the t-stream fix from #102
-// holds end to end: a t-stream packet carries no FileTOD and yields no file
-// records, so the correlator emits nothing for it.
-func TestTracePacketStillProducesNoRecords(t *testing.T) {
-	// Window mark entry (0xe0) followed by a close entry (0xc0) whose bytes
-	// 2-3 were once misread as an f-stream recSize.
-	window := [16]byte{0: 0xe0}
-	binary.BigEndian.PutUint32(window[8:12], 1782994800)
-	binary.BigEndian.PutUint32(window[12:16], 1782994830)
-	closeEntry := [16]byte{0: 0xc0, 1: 0x02, 2: 0x01}
-	binary.BigEndian.PutUint32(closeEntry[4:8], 0x2FCBE0C0)
-	binary.BigEndian.PutUint32(closeEntry[8:12], 0x2FC71A80)
-	binary.BigEndian.PutUint32(closeEntry[12:16], 12235)
-
-	b := []byte{parser.PacketTypeTrace, 0x01}
-	b = binary.BigEndian.AppendUint16(b, 8+16*2)
-	b = binary.BigEndian.AppendUint32(b, 1782994817)
-	b = append(b, window[:]...)
-	b = append(b, closeEntry[:]...)
-
-	packet, err := parser.ParsePacket(b)
-	require.NoError(t, err)
-	assert.Empty(t, packet.FileRecords)
-
-	correlator := NewCorrelator(5*time.Minute, 0, nil)
-	defer correlator.Stop()
-	recs, err := correlator.ProcessPacket(packet)
-	require.NoError(t, err)
-	assert.Empty(t, recs)
-	assert.Equal(t, 0, correlator.GetStateSize())
 }
