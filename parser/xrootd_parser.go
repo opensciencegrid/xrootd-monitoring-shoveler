@@ -876,8 +876,10 @@ parseLoop:
 				},
 			}
 
-			// Check if ops stats are present (RecFlag & 0x02 means hasOPS)
-			if (closeHeader.RecFlag&0x02) != 0 && reader.Len() >= 48 {
+			// Check if ops stats are present (RecFlag & 0x02 means hasOPS) and
+			// fit in this record (8 header + 24 xfr + 48 ops), so a short record
+			// can't pull ops from the records after it
+			if (closeHeader.RecFlag&0x02) != 0 && closeHeader.RecSize >= 80 {
 				var ops binaryStatOPS
 				if err := binary.Read(reader, binary.BigEndian, &ops); err == nil {
 					closeRec.Ops = StatOPS{
