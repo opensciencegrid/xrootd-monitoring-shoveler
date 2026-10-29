@@ -20,25 +20,35 @@ func TestEndToEndFileOperation(t *testing.T) {
 	correlator := collector.NewCorrelator(5*time.Second, 0, nil)
 	defer correlator.Stop()
 
-	// Simulate file open packet
-	openPacket := createFileOpenPacket(123, 456, 1024, "/test/file.txt")
+	// Simulate an f-stream packet carrying a file open
+	openPacket := createFStreamPacket(1, 1000, 1030, createFileOpenRecord(123, 456, 1024, "/test/file.txt"))
 	packet, err := parser.ParsePacket(openPacket)
 	require.NoError(t, err)
 
-	record, err := correlator.ProcessPacket(packet)
-	require.NoError(t, err)
-	assert.Nil(t, record) // Open should not produce a record yet
+	open := requireSingleFileRecord[parser.FileOpenRecord](t, packet)
+	assert.Equal(t, uint32(123), open.Header.FileId)
+	assert.Equal(t, uint32(456), open.User)
+	assert.Equal(t, int64(1024), open.FileSize)
+	assert.Equal(t, "/test/file.txt", string(open.Lfn))
 
-	// Simulate file close packet
-	closePacket := createFileClosePacket(123, 456, 2048, 512, 256)
+	records, err := correlator.ProcessPacket(packet)
+	require.NoError(t, err)
+	assert.Empty(t, records) // Open should not produce a record yet
+
+	// Simulate an f-stream packet carrying the matching file close
+	closePacket := createFStreamPacket(2, 1060, 1090, createFileCloseRecord(123, 2048, 512, 256))
 	packet, err = parser.ParsePacket(closePacket)
 	require.NoError(t, err)
 
-	record, err = correlator.ProcessPacket(packet)
+	closeRec := requireSingleFileRecord[parser.FileCloseRecord](t, packet)
+	assert.Equal(t, uint32(123), closeRec.Header.FileId)
+
+	records, err = correlator.ProcessPacket(packet)
 	require.NoError(t, err)
-	require.NotNil(t, record) // Close should produce a correlated record
+	require.Len(t, records, 1) // Close should produce a correlated record
 
 	// Verify the correlated record
+	record := records[0]
 	assert.Equal(t, int64(2048), record.Read)
 	assert.Equal(t, int64(512), record.Readv)
 	assert.Equal(t, int64(256), record.Write)
@@ -47,71 +57,84 @@ func TestEndToEndFileOperation(t *testing.T) {
 	assert.Equal(t, 1, record.HasFileCloseMsg)
 }
 
-// createFileOpenPacket creates a file open packet for testing
-func createFileOpenPacket(fileId, userId uint32, fileSize int64, filename string) []byte {
-	lfnBytes := []byte(filename)
-	recSize := 16 + 8 + 4 + len(lfnBytes) // file header + filesize + user + lfn
-	plen := 8 + recSize                   // packet header + record
+// requireSingleFileRecord returns the only file record of type T in packet.
+// The leading XrdXrootdMonFileTOD may or may not be included in FileRecords,
+// so it is ignored here.
+func requireSingleFileRecord[T any](t *testing.T, packet *parser.Packet) T {
+	t.Helper()
 
-	packet := make([]byte, plen)
-
-	// Packet header
-	packet[0] = parser.PacketTypeFOpen
-	packet[1] = 1 // sequence
-	binary.BigEndian.PutUint16(packet[2:4], uint16(plen))
-	binary.BigEndian.PutUint32(packet[4:8], 1000) // server start
-
-	// File header
-	offset := 8
-	packet[offset] = parser.RecTypeOpen
-	packet[offset+1] = 0 // flags
-	binary.BigEndian.PutUint16(packet[offset+2:offset+4], uint16(recSize))
-	binary.BigEndian.PutUint32(packet[offset+4:offset+8], fileId)
-	binary.BigEndian.PutUint32(packet[offset+8:offset+12], userId)
-
-	// File size
-	offset += 16
-	binary.BigEndian.PutUint64(packet[offset:offset+8], uint64(fileSize))
-
-	// User
-	offset += 8
-	binary.BigEndian.PutUint32(packet[offset:offset+4], userId)
-
-	// Filename
-	offset += 4
-	copy(packet[offset:], lfnBytes)
-
-	return packet
+	var found []T
+	for _, rec := range packet.FileRecords {
+		switch r := rec.(type) {
+		case parser.FileTimeRecord:
+			continue
+		case T:
+			found = append(found, r)
+		default:
+			t.Fatalf("unexpected file record %T", rec)
+		}
+	}
+	require.Len(t, found, 1)
+	return found[0]
 }
 
-// createFileClosePacket creates a file close packet for testing
-func createFileClosePacket(fileId, userId uint32, readBytes, readvBytes, writeBytes int64) []byte {
-	recSize := 40 // 16 (header) + 24 (xfr stats)
-	plen := 8 + recSize
-
-	packet := make([]byte, plen)
+// createFStreamPacket creates an f-stream packet: the 8-byte packet header,
+// the 24-byte XrdXrootdMonFileTOD bounding the window [tBeg, tEnd], then the
+// given file records.
+func createFStreamPacket(pseq uint8, tBeg, tEnd uint32, records ...[]byte) []byte {
+	plen := 8 + 24
+	for _, rec := range records {
+		plen += len(rec)
+	}
 
 	// Packet header
-	packet[0] = parser.PacketTypeFClose
-	packet[1] = 2 // sequence
-	binary.BigEndian.PutUint16(packet[2:4], uint16(plen))
-	binary.BigEndian.PutUint32(packet[4:8], 1000) // server start
+	b := []byte{parser.PacketTypeFStat, pseq}
+	b = binary.BigEndian.AppendUint16(b, uint16(plen))
+	b = binary.BigEndian.AppendUint32(b, 1000) // server start
 
-	// File header
-	offset := 8
-	packet[offset] = parser.RecTypeClose
-	packet[offset+1] = 0 // flags
-	binary.BigEndian.PutUint16(packet[offset+2:offset+4], uint16(recSize))
-	binary.BigEndian.PutUint32(packet[offset+4:offset+8], fileId)
-	binary.BigEndian.PutUint32(packet[offset+8:offset+12], userId)
+	// FileTOD: recType, recFlag, recSize, nRecs[0] (xfr records), nRecs[1] (total records), tBeg, tEnd, sid
+	b = append(b, parser.RecTypeTime, 0)
+	b = binary.BigEndian.AppendUint16(b, 24)
+	b = binary.BigEndian.AppendUint16(b, 0)
+	b = binary.BigEndian.AppendUint16(b, uint16(len(records)))
+	b = binary.BigEndian.AppendUint32(b, tBeg)
+	b = binary.BigEndian.AppendUint32(b, tEnd)
+	b = binary.BigEndian.AppendUint64(b, 42) // sid
 
-	// XFR stats
-	offset += 16
-	binary.BigEndian.PutUint64(packet[offset:offset+8], uint64(readBytes))
-	binary.BigEndian.PutUint64(packet[offset+8:offset+16], uint64(readvBytes))
-	binary.BigEndian.PutUint64(packet[offset+16:offset+24], uint64(writeBytes))
+	for _, rec := range records {
+		b = append(b, rec...)
+	}
+	return b
+}
 
-	return packet
+// createFileOpenRecord creates an open record with the hasLFN flag set: the
+// 8-byte file header, the file size, then the user dictid and the
+// null-terminated filename, padded to a 4-byte boundary.
+func createFileOpenRecord(fileId, userId uint32, fileSize int64, filename string) []byte {
+	lfn := append([]byte(filename), 0)
+	for len(lfn)%4 != 0 {
+		lfn = append(lfn, 0)
+	}
+	recSize := 8 + 8 + 4 + len(lfn)
+
+	b := []byte{parser.RecTypeOpen, 0x01} // hasLFN
+	b = binary.BigEndian.AppendUint16(b, uint16(recSize))
+	b = binary.BigEndian.AppendUint32(b, fileId)
+	b = binary.BigEndian.AppendUint64(b, uint64(fileSize))
+	b = binary.BigEndian.AppendUint32(b, userId)
+	return append(b, lfn...)
+}
+
+// createFileCloseRecord creates a close record: the 8-byte file header
+// followed by the read, readv and write byte counts.
+func createFileCloseRecord(fileId uint32, readBytes, readvBytes, writeBytes int64) []byte {
+	b := []byte{parser.RecTypeClose, 0}
+	b = binary.BigEndian.AppendUint16(b, 32) // record size
+	b = binary.BigEndian.AppendUint32(b, fileId)
+	b = binary.BigEndian.AppendUint64(b, uint64(readBytes))
+	b = binary.BigEndian.AppendUint64(b, uint64(readvBytes))
+	b = binary.BigEndian.AppendUint64(b, uint64(writeBytes))
+	return b
 }
 
 // TestPacketVerificationFlow tests the verification flow in shoveling mode
