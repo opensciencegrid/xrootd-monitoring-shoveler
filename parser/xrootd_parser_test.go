@@ -77,10 +77,10 @@ func TestParsePacket_FileTimeRecord(t *testing.T) {
 	// Add FileTOD record (24 bytes): RecType(1) + RecFlag(1) + RecSize(2) + isXfr_recs(2) + total_recs(2) + tBeg(4) + tEnd(4) + sid(8)
 	fileHeader := make([]byte, 24)
 	fileHeader[0] = RecTypeTime
-	fileHeader[1] = 0                                    // flags
+	fileHeader[1] = 0x01                                 // flags: hasSID
 	binary.BigEndian.PutUint16(fileHeader[2:4], 24)      // record size
-	binary.BigEndian.PutUint16(fileHeader[4:6], 0)       // isXfr_recs
-	binary.BigEndian.PutUint16(fileHeader[6:8], 0)       // total_recs
+	binary.BigEndian.PutUint16(fileHeader[4:6], 2)       // isXfr_recs
+	binary.BigEndian.PutUint16(fileHeader[6:8], 7)       // total_recs
 	binary.BigEndian.PutUint32(fileHeader[8:12], 1000)   // TBeg
 	binary.BigEndian.PutUint32(fileHeader[12:16], 2000)  // TEnd
 	binary.BigEndian.PutUint64(fileHeader[16:24], 54321) // SID
@@ -90,8 +90,107 @@ func TestParsePacket_FileTimeRecord(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, PacketTypeFStat, packet.PacketType)
-	// FileTOD records are skipped, so no records should be returned
-	assert.Len(t, packet.FileRecords, 0)
+	// The leading FileTOD is returned so the correlator can use its window
+	require.Len(t, packet.FileRecords, 1)
+	timeRec, ok := packet.FileRecords[0].(FileTimeRecord)
+	require.True(t, ok)
+	assert.Equal(t, RecTypeTime, timeRec.Header.RecType)
+	assert.Equal(t, uint16(24), timeRec.Header.RecSize)
+	assert.Equal(t, int16(2), timeRec.Header.NRecs0)
+	assert.Equal(t, int16(7), timeRec.Header.NRecs1)
+	assert.Equal(t, int32(1000), timeRec.TBeg)
+	assert.Equal(t, int32(2000), timeRec.TEnd)
+	assert.Equal(t, int64(54321), timeRec.SID)
+}
+
+func TestParsePacket_FileTimeRecordWithoutSID(t *testing.T) {
+	// Older servers send a 16-byte FileTOD with no sID (recFlag hasSID unset).
+	// 8 byte main header + 16 byte FileTOD + 32 byte close record
+	plen := uint16(56)
+	data := createHeader(PacketTypeFStat, plen)
+
+	fileTOD := make([]byte, 16)
+	fileTOD[0] = RecTypeTime
+	binary.BigEndian.PutUint16(fileTOD[2:4], 16)    // record size
+	binary.BigEndian.PutUint16(fileTOD[6:8], 1)     // total_recs
+	binary.BigEndian.PutUint32(fileTOD[8:12], 1000) // TBeg
+	binary.BigEndian.PutUint32(fileTOD[12:16], 1030)
+	data = append(data, fileTOD...)
+
+	closeBytes := make([]byte, 32)
+	closeBytes[0] = RecTypeClose
+	binary.BigEndian.PutUint16(closeBytes[2:4], 32)    // record size
+	binary.BigEndian.PutUint32(closeBytes[4:8], 111)   // file id
+	binary.BigEndian.PutUint64(closeBytes[8:16], 4096) // Read bytes
+	data = append(data, closeBytes...)
+
+	packet, err := ParsePacket(data)
+
+	require.NoError(t, err)
+	require.Len(t, packet.FileRecords, 2)
+	timeRec, ok := packet.FileRecords[0].(FileTimeRecord)
+	require.True(t, ok)
+	assert.Equal(t, int32(1000), timeRec.TBeg)
+	assert.Equal(t, int32(1030), timeRec.TEnd)
+	assert.Equal(t, int64(0), timeRec.SID)
+
+	// The close record that follows must still be read from the right offset
+	closeRec, ok := packet.FileRecords[1].(FileCloseRecord)
+	require.True(t, ok)
+	assert.Equal(t, uint32(111), closeRec.Header.FileId)
+	assert.Equal(t, int64(4096), closeRec.Xfr.Read)
+}
+
+func TestParsePacket_FileTimeRecordOddSizes(t *testing.T) {
+	// A FileTOD too short for tBeg/tEnd is skipped, and one padded past 24
+	// bytes is read up to its recSize. Either way the close record after it
+	// must be read from the right offset.
+	for _, tc := range []struct {
+		name    string
+		recSize int
+		wantTOD bool
+	}{
+		{"too short", 8, false},
+		{"padded", 32, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fileTOD := make([]byte, tc.recSize)
+			fileTOD[0] = RecTypeTime
+			binary.BigEndian.PutUint16(fileTOD[2:4], uint16(tc.recSize))
+			if tc.recSize >= 16 {
+				binary.BigEndian.PutUint32(fileTOD[8:12], 1000) // TBeg
+				binary.BigEndian.PutUint32(fileTOD[12:16], 1030)
+			}
+
+			closeBytes := make([]byte, 32)
+			closeBytes[0] = RecTypeClose
+			binary.BigEndian.PutUint16(closeBytes[2:4], 32)    // record size
+			binary.BigEndian.PutUint32(closeBytes[4:8], 111)   // file id
+			binary.BigEndian.PutUint64(closeBytes[8:16], 4096) // Read bytes
+
+			data := createHeader(PacketTypeFStat, uint16(8+len(fileTOD)+len(closeBytes)))
+			data = append(data, fileTOD...)
+			data = append(data, closeBytes...)
+
+			packet, err := ParsePacket(data)
+			require.NoError(t, err)
+
+			recs := packet.FileRecords
+			if tc.wantTOD {
+				require.Len(t, recs, 2)
+				timeRec, ok := recs[0].(FileTimeRecord)
+				require.True(t, ok)
+				assert.Equal(t, int32(1000), timeRec.TBeg)
+				assert.Equal(t, int32(1030), timeRec.TEnd)
+				recs = recs[1:]
+			}
+			require.Len(t, recs, 1)
+			closeRec, ok := recs[0].(FileCloseRecord)
+			require.True(t, ok)
+			assert.Equal(t, uint32(111), closeRec.Header.FileId)
+			assert.Equal(t, int64(4096), closeRec.Xfr.Read)
+		})
+	}
 }
 
 func TestParsePacket_FileCloseRecord(t *testing.T) {
@@ -100,11 +199,13 @@ func TestParsePacket_FileCloseRecord(t *testing.T) {
 	plen := uint16(64)
 	data := createHeader(PacketTypeFStat, plen)
 
-	// Add FileTOD record (24 bytes) - will be skipped by parser
+	// Add FileTOD record (24 bytes)
 	fileTOD := make([]byte, 24)
 	fileTOD[0] = RecTypeTime
-	fileTOD[1] = 0
-	binary.BigEndian.PutUint16(fileTOD[2:4], 24) // record size
+	fileTOD[1] = 0x01                               // flags: hasSID
+	binary.BigEndian.PutUint16(fileTOD[2:4], 24)    // record size
+	binary.BigEndian.PutUint32(fileTOD[8:12], 1000) // TBeg
+	binary.BigEndian.PutUint32(fileTOD[12:16], 1030)
 	data = append(data, fileTOD...)
 
 	// Add close record header (8 bytes): RecType(1) + RecFlag(1) + RecSize(2) + FileID(4)
@@ -126,13 +227,72 @@ func TestParsePacket_FileCloseRecord(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, PacketTypeFStat, packet.PacketType)
-	assert.Len(t, packet.FileRecords, 1)
+	require.Len(t, packet.FileRecords, 2)
 
-	closeRec, ok := packet.FileRecords[0].(FileCloseRecord)
+	timeRec, ok := packet.FileRecords[0].(FileTimeRecord)
+	require.True(t, ok)
+	assert.Equal(t, int32(1000), timeRec.TBeg)
+	assert.Equal(t, int32(1030), timeRec.TEnd)
+
+	closeRec, ok := packet.FileRecords[1].(FileCloseRecord)
 	require.True(t, ok)
 	assert.Equal(t, int64(1000), closeRec.Xfr.Read)
 	assert.Equal(t, int64(2000), closeRec.Xfr.Readv)
 	assert.Equal(t, int64(500), closeRec.Xfr.Write)
+}
+
+func TestParsePacket_FileCloseRecordOps(t *testing.T) {
+	// Ops stats (48 bytes) are read only when the close record holds them.
+	// A 32-byte close with hasOPS set must not take its ops from the 80-byte
+	// close after it, and that close must still get its own.
+	data := createHeader(PacketTypeFStat, uint16(8+24+32+80))
+
+	fileTOD := make([]byte, 24)
+	fileTOD[0] = RecTypeTime
+	fileTOD[1] = 0x01                            // flags: hasSID
+	binary.BigEndian.PutUint16(fileTOD[2:4], 24) // record size
+	data = append(data, fileTOD...)
+
+	shortClose := make([]byte, 32)
+	shortClose[0] = RecTypeClose
+	shortClose[1] = 0x02                               // flags: hasOPS
+	binary.BigEndian.PutUint16(shortClose[2:4], 32)    // record size: no room for ops
+	binary.BigEndian.PutUint32(shortClose[4:8], 111)   // file id
+	binary.BigEndian.PutUint64(shortClose[8:16], 4096) // Read bytes
+	data = append(data, shortClose...)
+
+	fullClose := make([]byte, 80)
+	fullClose[0] = RecTypeClose
+	fullClose[1] = 0x02                               // flags: hasOPS
+	binary.BigEndian.PutUint16(fullClose[2:4], 80)    // record size: 8 + 24 xfr + 48 ops
+	binary.BigEndian.PutUint32(fullClose[4:8], 222)   // file id
+	binary.BigEndian.PutUint64(fullClose[8:16], 8192) // Read bytes
+	ops := fullClose[32:]
+	binary.BigEndian.PutUint32(ops[0:4], 10)    // read calls
+	binary.BigEndian.PutUint32(ops[4:8], 2)     // readv calls
+	binary.BigEndian.PutUint16(ops[12:14], 3)   // rsMin
+	binary.BigEndian.PutUint16(ops[14:16], 7)   // rsMax
+	binary.BigEndian.PutUint64(ops[16:24], 9)   // rsegs
+	binary.BigEndian.PutUint32(ops[24:28], 512) // rdMin
+	binary.BigEndian.PutUint32(ops[28:32], 2048)
+	data = append(data, fullClose...)
+
+	packet, err := ParsePacket(data)
+
+	require.NoError(t, err)
+	require.Len(t, packet.FileRecords, 3)
+
+	first, ok := packet.FileRecords[1].(FileCloseRecord)
+	require.True(t, ok)
+	assert.Equal(t, uint32(111), first.Header.FileId)
+	assert.Equal(t, int64(4096), first.Xfr.Read)
+	assert.Equal(t, StatOPS{}, first.Ops, "a 32-byte close has no room for ops")
+
+	second, ok := packet.FileRecords[2].(FileCloseRecord)
+	require.True(t, ok)
+	assert.Equal(t, uint32(222), second.Header.FileId)
+	assert.Equal(t, int64(8192), second.Xfr.Read)
+	assert.Equal(t, StatOPS{Read: 10, Readv: 2, RsMin: 3, RsMax: 7, Rsegs: 9, RdMin: 512, RdMax: 2048}, second.Ops)
 }
 
 func TestParsePacket_UnknownType(t *testing.T) {
@@ -174,6 +334,17 @@ func TestGetRequestID(t *testing.T) {
 		},
 	}
 	assert.Equal(t, "close-111-222", closePacket.GetRequestID())
+
+	// f-stream packets lead with a FileTOD; the ID comes from the record after it
+	fstreamPacket := &Packet{
+		FileRecords: []interface{}{
+			FileTimeRecord{SID: 54321},
+			FileCloseRecord{
+				Header: FileHeader{FileId: 111, UserId: 222},
+			},
+		},
+	}
+	assert.Equal(t, "close-111-222", fstreamPacket.GetRequestID())
 }
 
 func TestParsePacket_EmptyPacket(t *testing.T) {

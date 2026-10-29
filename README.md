@@ -526,11 +526,15 @@ When debug is enabled, the collector logs details for every packet:
 ```
 time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: =, IsXML: false, MapRecord: &{...}, UserRecord: <nil>, FileRecords: 0"
 time="..." level=debug msg="  MapRecord - DictId: 1, Info: /store/data/file.root"
-time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 1"
-time="..." level=debug msg="  FileRecord[0] - Open: FileId=42, User=1, Lfn=/store/data/file.root"
-time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 1"
-time="..." level=debug msg="  FileRecord[0] - Close: FileId=42, Read=131072, Write=0"
+time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 2"
+time="..." level=debug msg="  FileRecord[0] - Time: TBeg=1700000100, TEnd=1700000130"
+time="..." level=debug msg="  FileRecord[1] - Open: FileId=42, User=1, Lfn=/store/data/file.root"
+time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 2"
+time="..." level=debug msg="  FileRecord[0] - Time: TBeg=1700000160, TEnd=1700000190"
+time="..." level=debug msg="  FileRecord[1] - Close: FileId=42, Read=131072, Write=0"
 ```
+
+Every f-stream packet starts with a `Time` record (XRootD's FileTOD). Its `TBeg`/`TEnd` bound when the packet's file events happened, and they become the operation's `start_time` and `end_time`.
 
 ### Viewing the Output
 
@@ -554,7 +558,7 @@ Example output record:
   "@timestamp": "2025-01-15T12:34:56Z",
   "start_time": 1736944496,
   "end_time": 1736944530,
-  "operation_time": 34000,
+  "operation_time": 34,
   "read_operations": 5,
   "read": 524288,
   "write": 0,
@@ -807,10 +811,15 @@ if err != nil {
     // Handle error
 }
 
-// Access parsed data
-switch rec := packet.FileRecords[0].(type) {
-case parser.FileCloseRecord:
-    fmt.Printf("Read: %d bytes\n", rec.Xfr.Read)
+// Access parsed data. f-stream packets start with a FileTimeRecord,
+// followed by the open/close/disconnect records it covers.
+for _, r := range packet.FileRecords {
+    switch rec := r.(type) {
+    case parser.FileTimeRecord:
+        fmt.Printf("Window: %d-%d\n", rec.TBeg, rec.TEnd)
+    case parser.FileCloseRecord:
+        fmt.Printf("Read: %d bytes\n", rec.Xfr.Read)
+    }
 }
 ```
 
@@ -859,9 +868,9 @@ The correlator (`collector/correlator.go`) correlates file operations across pac
 ```json
 {
   "@timestamp": "2025-11-20T19:33:40.526767022Z",
-  "start_time": 1763663574000,
-  "end_time": 1763663574000,
-  "operation_time": 0,
+  "start_time": 1763663544,
+  "end_time": 1763663574,
+  "operation_time": 30,
   "read_operations": 1,
   "read": 131072,
   "write": 0,
