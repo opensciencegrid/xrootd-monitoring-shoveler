@@ -89,11 +89,32 @@ func TestIPSiteLoadRejectsBadData(t *testing.T) {
 	r := NewIPSiteRegistry(newSiteTestLogger())
 	require.Error(t, r.Load([]byte("not json")))
 	require.Error(t, r.Load([]byte(`{"S": {"netroutes": {}}}`)), "no CIDRs must be rejected")
+	require.Error(t, r.Load([]byte(`{" ": {"netroutes": {"n": {"networks": {"ipv4": ["128.142.0.0/16"]}}}}}`)),
+		"a document whose only site is blank must be rejected")
 
 	// Still resolves from the embedded snapshot.
 	site, status := r.ResolveIP(net.ParseIP("128.142.1.1"))
 	assert.Equal(t, SiteStatusResolvedIP, status)
 	assert.Equal(t, "CERN-PROD", site)
+}
+
+// TestIPSiteLoadSkipsBlankSite verifies that routes under a blank site key are
+// dropped rather than resolving their IPs to an empty site, while the rest of
+// the document still loads.
+func TestIPSiteLoadSkipsBlankSite(t *testing.T) {
+	r := NewIPSiteRegistry(newSiteTestLogger())
+	require.NoError(t, r.Load([]byte(`{
+		"":     {"netroutes": {"n": {"networks": {"ipv4": ["203.0.113.0/24"]}}}},
+		"GOOD": {"netroutes": {"n": {"networks": {"ipv4": ["198.51.100.0/24"]}}}}
+	}`)))
+
+	site, status := r.ResolveIP(net.ParseIP("203.0.113.7"))
+	assert.Equal(t, SiteStatusUnknownIP, status)
+	assert.Empty(t, site)
+
+	site, status = r.ResolveIP(net.ParseIP("198.51.100.7"))
+	assert.Equal(t, SiteStatusResolvedIP, status)
+	assert.Equal(t, "GOOD", site)
 }
 
 // TestSiteEnricherIPMethod verifies that when the name-based methods miss but

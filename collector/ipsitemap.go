@@ -100,7 +100,16 @@ func (r *IPSiteRegistry) Load(data []byte) error {
 
 	var routes []ipRoute
 	var bad int
-	for site, rc := range doc {
+	for key, rc := range doc {
+		// A blank site would turn every IP in its blocks into a "resolved_ip"
+		// endpoint with no site, so its blocks are skipped like unparseable ones.
+		site := strings.TrimSpace(key)
+		if site == "" {
+			for _, nr := range rc.Netroutes {
+				bad += len(nr.Networks.IPv4) + len(nr.Networks.IPv6)
+			}
+			continue
+		}
 		for _, nr := range rc.Netroutes {
 			for _, cidrs := range [][]string{nr.Networks.IPv4, nr.Networks.IPv6} {
 				for _, cidr := range cidrs {
@@ -123,7 +132,7 @@ func (r *IPSiteRegistry) Load(data []byte) error {
 	r.mu.Unlock()
 
 	siteIPRoutes.Set(float64(len(routes)))
-	r.logger.Infof("site: loaded CRIC netroutes: %d CIDR blocks (%d unparseable skipped)", len(routes), bad)
+	r.logger.Infof("site: loaded CRIC netroutes: %d CIDR blocks (%d unparseable or siteless skipped)", len(routes), bad)
 	return nil
 }
 
@@ -236,26 +245,19 @@ func (r *IPSiteRegistry) LoadSource(ctx context.Context, src string) error {
 
 // StartRefresh periodically re-fetches a URL source and reloads the route table
 // until ctx is cancelled. It is a no-op for file sources or when interval <= 0.
-// A failed refresh is logged and the previous table is retained.
-func (r *IPSiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration) {
+// A failed refresh is logged and the previous table is retained. loaded reports
+// whether the startup load of src succeeded; if not, it is retried sooner (see
+// refreshLoop).
+func (r *IPSiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration, loaded bool) {
 	if src == "" || !isURL(src) || interval <= 0 {
 		return
 	}
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := r.LoadSource(ctx, src); err != nil {
-					siteIPReloadFailures.Inc()
-					r.logger.Warnf("site: CRIC netroutes refresh failed, keeping previous data: %v", err)
-				}
-			}
-		}
-	}()
+	go refreshLoop(ctx, interval, loaded,
+		func(ctx context.Context) error { return r.LoadSource(ctx, src) },
+		func(err error) {
+			siteIPReloadFailures.Inc()
+			r.logger.Warnf("site: CRIC netroutes refresh failed, keeping previous data: %v", err)
+		})
 }
 
 // SetHTTPClient sets the client used to fetch URL sources (see

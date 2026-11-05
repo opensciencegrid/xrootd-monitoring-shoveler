@@ -293,10 +293,11 @@ func buildSiteRegistry(ctx context.Context, config *shoveler.Config, client *htt
 		return registry
 	}
 
-	if err := registry.LoadSource(ctx, src); err != nil {
+	err := registry.LoadSource(ctx, src)
+	if err != nil {
 		logger.Warnf("Failed to load CRIC domains source %q, using embedded snapshot: %v", src, err)
 	}
-	registry.StartRefresh(ctx, src, time.Duration(config.Site.RefreshInterval)*time.Second)
+	registry.StartRefresh(ctx, src, time.Duration(config.Site.RefreshInterval)*time.Second, err == nil)
 	return registry
 }
 
@@ -341,10 +342,11 @@ func buildHostSiteRegistry(ctx context.Context, config *shoveler.Config, client 
 		return registry
 	}
 
-	if err := registry.LoadSource(ctx, src); err != nil {
+	err := registry.LoadSource(ctx, src)
+	if err != nil {
 		logger.Warnf("Failed to load CRIC SE source %q, using embedded snapshot: %v", src, err)
 	}
-	registry.StartRefresh(ctx, src, time.Duration(config.Site.HostnameRefreshInterval)*time.Second)
+	registry.StartRefresh(ctx, src, time.Duration(config.Site.HostnameRefreshInterval)*time.Second, err == nil)
 	return registry
 }
 
@@ -366,10 +368,11 @@ func buildIPSiteRegistry(ctx context.Context, config *shoveler.Config, client *h
 		return registry
 	}
 
-	if err := registry.LoadSource(ctx, src); err != nil {
+	err := registry.LoadSource(ctx, src)
+	if err != nil {
 		logger.Warnf("Failed to load CRIC netroutes source %q, using embedded snapshot: %v", src, err)
 	}
-	registry.StartRefresh(ctx, src, time.Duration(config.Site.IPRefreshInterval)*time.Second)
+	registry.StartRefresh(ctx, src, time.Duration(config.Site.IPRefreshInterval)*time.Second, err == nil)
 	return registry
 }
 

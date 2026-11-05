@@ -337,26 +337,57 @@ func fetchSiteSource(ctx context.Context, client *http.Client, src string) ([]by
 
 // StartRefresh periodically re-fetches a URL source and reloads the domains map
 // until ctx is cancelled. It is a no-op for file sources or when interval <= 0.
-// A failed refresh is logged and the previous map is retained.
-func (r *SiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration) {
+// A failed refresh is logged and the previous map is retained. loaded reports
+// whether the startup load of src succeeded; if not, it is retried sooner (see
+// refreshLoop).
+func (r *SiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration, loaded bool) {
 	if src == "" || !isURL(src) || interval <= 0 {
 		return
 	}
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := r.LoadSource(ctx, src); err != nil {
-					siteRegistryReloadFailures.Inc()
-					r.logger.Warnf("site: CRIC domains refresh failed, keeping previous data: %v", err)
-				}
-			}
+	go refreshLoop(ctx, interval, loaded,
+		func(ctx context.Context) error { return r.LoadSource(ctx, src) },
+		func(err error) {
+			siteRegistryReloadFailures.Inc()
+			r.logger.Warnf("site: CRIC domains refresh failed, keeping previous data: %v", err)
+		})
+}
+
+// refreshRetryMin is the first retry delay after a failed load, before any load
+// of the source has succeeded. A variable so tests can shorten it.
+var refreshRetryMin = time.Minute
+
+// refreshLoop calls load every interval until ctx is cancelled, passing each
+// error to onFailure. Until a load has succeeded (loaded is false when the
+// startup fetch failed) it retries sooner, after refreshRetryMin and then twice
+// as long each time, up to interval, so a brief CRIC or network outage at
+// startup does not leave the embedded snapshot in place for a whole interval.
+func refreshLoop(ctx context.Context, interval time.Duration, loaded bool,
+	load func(context.Context) error, onFailure func(error)) {
+	retry := refreshRetryMin
+	for {
+		wait := interval
+		if !loaded && retry < interval {
+			wait = retry
 		}
-	}()
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+
+		if err := load(ctx); err != nil {
+			onFailure(err)
+			// Stop doubling at the cap: left unbounded, a source that stays down
+			// for weeks overflows retry to <= 0 and the loop spins without waiting.
+			if retry < interval {
+				retry *= 2
+			}
+			continue
+		}
+		loaded = true
+	}
 }
 
 // siteRecordEnricher resolves the src/dst RCSite of each record from the
@@ -406,6 +437,10 @@ type siteResolution struct {
 	site   string
 	status string
 	method string
+	// failedBy is the method that gave a failed resolution its reason (and, when
+	// ambiguous, its guess). It is kept apart from method, which only a success
+	// sets because the resolved-by-method totals are keyed on it.
+	failedBy string
 }
 
 // siteEndpoint is one end of a transfer as the resolver sees it.
@@ -500,7 +535,7 @@ func (s *siteRecordEnricher) resolveEndpoint(ep siteEndpoint) siteResolution {
 			// Carries the site along with the reason, because an ambiguous match
 			// still names a candidate. method stays empty: nothing here resolved,
 			// so this must not count towards the resolved-by-method totals.
-			failure = worseSiteFailure(failure, siteResolution{site: site, status: status})
+			failure = worseSiteFailure(failure, siteResolution{site: site, status: status, failedBy: method})
 		}
 	}
 	if failure.status == "" {
@@ -509,7 +544,7 @@ func (s *siteRecordEnricher) resolveEndpoint(ep siteEndpoint) siteResolution {
 	// Nothing CRIC knows settled this endpoint, and no pin covered it. Name it once
 	// so the operator learns which key to add to site.overrides.
 	if failure.status == SiteStatusAmbiguous && s.ambig != nil {
-		s.ambig.report(ep, failure.site, s.ambiguousCandidates(ep))
+		s.ambig.report(ep, failure.site, s.ambiguousCandidates(failure.failedBy, ep))
 	}
 	return failure
 }

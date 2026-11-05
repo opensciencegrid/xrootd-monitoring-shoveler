@@ -3,6 +3,8 @@ package collector
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -357,4 +359,52 @@ func TestSiteRegistryLoadTrimsBlankSites(t *testing.T) {
 	site, status := r.ResolveHost("host.example.org")
 	assert.Equal(t, SiteStatusResolved, status, "one real site left means resolved, not ambiguous")
 	assert.Equal(t, "SITE-A", site)
+}
+
+// TestRefreshLoopRetriesFailedStartupSooner verifies that when the startup load
+// failed, the source is retried well before the refresh interval, and that once
+// a retry succeeds the loop falls back to the normal interval.
+func TestRefreshLoopRetriesFailedStartupSooner(t *testing.T) {
+	defer func(d time.Duration) { refreshRetryMin = d }(refreshRetryMin)
+	refreshRetryMin = 5 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var calls, failures atomic.Int32
+	load := func(context.Context) error {
+		if calls.Add(1) < 3 {
+			return errors.New("CRIC unreachable")
+		}
+		return nil
+	}
+	go refreshLoop(ctx, time.Hour, false, load, func(error) { failures.Add(1) })
+
+	require.Eventually(t, func() bool { return calls.Load() == 3 }, 2*time.Second, time.Millisecond,
+		"a failed startup load must be retried long before the one-hour interval")
+	assert.Equal(t, int32(2), failures.Load())
+
+	// Retries were 5ms and 10ms; a third at 20ms would land inside this window
+	// had the success not switched the loop back to the hourly interval.
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, int32(3), calls.Load(), "no further loads once one succeeded")
+}
+
+// TestRefreshLoopWaitsFullIntervalAfterGoodStartup verifies a successful startup
+// load keeps the normal schedule, with no early retry.
+func TestRefreshLoopWaitsFullIntervalAfterGoodStartup(t *testing.T) {
+	defer func(d time.Duration) { refreshRetryMin = d }(refreshRetryMin)
+	refreshRetryMin = time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var calls atomic.Int32
+	go refreshLoop(ctx, time.Hour, true, func(context.Context) error {
+		calls.Add(1)
+		return nil
+	}, func(error) {})
+
+	time.Sleep(50 * time.Millisecond)
+	assert.Zero(t, calls.Load())
 }

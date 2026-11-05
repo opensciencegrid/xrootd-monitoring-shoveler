@@ -202,24 +202,27 @@ func (r *ambiguityReporter) report(ep siteEndpoint, guess string, candidates []s
 		"Pin it with site.overrides: {%q: %q}", key, between, guess, key, guess)
 }
 
-// ambiguousCandidates returns every RCSite the configured sources associate with
-// the endpoint, for reporting only. Sources are asked in resolution order, so the
-// candidates named are the ones from the method whose guess actually survived.
-func (s *siteRecordEnricher) ambiguousCandidates(ep siteEndpoint) []string {
-	if s.hosts != nil {
-		if sites := s.hosts.Candidates(ep.host); len(sites) > 1 {
-			return sites
+// ambiguousCandidates returns every RCSite that method's source associates with
+// the endpoint, for reporting only. It asks only the method whose guess was used,
+// so the guess is always among the candidates named.
+func (s *siteRecordEnricher) ambiguousCandidates(method string, ep siteEndpoint) []string {
+	var sites []string
+	switch method {
+	case SiteMethodHostname:
+		if s.hosts != nil {
+			sites = s.hosts.Candidates(ep.host)
+		}
+	case SiteMethodDomain:
+		if s.domains != nil {
+			sites = s.domains.Candidates(ep.host)
+		}
+	case SiteMethodIP:
+		if s.ips != nil {
+			sites = s.ips.Candidates(ep.ip)
 		}
 	}
-	if s.domains != nil {
-		if sites := s.domains.Candidates(ep.host); len(sites) > 1 {
-			return sites
-		}
+	if len(sites) < 2 {
+		return nil
 	}
-	if s.ips != nil {
-		if sites := s.ips.Candidates(ep.ip); len(sites) > 1 {
-			return sites
-		}
-	}
-	return nil
+	return sites
 }

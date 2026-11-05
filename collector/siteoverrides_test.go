@@ -198,6 +198,41 @@ func TestAmbiguousInEveryMethodKeepsTheFirstGuess(t *testing.T) {
 	assert.Equal(t, "SE-ONE", res.site, "hostname runs before domain, so its guess is the one kept")
 }
 
+// TestAmbiguityReportNamesCandidatesOfTheGuessingMethod covers an endpoint whose
+// address and domain are both ambiguous. The default order tries ip before
+// domain, so the guess comes from the IP table, and the logged candidates must
+// come from there too: naming the domain's sites would offer a pin for a site
+// that is not among them.
+func TestAmbiguityReportNamesCandidatesOfTheGuessingMethod(t *testing.T) {
+	logger := logrus.New()
+	var buf bytes.Buffer
+	logger.SetOutput(&buf)
+	logger.SetLevel(logrus.WarnLevel)
+
+	ips := NewIPSiteRegistry(newSiteTestLogger())
+	require.NoError(t, ips.Load([]byte(`{
+      "IP-ONE": {"netroutes": {"m": {"networks": {"ipv4": ["192.0.2.0/24"]}}}},
+      "IP-TWO": {"netroutes": {"m": {"networks": {"ipv4": ["192.0.2.0/24"]}}}}
+    }`)))
+	domains := NewSiteRegistry(newSiteTestLogger())
+	require.NoError(t, domains.Load([]byte(`{"example.net": ["DOM-ONE", "DOM-TWO"]}`)))
+
+	e := &siteRecordEnricher{
+		domains: domains,
+		hosts:   NewHostSiteRegistry(newSiteTestLogger()),
+		ips:     ips,
+		ambig:   newAmbiguityReporter(logger),
+		order:   DefaultSiteResolutionOrder,
+	}
+	res := e.resolveEndpoint(siteEndpoint{host: "node.example.net", ip: endpointIP("192.0.2.5")})
+	require.Equal(t, SiteStatusAmbiguous, res.status)
+	require.Equal(t, "IP-ONE", res.site, "ip runs before domain, so its guess is the one kept")
+
+	out := buf.String()
+	assert.Contains(t, out, "IP-ONE, IP-TWO", "names the candidates the guess was picked from")
+	assert.NotContains(t, out, "DOM-ONE", "must not name another method's candidates")
+}
+
 // TestNewSiteOverridesRejectsUnusable verifies a map with nothing usable yields
 // no registry at all, which drops the method rather than installing an empty one.
 func TestNewSiteOverridesRejectsUnusable(t *testing.T) {

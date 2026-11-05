@@ -223,26 +223,19 @@ func (r *HostSiteRegistry) LoadSource(ctx context.Context, src string) error {
 
 // StartRefresh periodically re-fetches a URL source and reloads the host map
 // until ctx is cancelled. It is a no-op for file sources or when interval <= 0.
-// A failed refresh is logged and the previous map is retained.
-func (r *HostSiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration) {
+// A failed refresh is logged and the previous map is retained. loaded reports
+// whether the startup load of src succeeded; if not, it is retried sooner (see
+// refreshLoop).
+func (r *HostSiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration, loaded bool) {
 	if src == "" || !isURL(src) || interval <= 0 {
 		return
 	}
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := r.LoadSource(ctx, src); err != nil {
-					siteHostnameReloadFailures.Inc()
-					r.logger.Warnf("site: CRIC SE refresh failed, keeping previous data: %v", err)
-				}
-			}
-		}
-	}()
+	go refreshLoop(ctx, interval, loaded,
+		func(ctx context.Context) error { return r.LoadSource(ctx, src) },
+		func(err error) {
+			siteHostnameReloadFailures.Inc()
+			r.logger.Warnf("site: CRIC SE refresh failed, keeping previous data: %v", err)
+		})
 }
 
 // SetHTTPClient sets the client used to fetch URL sources (see
