@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -280,11 +281,12 @@ func buildWLCGMetadata(config *shoveler.Config) collector.WLCGMetadata {
 // data (fail-open). URL sources are refreshed in the background for the life of
 // the process. Returns nil when site resolution is disabled, which leaves
 // src_site/dst_site unset on the WLCG records that would otherwise carry them.
-func buildSiteRegistry(ctx context.Context, config *shoveler.Config, logger *logrus.Logger) *collector.SiteRegistry {
+func buildSiteRegistry(ctx context.Context, config *shoveler.Config, client *http.Client, logger *logrus.Logger) *collector.SiteRegistry {
 	if !config.Site.Enabled {
 		return nil
 	}
 	registry := collector.NewSiteRegistry(logger)
+	registry.SetHTTPClient(client)
 
 	src := config.Site.Source
 	if src == "" {
@@ -327,11 +329,12 @@ func buildSiteOverrides(config *shoveler.Config, logger *logrus.Logger) *collect
 // embedded data (fail-open). URL sources are refreshed in the background for the
 // life of the process. Returns nil when site resolution or the hostname method
 // is disabled, which drops "hostname" from the resolution order.
-func buildHostSiteRegistry(ctx context.Context, config *shoveler.Config, logger *logrus.Logger) *collector.HostSiteRegistry {
+func buildHostSiteRegistry(ctx context.Context, config *shoveler.Config, client *http.Client, logger *logrus.Logger) *collector.HostSiteRegistry {
 	if !config.Site.Enabled || !config.Site.HostnameEnabled {
 		return nil
 	}
 	registry := collector.NewHostSiteRegistry(logger)
+	registry.SetHTTPClient(client)
 
 	src := config.Site.HostnameSource
 	if src == "" {
@@ -351,11 +354,12 @@ func buildHostSiteRegistry(ctx context.Context, config *shoveler.Config, logger 
 // embedded data (fail-open). URL sources are refreshed in the background for the
 // life of the process. Returns nil when site resolution or the IP method is
 // disabled, which drops "ip" from the resolution order.
-func buildIPSiteRegistry(ctx context.Context, config *shoveler.Config, logger *logrus.Logger) *collector.IPSiteRegistry {
+func buildIPSiteRegistry(ctx context.Context, config *shoveler.Config, client *http.Client, logger *logrus.Logger) *collector.IPSiteRegistry {
 	if !config.Site.Enabled || !config.Site.IPEnabled {
 		return nil
 	}
 	registry := collector.NewIPSiteRegistry(logger)
+	registry.SetHTTPClient(client)
 
 	src := config.Site.IPSource
 	if src == "" {
@@ -413,11 +417,29 @@ func warnInertNameMethods(config *shoveler.Config, logger *logrus.Logger) {
 		strings.Join(inert, ", "))
 }
 
+// buildCRICHTTPClient returns the client the site registries fetch their URL
+// sources with. It trusts the OS's CA certificates plus those in site.ca_path,
+// which is where CRIC's CERN Grid CA comes from. A bad site.ca_path is logged and
+// only the OS's CAs are trusted, so the embedded snapshots still apply
+// (fail-open, like a failed fetch).
+func buildCRICHTTPClient(config *shoveler.Config, logger *logrus.Logger) *http.Client {
+	if !config.Site.Enabled || config.Site.CAPath == "" {
+		return nil
+	}
+	client, err := collector.NewCRICHTTPClient(config.Site.CAPath)
+	if err != nil {
+		logger.Warnf("site: ignoring site.ca_path, trusting only the OS CA certificates: %v", err)
+		return nil
+	}
+	return client
+}
+
 // buildCorrelatorConfig creates a correlator config from the main config
 func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger *logrus.Logger) collector.CorrelatorConfig {
 	ttl := time.Duration(config.State.EntryTTL) * time.Second
 
 	warnInertNameMethods(config, logger)
+	cricClient := buildCRICHTTPClient(config, logger)
 
 	correlatorConfig := collector.CorrelatorConfig{
 		TTL:                 ttl,
@@ -428,10 +450,10 @@ func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger 
 		EnrichmentWorkers:   config.State.EnrichmentWorkers,
 		EnrichmentQueueSize: config.State.EnrichmentQueueSize,
 		WLCGMetadata:        buildWLCGMetadata(config),
-		SiteRegistry:        buildSiteRegistry(ctx, config, logger),
+		SiteRegistry:        buildSiteRegistry(ctx, config, cricClient, logger),
 		SiteOverrides:       buildSiteOverrides(config, logger),
-		SiteHostRegistry:    buildHostSiteRegistry(ctx, config, logger),
-		SiteIPRegistry:      buildIPSiteRegistry(ctx, config, logger),
+		SiteHostRegistry:    buildHostSiteRegistry(ctx, config, cricClient, logger),
+		SiteIPRegistry:      buildIPSiteRegistry(ctx, config, cricClient, logger),
 		Logger:              logger,
 
 		SiteLocalSite:           config.Site.LocalSite,

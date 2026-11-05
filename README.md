@@ -375,6 +375,10 @@ site:
   ip_enabled: true              # netroutes, backing "ip"
   ip_source: ""
   ip_refresh_interval: 86400
+  # Extra CA certificates (PEM file or directory) trusted for the URL sources, in
+  # addition to the OS ones.
+  # Needed to follow CRIC live from a host without the CERN Grid CA (see below).
+  ca_path: /etc/grid-security/certificates
 ```
 
 Equivalent environment variables use the collector prefix, e.g.
@@ -489,12 +493,26 @@ ones resolved.
 The snapshots live in `collector/cric_domains.json`, `collector/cric_se.json`
 and `collector/cric_netroutes.json`. Point `site.source` / `site.hostname_source`
 / `site.ip_source` at the CRIC URLs to follow them live instead, or regenerate
-the committed files with:
+the committed files with the commands below.
+
+`wlcg-cric.cern.ch` serves a certificate issued by the **CERN Grid CA**, which
+standard system trust stores do not include. On a host without it, every fetch
+fails with `x509: certificate signed by unknown authority` and the collector
+stays on the embedded snapshots. Set `site.ca_path` to the CA: on grid hosts the
+IGTF bundle in `/etc/grid-security/certificates` (`ca-policy-egi-core` or
+`osg-ca-certs`) already has it, and otherwise you can download it from
+[CERN CA](https://cafiles.cern.ch/cafiles/). The `curl` commands below need the
+same CA through `--capath` (or `--cacert` for a single file). `-f` makes a failed
+fetch exit non-zero, `set -o pipefail` carries that through `jq`, and writing to a
+temporary file first keeps a failed run from truncating the committed snapshot.
 
 ```bash
+set -o pipefail
+CA=/etc/grid-security/certificates
+
 # Domain map. besttier=1 collapses noisy low-tier/test entries
 # (cern.ch: [BOINC, CERN-PROD] -> CERN-PROD). Served on the dev instance.
-curl -s 'https://wlcg-cric.cern.ch/api/core/rcsite/query/?json&preset=domains&besttier=1' \
+curl -fsS --capath "$CA" 'https://wlcg-cric.cern.ch/api/core/rcsite/query/?json&preset=domains&besttier=1' \
   -o collector/cric_domains.json
 
 # Storage-element endpoints, backing the "hostname" method. Reduced to the rcsite
@@ -503,19 +521,19 @@ curl -s 'https://wlcg-cric.cern.ch/api/core/rcsite/query/?json&preset=domains&be
 # names by access pattern rather than carrying endpoints of its own. Nor are the
 # lifecycle fields ("state", "status"), which are irrelevant to a host -> site
 # mapping - a machine does not change site because one of its doors is retired.
-curl -s 'https://wlcg-cric.cern.ch/api/core/service/query/?json&type=SE' \
+curl -fsS --capath "$CA" 'https://wlcg-cric.cern.ch/api/core/service/query/?json&type=SE' \
   | jq -S 'map_values({rcsite, protocols: ((.protocols // {}) | map_values({endpoint}))})
            | with_entries(select(.value.rcsite != null and .value.rcsite != ""
                                  and (.value.protocols | length) > 0))' \
-  > collector/cric_se.json
+  > collector/cric_se.json.tmp && mv collector/cric_se.json.tmp collector/cric_se.json
 
 # Network routes. The full rcsite/query response is ~1.1 MB and mostly fields the
 # collector ignores, so the committed snapshot is reduced to the netroutes it
 # actually reads; an unreduced response parses identically if you drop the jq.
-curl -s 'https://wlcg-cric.cern.ch/api/core/rcsite/query/?json' \
+curl -fsS --capath "$CA" 'https://wlcg-cric.cern.ch/api/core/rcsite/query/?json' \
   | jq -S 'map_values({netroutes: (.netroutes // {} | map_values({networks: (.networks | {ipv4, ipv6} | with_entries(select(.value != null and (.value | length) > 0)))}) | with_entries(select(.value.networks | length > 0)))})
            | with_entries(select(.value.netroutes | length > 0))' \
-  > collector/cric_netroutes.json
+  > collector/cric_netroutes.json.tmp && mv collector/cric_netroutes.json.tmp collector/cric_netroutes.json
 ```
 
 Address matching is longest-prefix containment over the declared blocks, which is

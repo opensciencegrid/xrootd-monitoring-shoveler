@@ -33,6 +33,10 @@ type SiteConfig struct {
 	Enabled         bool   // resolve src_site/dst_site on WLCG records (default true)
 	Source          string // domains map: file path or http(s):// URL; empty = embedded snapshot
 	RefreshInterval int    // seconds between re-fetches of the domains URL source (default 86400; 0 disables)
+	// CAPath is a PEM file or directory of PEM files trusted, on top of the system
+	// roots, when fetching any of the URL sources. wlcg-cric.cern.ch uses a CERN
+	// Grid CA certificate that system trust stores do not carry.
+	CAPath string
 
 	// IP/CIDR resolution: matches an endpoint address against the CRIC netroutes
 	// CIDR blocks. IPSource expects CRIC's rcsite/query/?json structure
@@ -398,6 +402,9 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.Site.Source = viper.GetString("site.source")
 	viper.SetDefault("site.refresh_interval", 86400)
 	c.Site.RefreshInterval = viper.GetInt("site.refresh_interval")
+	// CA trusted for the http(s):// sources above and below, e.g.
+	// /etc/grid-security/certificates: CRIC's certificate is from the CERN Grid CA.
+	c.Site.CAPath = viper.GetString("site.ca_path")
 
 	// IP/CIDR resolution. By default the embedded CRIC netroutes snapshot is used;
 	// set site.ip_source to a file path or an http(s):// URL serving CRIC's

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -67,6 +68,7 @@ type cricRCSite struct {
 // swaps in a fresh route table under the write lock, mirroring SiteRegistry.
 type IPSiteRegistry struct {
 	logger *logrus.Logger
+	client *http.Client // fetches URL sources; nil trusts only the OS CA certificates
 
 	mu     sync.RWMutex
 	routes []ipRoute
@@ -225,7 +227,7 @@ func (r *IPSiteRegistry) Candidates(ip net.IP) []string {
 // LoadSource fetches and loads a CRIC netroutes document from a file path or an
 // http(s):// URL. It reuses the shared fetch helper from sitemap.go.
 func (r *IPSiteRegistry) LoadSource(ctx context.Context, src string) error {
-	data, err := fetchSiteSource(ctx, src)
+	data, err := fetchSiteSource(ctx, r.client, src)
 	if err != nil {
 		return err
 	}
@@ -254,4 +256,10 @@ func (r *IPSiteRegistry) StartRefresh(ctx context.Context, src string, interval 
 			}
 		}
 	}()
+}
+
+// SetHTTPClient sets the client used to fetch URL sources (see
+// NewCRICHTTPClient). Call it before LoadSource and StartRefresh.
+func (r *IPSiteRegistry) SetHTTPClient(client *http.Client) {
+	r.client = client
 }

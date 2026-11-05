@@ -118,6 +118,7 @@ func NormalizeSiteResolutionOrder(order []string, logger *logrus.Logger) []strin
 // refresh swaps in a freshly fetched map under the write lock.
 type SiteRegistry struct {
 	logger *logrus.Logger
+	client *http.Client // fetches URL sources; nil trusts only the OS CA certificates
 
 	mu      sync.RWMutex
 	domains map[string][]string // domain suffix -> RCSite name(s)
@@ -294,15 +295,16 @@ func isURL(src string) bool {
 // LoadSource fetches and loads the CRIC domains map from a source that is either
 // a local file path or an http(s):// URL.
 func (r *SiteRegistry) LoadSource(ctx context.Context, src string) error {
-	data, err := fetchSiteSource(ctx, src)
+	data, err := fetchSiteSource(ctx, r.client, src)
 	if err != nil {
 		return err
 	}
 	return r.Load(data)
 }
 
-// fetchSiteSource reads a CRIC document from a file path or http(s) URL.
-func fetchSiteSource(ctx context.Context, src string) ([]byte, error) {
+// fetchSiteSource reads a CRIC document from a file path or http(s) URL. A nil
+// client trusts only the OS CA certificates (see NewCRICHTTPClient).
+func fetchSiteSource(ctx context.Context, client *http.Client, src string) ([]byte, error) {
 	if !isURL(src) {
 		data, err := os.ReadFile(src)
 		if err != nil {
@@ -315,10 +317,12 @@ func fetchSiteSource(ctx context.Context, src string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build CRIC request: %w", err)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	if client == nil {
+		client = &http.Client{Timeout: cricFetchTimeout}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch CRIC url %q: %w", src, err)
+		return nil, fmt.Errorf("fetch CRIC url %q: %w", src, withCAHint(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -597,4 +601,10 @@ func endpointIP(host string) net.IP {
 		return nil
 	}
 	return net.ParseIP(extractIPFromHost(host))
+}
+
+// SetHTTPClient sets the client used to fetch URL sources (see
+// NewCRICHTTPClient). Call it before LoadSource and StartRefresh.
+func (r *SiteRegistry) SetHTTPClient(client *http.Client) {
+	r.client = client
 }
