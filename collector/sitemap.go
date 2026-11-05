@@ -335,39 +335,59 @@ func fetchSiteSource(ctx context.Context, client *http.Client, src string) ([]by
 	return data, nil
 }
 
-// StartRefresh periodically re-fetches a URL source and reloads the domains map
-// until ctx is cancelled. It is a no-op for file sources or when interval <= 0.
-// A failed refresh is logged and the previous map is retained. loaded reports
-// whether the startup load of src succeeded; if not, it is retried sooner (see
-// refreshLoop).
-func (r *SiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration, loaded bool) {
-	if src == "" || !isURL(src) || interval <= 0 {
+// IsURLSource reports whether a source is an http(s):// URL rather than a file.
+func IsURLSource(src string) bool {
+	return isURL(src)
+}
+
+// StartRefresh keeps the domains map up to date from a URL, in the background.
+// It fetches right away, then again every interval (only once if interval is
+// 0). If a fetch fails, the current map is kept and the error is logged. It does
+// nothing for a file; use LoadSource for that.
+func (r *SiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration) {
+	if !isURL(src) {
 		return
 	}
-	go refreshLoop(ctx, interval, loaded,
+	go refreshLoop(ctx, interval,
 		func(ctx context.Context) error { return r.LoadSource(ctx, src) },
 		func(err error) {
 			siteRegistryReloadFailures.Inc()
-			r.logger.Warnf("site: CRIC domains refresh failed, keeping previous data: %v", err)
+			r.logger.Warnf("site: CRIC domains fetch failed, keeping current data: %v", err)
 		})
 }
 
-// refreshRetryMin is the first retry delay after a failed load, before any load
-// of the source has succeeded. A variable so tests can shorten it.
+// refreshRetryMin is how long to wait before the first retry when a source has
+// never loaded. It is a variable so tests can make it shorter.
 var refreshRetryMin = time.Minute
 
-// refreshLoop calls load every interval until ctx is cancelled, passing each
-// error to onFailure. Until a load has succeeded (loaded is false when the
-// startup fetch failed) it retries sooner, after refreshRetryMin and then twice
-// as long each time, up to interval, so a brief CRIC or network outage at
-// startup does not leave the embedded snapshot in place for a whole interval.
-func refreshLoop(ctx context.Context, interval time.Duration, loaded bool,
+// refreshLoop runs load straight away, then again every interval, until ctx is
+// cancelled. Each error goes to onFailure. If interval is 0, it runs load once
+// and returns.
+//
+// Until load has worked at least once, it retries sooner: after 1 minute, then
+// 2, 4, 8 and so on, but never longer than interval. That way a short CRIC
+// outage at startup does not leave us on the built-in snapshot for a whole day.
+func refreshLoop(ctx context.Context, interval time.Duration,
 	load func(context.Context) error, onFailure func(error)) {
+	loaded := false
 	retry := refreshRetryMin
 	for {
+		if err := load(ctx); err != nil {
+			onFailure(err)
+		} else {
+			loaded = true
+		}
+		if interval <= 0 {
+			return
+		}
+
 		wait := interval
 		if !loaded && retry < interval {
 			wait = retry
+			// Only double while below interval. If it kept doubling, a source that
+			// stays down for weeks would overflow retry to zero or below, and the
+			// loop would then retry with no pause at all.
+			retry *= 2
 		}
 		timer := time.NewTimer(wait)
 		select {
@@ -376,17 +396,6 @@ func refreshLoop(ctx context.Context, interval time.Duration, loaded bool,
 			return
 		case <-timer.C:
 		}
-
-		if err := load(ctx); err != nil {
-			onFailure(err)
-			// Stop doubling at the cap: left unbounded, a source that stays down
-			// for weeks overflows retry to <= 0 and the loop spins without waiting.
-			if retry < interval {
-				retry *= 2
-			}
-			continue
-		}
-		loaded = true
 	}
 }
 
@@ -611,21 +620,14 @@ func worseSiteFailure(current, candidate siteResolution) siteResolution {
 
 // recordSiteMetric increments the observability counters for one resolved
 // direction: every success is counted by the method that produced it (so the
-// configured order can be tuned on evidence), IP hits keep their own counter,
-// and any non-resolved outcome is counted by reason.
+// configured order can be tuned on evidence), and any non-resolved outcome is
+// counted by reason.
 func recordSiteMetric(role string, res siteResolution) {
 	if res.method != "" {
 		siteResolvedByMethod.WithLabelValues(role, res.method).Inc()
+		return
 	}
-	switch res.status {
-	case SiteStatusResolved, SiteStatusResolvedConfig, SiteStatusResolvedOverride, SiteStatusResolvedHostname:
-		// resolved by the operator's declaration, an SE hostname, or the domain
-		// map; not counted here (siteResolvedByMethod already breaks these down).
-	case SiteStatusResolvedIP:
-		siteResolvedByIP.WithLabelValues(role).Inc()
-	default:
-		siteUnresolved.WithLabelValues(role, res.status).Inc()
-	}
+	siteUnresolved.WithLabelValues(role, res.status).Inc()
 }
 
 // endpointIP parses the IP of an endpoint from a host string that may be an IP

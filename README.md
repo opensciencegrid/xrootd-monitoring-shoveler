@@ -444,7 +444,7 @@ or that CRIC cannot disambiguate, not routine configuration. Leaving keys in
 `site.overrides` with the option off is a no-op, and the collector says so at
 startup rather than letting you debug a pin that was never applied.
 
-**With the option on, a pin is the site's own answer and is used.** It is
+**With the option on, a pin is the site's own answer and wins outright.** It is
 consulted before any CRIC lookup, so it corrects a CRIC answer as well as settling
 one CRIC reports ambiguously. It is **not** a `resolution_order` method and cannot
 be scheduled, reordered or left out there.
@@ -863,9 +863,8 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_records_emitted` - Collector records emitted
 - `shoveler_site_resolved_by_method{role,method}` - Transfer endpoints resolved to an RCSite, by which resolution method produced it
 - `shoveler_site_unresolved{role,reason}` - Transfer endpoints no method could resolve, by reason
-- `shoveler_site_resolved_by_ip{role}` - Endpoints resolved via CRIC netroutes CIDR containment
 - `shoveler_site_registry_domains` / `shoveler_site_registry_hosts` / `shoveler_site_ip_routes` - Size of the currently loaded CRIC domain map / SE endpoint map / route table
-- `shoveler_site_registry_reload_failures` / `shoveler_site_hostname_reload_failures` / `shoveler_site_ip_reload_failures` - Failed background refreshes (previous data retained)
+- `shoveler_site_registry_reload_failures` / `shoveler_site_hostname_reload_failures` / `shoveler_site_ip_reload_failures` - Failed fetches of a CRIC URL, including the first one at startup (the current data is kept)
 - `shoveler_parse_time_ms` - Packet parsing time histogram
 - `shoveler_request_latency_ms` - Request latency histogram
 

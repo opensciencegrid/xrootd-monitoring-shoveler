@@ -275,34 +275,53 @@ func buildWLCGMetadata(config *shoveler.Config) collector.WLCGMetadata {
 	}
 }
 
-// buildSiteRegistry constructs the CRIC-backed src/dst site resolver from
-// config. It always starts from the embedded CRIC domains snapshot; when a
-// source is configured it attempts to load it, and on failure keeps the embedded
-// data (fail-open). URL sources are refreshed in the background for the life of
-// the process. Returns nil when site resolution is disabled, which leaves
-// src_site/dst_site unset on the WLCG records that would otherwise carry them.
+// cricRegistry is the part the domains, SE and netroutes registries have in
+// common, so they can all be set up by startCRICSource.
+type cricRegistry interface {
+	SetHTTPClient(client *http.Client)
+	LoadSource(ctx context.Context, src string) error
+	StartRefresh(ctx context.Context, src string, interval time.Duration)
+}
+
+// startCRICSource loads a registry's configured source. The registry already
+// holds the built-in snapshot, so it works even if this fails.
+//
+//   - No source: keep the built-in snapshot.
+//   - A file: read it now. It is local, so this is fast.
+//   - A URL: fetch it in the background and re-fetch it every intervalSeconds.
+//     Startup does not wait for it, so a slow or down CRIC cannot delay the
+//     collector. The built-in snapshot is used until the first fetch succeeds.
+//
+// what is a short name for the source ("domains", "SE", "netroutes"), used in
+// log messages.
+func startCRICSource(ctx context.Context, registry cricRegistry, what, src string, intervalSeconds int,
+	client *http.Client, logger *logrus.Logger) {
+	registry.SetHTTPClient(client)
+	switch {
+	case src == "":
+	case collector.IsURLSource(src):
+		registry.StartRefresh(ctx, src, time.Duration(intervalSeconds)*time.Second)
+	default:
+		if err := registry.LoadSource(ctx, src); err != nil {
+			logger.Warnf("Failed to load CRIC %s source %q, using embedded snapshot: %v", what, src, err)
+		}
+	}
+}
+
+// buildSiteRegistry creates the CRIC domains registry, used by the "domain"
+// method. It returns nil when site resolution is turned off; WLCG records then
+// get no src_site/dst_site.
 func buildSiteRegistry(ctx context.Context, config *shoveler.Config, client *http.Client, logger *logrus.Logger) *collector.SiteRegistry {
 	if !config.Site.Enabled {
 		return nil
 	}
 	registry := collector.NewSiteRegistry(logger)
-	registry.SetHTTPClient(client)
-
-	src := config.Site.Source
-	if src == "" {
-		return registry
-	}
-
-	err := registry.LoadSource(ctx, src)
-	if err != nil {
-		logger.Warnf("Failed to load CRIC domains source %q, using embedded snapshot: %v", src, err)
-	}
-	registry.StartRefresh(ctx, src, time.Duration(config.Site.RefreshInterval)*time.Second, err == nil)
+	startCRICSource(ctx, registry, "domains", config.Site.Source, config.Site.RefreshInterval, client, logger)
 	return registry
 }
 
 // buildSiteOverrides constructs the site pins from site.overrides. They are
-// consulted before every CRIC lookup and are used, so they are used behind
+// consulted before every CRIC lookup and win outright, so they sit behind
 // site.overrides_enabled, which defaults to false: a collector must opt in to
 // overruling CRIC. Returns nil when site resolution or the option is off, which
 // disables overriding entirely.
@@ -324,55 +343,27 @@ func buildSiteOverrides(config *shoveler.Config, logger *logrus.Logger) *collect
 	return collector.NewSiteOverrides(config.Site.Overrides, logger)
 }
 
-// buildHostSiteRegistry constructs the CRIC SE endpoint resolver backing the
-// "hostname" resolution method. It always starts from the embedded SE snapshot;
-// when a source is configured it attempts to load it, and on failure keeps the
-// embedded data (fail-open). URL sources are refreshed in the background for the
-// life of the process. Returns nil when site resolution or the hostname method
-// is disabled, which drops "hostname" from the resolution order.
+// buildHostSiteRegistry creates the CRIC storage-element registry, used by the
+// "hostname" method. It returns nil when site resolution or that method is
+// turned off, and "hostname" is then skipped.
 func buildHostSiteRegistry(ctx context.Context, config *shoveler.Config, client *http.Client, logger *logrus.Logger) *collector.HostSiteRegistry {
 	if !config.Site.Enabled || !config.Site.HostnameEnabled {
 		return nil
 	}
 	registry := collector.NewHostSiteRegistry(logger)
-	registry.SetHTTPClient(client)
-
-	src := config.Site.HostnameSource
-	if src == "" {
-		return registry
-	}
-
-	err := registry.LoadSource(ctx, src)
-	if err != nil {
-		logger.Warnf("Failed to load CRIC SE source %q, using embedded snapshot: %v", src, err)
-	}
-	registry.StartRefresh(ctx, src, time.Duration(config.Site.HostnameRefreshInterval)*time.Second, err == nil)
+	startCRICSource(ctx, registry, "SE", config.Site.HostnameSource, config.Site.HostnameRefreshInterval, client, logger)
 	return registry
 }
 
-// buildIPSiteRegistry constructs the CRIC netroutes resolver backing the "ip"
-// resolution method. It always starts from the embedded netroutes snapshot; when
-// a source is configured it attempts to load it, and on failure keeps the
-// embedded data (fail-open). URL sources are refreshed in the background for the
-// life of the process. Returns nil when site resolution or the IP method is
-// disabled, which drops "ip" from the resolution order.
+// buildIPSiteRegistry creates the CRIC network-ranges registry, used by the "ip"
+// method. It returns nil when site resolution or that method is turned off, and
+// "ip" is then skipped.
 func buildIPSiteRegistry(ctx context.Context, config *shoveler.Config, client *http.Client, logger *logrus.Logger) *collector.IPSiteRegistry {
 	if !config.Site.Enabled || !config.Site.IPEnabled {
 		return nil
 	}
 	registry := collector.NewIPSiteRegistry(logger)
-	registry.SetHTTPClient(client)
-
-	src := config.Site.IPSource
-	if src == "" {
-		return registry
-	}
-
-	err := registry.LoadSource(ctx, src)
-	if err != nil {
-		logger.Warnf("Failed to load CRIC netroutes source %q, using embedded snapshot: %v", src, err)
-	}
-	registry.StartRefresh(ctx, src, time.Duration(config.Site.IPRefreshInterval)*time.Second, err == nil)
+	startCRICSource(ctx, registry, "netroutes", config.Site.IPSource, config.Site.IPRefreshInterval, client, logger)
 	return registry
 }
 

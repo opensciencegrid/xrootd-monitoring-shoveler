@@ -243,20 +243,19 @@ func (r *IPSiteRegistry) LoadSource(ctx context.Context, src string) error {
 	return r.Load(data)
 }
 
-// StartRefresh periodically re-fetches a URL source and reloads the route table
-// until ctx is cancelled. It is a no-op for file sources or when interval <= 0.
-// A failed refresh is logged and the previous table is retained. loaded reports
-// whether the startup load of src succeeded; if not, it is retried sooner (see
-// refreshLoop).
-func (r *IPSiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration, loaded bool) {
-	if src == "" || !isURL(src) || interval <= 0 {
+// StartRefresh keeps the route table up to date from a URL, in the background.
+// It fetches right away, then again every interval (only once if interval is
+// 0). If a fetch fails, the current table is kept and the error is logged. It
+// does nothing for a file; use LoadSource for that.
+func (r *IPSiteRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration) {
+	if !isURL(src) {
 		return
 	}
-	go refreshLoop(ctx, interval, loaded,
+	go refreshLoop(ctx, interval,
 		func(ctx context.Context) error { return r.LoadSource(ctx, src) },
 		func(err error) {
 			siteIPReloadFailures.Inc()
-			r.logger.Warnf("site: CRIC netroutes refresh failed, keeping previous data: %v", err)
+			r.logger.Warnf("site: CRIC netroutes fetch failed, keeping current data: %v", err)
 		})
 }
 

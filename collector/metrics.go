@@ -34,19 +34,19 @@ var (
 		Help: "Number of unique hosts in the currently loaded CRIC SE endpoint map",
 	})
 
-	// siteRegistryReloadFailures counts background refresh attempts that failed;
-	// on failure the previous domains map is retained. A sustained rise indicates
-	// the configured CRIC domains URL is unreachable or serving invalid data.
+	// siteRegistryReloadFailures counts failed fetches of the CRIC domains URL,
+	// including the first one at startup. The current map is kept. If it keeps
+	// rising, the URL is unreachable or returning bad data.
 	siteRegistryReloadFailures = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_site_registry_reload_failures",
-		Help: "Total number of CRIC domains map background refresh attempts that failed",
+		Help: "Total number of failed CRIC domains map fetches from a URL source, including the first at startup",
 	})
 
-	// siteHostnameReloadFailures counts CRIC SE background refresh attempts that
-	// failed; on failure the previous host map is retained.
+	// siteHostnameReloadFailures counts failed fetches of the CRIC SE URL,
+	// including the first one at startup. The current host map is kept.
 	siteHostnameReloadFailures = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_site_hostname_reload_failures",
-		Help: "Total number of CRIC SE endpoint map background refresh attempts that failed",
+		Help: "Total number of failed CRIC SE endpoint map fetches from a URL source, including the first at startup",
 	})
 
 	// siteUnresolved counts transfer endpoints that no configured resolution
@@ -65,20 +65,12 @@ var (
 		Help: "Number of CIDR blocks in the currently loaded CRIC netroutes table",
 	})
 
-	// siteIPReloadFailures counts CRIC netroutes background refresh attempts that
-	// failed; on failure the previous route table is retained.
+	// siteIPReloadFailures counts failed fetches of the CRIC netroutes URL,
+	// including the first one at startup. The current route table is kept.
 	siteIPReloadFailures = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_site_ip_reload_failures",
-		Help: "Total number of CRIC netroutes table background refresh attempts that failed",
+		Help: "Total number of failed CRIC netroutes table fetches from a URL source, including the first at startup",
 	})
-
-	// siteResolvedByIP counts endpoints resolved by CRIC netroutes CIDR
-	// containment, by role (src/dst). It quantifies how much the address-based
-	// method recovers over name-based matching alone.
-	siteResolvedByIP = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "shoveler_site_resolved_by_ip",
-		Help: "Total number of transfer endpoints resolved to an RCSite via CRIC netroutes, by role",
-	}, []string{"role"})
 
 	// siteResolvedByMethod counts endpoints resolved to an RCSite by role
 	// (src/dst) and by which step of site.resolution_order produced the answer

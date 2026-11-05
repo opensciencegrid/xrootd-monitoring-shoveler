@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -210,5 +213,36 @@ func TestWarnInertNameMethods(t *testing.T) {
 				t.Errorf("warned = %v, want %v; log: %s", warned, tc.wantWarn, buf.String())
 			}
 		})
+	}
+}
+
+// TestStartCRICSourceDoesNotBlockOnURL verifies that a CRIC URL is fetched in
+// the background: an endpoint that never answers must not hold up startup, and
+// the registry keeps serving the embedded snapshot meanwhile.
+func TestStartCRICSourceDoesNotBlockOnURL(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	registry := collector.NewSiteRegistry(logger)
+
+	start := time.Now()
+	startCRICSource(ctx, registry, "domains", srv.URL, 3600, nil, logger)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("startCRICSource blocked for %s on an unresponsive URL", elapsed)
+	}
+	if site, _ := registry.ResolveHost("x.cern.ch"); site != "CERN-PROD" {
+		t.Errorf("embedded snapshot not served while the fetch is pending: got %q", site)
 	}
 }

@@ -16,7 +16,7 @@ import (
 const maxReportedAmbiguousHosts = 256
 
 // SiteOverrides is the site's own answer for an endpoint, declared in
-// site.overrides. It is consulted before any CRIC lookup and is used, so
+// site.overrides. It is consulted before any CRIC lookup and wins outright, so
 // it corrects CRIC as well as settling a host CRIC reports ambiguously.
 //
 // A key is matched by what it parses as:
@@ -27,7 +27,7 @@ const maxReportedAmbiguousHosts = 256
 //	192.0.2.0/24         an address range
 //
 // Host keys use the domains-map walk (full host first, then broader suffixes,
-// longest key is used); address keys use longest-prefix containment. Host keys are
+// longest key wins); address keys use longest-prefix containment. Host keys are
 // tried first, so a name overridden explicitly beats a range that merely contains it.
 type SiteOverrides struct {
 	hosts  *SiteRegistry // host and suffix keys, reusing the domain-suffix walk

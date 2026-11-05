@@ -361,9 +361,9 @@ func TestSiteRegistryLoadTrimsBlankSites(t *testing.T) {
 	assert.Equal(t, "SITE-A", site)
 }
 
-// TestRefreshLoopRetriesFailedStartupSooner verifies that when the startup load
-// failed, the source is retried well before the refresh interval, and that once
-// a retry succeeds the loop falls back to the normal interval.
+// TestRefreshLoopRetriesFailedStartupSooner verifies that the first load runs at
+// once, that a failed one is retried well before the refresh interval, and that
+// once a retry succeeds the loop falls back to the normal interval.
 func TestRefreshLoopRetriesFailedStartupSooner(t *testing.T) {
 	defer func(d time.Duration) { refreshRetryMin = d }(refreshRetryMin)
 	refreshRetryMin = 5 * time.Millisecond
@@ -378,7 +378,7 @@ func TestRefreshLoopRetriesFailedStartupSooner(t *testing.T) {
 		}
 		return nil
 	}
-	go refreshLoop(ctx, time.Hour, false, load, func(error) { failures.Add(1) })
+	go refreshLoop(ctx, time.Hour, load, func(error) { failures.Add(1) })
 
 	require.Eventually(t, func() bool { return calls.Load() == 3 }, 2*time.Second, time.Millisecond,
 		"a failed startup load must be retried long before the one-hour interval")
@@ -390,9 +390,9 @@ func TestRefreshLoopRetriesFailedStartupSooner(t *testing.T) {
 	assert.Equal(t, int32(3), calls.Load(), "no further loads once one succeeded")
 }
 
-// TestRefreshLoopWaitsFullIntervalAfterGoodStartup verifies a successful startup
-// load keeps the normal schedule, with no early retry.
-func TestRefreshLoopWaitsFullIntervalAfterGoodStartup(t *testing.T) {
+// TestRefreshLoopLoadsAtOnceThenWaitsInterval verifies a successful first load
+// happens immediately and is followed by the normal schedule, with no early retry.
+func TestRefreshLoopLoadsAtOnceThenWaitsInterval(t *testing.T) {
 	defer func(d time.Duration) { refreshRetryMin = d }(refreshRetryMin)
 	refreshRetryMin = time.Millisecond
 
@@ -400,11 +400,34 @@ func TestRefreshLoopWaitsFullIntervalAfterGoodStartup(t *testing.T) {
 	defer cancel()
 
 	var calls atomic.Int32
-	go refreshLoop(ctx, time.Hour, true, func(context.Context) error {
+	go refreshLoop(ctx, time.Hour, func(context.Context) error {
 		calls.Add(1)
 		return nil
 	}, func(error) {})
 
+	require.Eventually(t, func() bool { return calls.Load() == 1 }, time.Second, time.Millisecond,
+		"the first load must not wait for the interval")
 	time.Sleep(50 * time.Millisecond)
-	assert.Zero(t, calls.Load())
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+// TestRefreshLoopNoIntervalLoadsOnce verifies that with refreshing disabled the
+// source is still fetched once, and the loop then exits, even if that fetch failed.
+func TestRefreshLoopNoIntervalLoadsOnce(t *testing.T) {
+	var calls atomic.Int32
+	done := make(chan struct{})
+	go func() {
+		refreshLoop(context.Background(), 0, func(context.Context) error {
+			calls.Add(1)
+			return errors.New("CRIC unreachable")
+		}, func(error) {})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("refreshLoop with interval 0 did not return")
+	}
+	assert.Equal(t, int32(1), calls.Load())
 }

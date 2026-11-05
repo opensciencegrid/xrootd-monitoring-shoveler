@@ -79,10 +79,11 @@ type SiteConfig struct {
 	// unresolved instead of assumed local.
 	LocalSiteLANClients bool
 	// ResolutionOrder is the order the per-endpoint methods are tried in, first
-	// hit wins: "override" (Overrides), "config" (LocalSite), "hostname" (exact CRIC SE endpoint host),
+	// hit wins: "config" (LocalSite), "hostname" (exact CRIC SE endpoint host),
 	// "ip" (netroutes CIDR containment), "domain" (longest domain-suffix match).
 	// Unknown or repeated names are dropped, and an empty list falls back to the
-	// default order.
+	// default order. Overrides is not a method here: when enabled it is checked
+	// before the whole order and wins outright.
 	ResolutionOrder []string
 }
 
@@ -416,10 +417,6 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	viper.SetDefault("site.ip_refresh_interval", 86400)
 	c.Site.IPRefreshInterval = viper.GetInt("site.ip_refresh_interval")
 
-	// Hostname resolution. By default the embedded CRIC SE snapshot is used; set
-	// site.hostname_source to a file path or an http(s):// URL serving CRIC's
-	// service/query/?json&type=SE for current coverage, re-fetched every
-	// site.hostname_refresh_interval seconds.
 	// Site pins for endpoints CRIC reports ambiguously (or gets wrong).
 	// Off by default: a pin beats every CRIC answer, so it must be switched on
 	// deliberately rather than taking effect just because a key was left in a
@@ -428,6 +425,10 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.Site.OverridesEnabled = viper.GetBool("site.overrides_enabled")
 	c.Site.Overrides = viper.GetStringMapString("site.overrides")
 
+	// Hostname resolution. By default the embedded CRIC SE snapshot is used; set
+	// site.hostname_source to a file path or an http(s):// URL serving CRIC's
+	// service/query/?json&type=SE for current coverage, re-fetched every
+	// site.hostname_refresh_interval seconds.
 	viper.SetDefault("site.hostname_enabled", true)
 	c.Site.HostnameEnabled = viper.GetBool("site.hostname_enabled")
 	c.Site.HostnameSource = viper.GetString("site.hostname_source")
