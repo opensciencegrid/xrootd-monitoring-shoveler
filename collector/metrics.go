@@ -1,9 +1,24 @@
 package collector
 
 import (
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+// CountParsedPacket records a successfully parsed packet's upstream server and
+// type. Call after setting RemoteAddr and before dispatch, so packets dropped by
+// the gstream queue are included. Processing methods do not count packets again.
+func (c *Correlator) CountParsedPacket(packet *parser.Packet) {
+	if !c.perServerMetrics || packet == nil {
+		return
+	}
+	packetType := PacketTypeName(packet.PacketType)
+	if packet.IsXML {
+		packetType = "xml"
+	}
+	c.countByServer(packetsPerServerTotal, canonicalServerIP(packet.RemoteAddr), packetType)
+}
 
 var (
 	// enrichmentQueueDropped counts records dropped because the enrichment queue was full.

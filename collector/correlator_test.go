@@ -1639,6 +1639,7 @@ func TestServerIPLabelConsistency(t *testing.T) {
 		RemoteAddr:  remoteAddr,
 	}
 
+	correlator.CountParsedPacket(packet)
 	records, err := correlator.ProcessPacket(packet)
 	require.NoError(t, err)
 	require.Len(t, records, 1)
@@ -1696,6 +1697,7 @@ func TestPerServerMetricsDisabledByDefault(t *testing.T) {
 		RemoteAddr:  serverIP + ":1094",
 	}
 
+	correlator.CountParsedPacket(packet)
 	_, err := correlator.ProcessPacket(packet)
 	require.NoError(t, err)
 
@@ -1707,7 +1709,9 @@ func TestPerServerMetricsDisabledByDefault(t *testing.T) {
 
 	// gstream shares the same gate on the metric ...
 	beforeGStream := testutil.ToFloat64(packetsPerServerTotal.WithLabelValues(serverIP, "gstream"))
-	events, _, err := correlator.ProcessGStreamPacket(makeGStreamPacket(serverIP+":1094", 'C'))
+	gstreamPacket := makeGStreamPacket(serverIP+":1094", 'C')
+	correlator.CountParsedPacket(gstreamPacket)
+	events, _, err := correlator.ProcessGStreamPacket(gstreamPacket)
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 	assert.Equal(t, beforeGStream, testutil.ToFloat64(packetsPerServerTotal.WithLabelValues(serverIP, "gstream")))

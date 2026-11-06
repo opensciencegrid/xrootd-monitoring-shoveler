@@ -238,10 +238,10 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 **Output Destinations (Shoveler Mode only):**
 * `SHOVELER_OUTPUTS_DESTINATIONS` - Additional UDP destination addresses
 
-**Metrics (Shoveler Mode only):**
-* `SHOVELER_METRICS_ENABLE` - Enable Prometheus metrics: `true` or `false` (default: `true`)
-* `SHOVELER_METRICS_PORT` - Metrics HTTP server port (default: `8000`)
-* `SHOVELER_METRICS_PER_SERVER` - Enable the opt-in `server_ip`-labelled metrics: `true` or `false` (default: `false`)
+**Metrics (shoveler: `SHOVELER_`, collector: `COLLECTOR_`):**
+* `<PREFIX>_METRICS_ENABLE` - Enable Prometheus metrics: `true` or `false` (default: `true`)
+* `<PREFIX>_METRICS_PORT` - Metrics HTTP server port (default: `8000`)
+* `COLLECTOR_METRICS_PER_SERVER` - Enable the opt-in `server_ip`-labelled metrics (collector only): `true` or `false` (default: `false`)
 
 **Queue (Shoveler Mode only):**
 * `SHOVELER_QUEUE_DIRECTORY` - Persistent queue directory (default: `/var/spool/xrootd-monitoring-shoveler/queue`)
@@ -612,7 +612,7 @@ Metrics are available at `http://localhost:8000/metrics` by default (configurabl
 
 #### Per-server metrics (opt-in)
 
-Setting `metrics.per_server: true` (or `SHOVELER_METRICS_PER_SERVER=true`) additionally exports these
+Setting `metrics.per_server: true` (or `COLLECTOR_METRICS_PER_SERVER=true`) additionally exports these
 families, each labelled by the upstream XRootD server's IP:
 
 - `shoveler_packets_by_server_total` - Parsed packets per server and XRootD stream type

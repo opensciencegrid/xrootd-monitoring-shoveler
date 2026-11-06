@@ -415,12 +415,10 @@ func processPackets(source input.PacketSource, correlator *collector.Correlator,
 		}
 		shoveler.PacketsParsedOK.Inc()
 		if packet != nil {
-			shoveler.PacketsByType.WithLabelValues(packetTypeLabel(packet)).Inc()
-		}
-
-		// Set remote address for server ID calculation
-		if packet != nil {
+			// Attach the upstream address before counting or dispatching the packet.
 			packet.RemoteAddr = pktWithAddr.RemoteAddr
+			shoveler.PacketsByType.WithLabelValues(packetTypeLabel(packet)).Inc()
+			correlator.CountParsedPacket(packet)
 		}
 
 		// Handle the parsed packet

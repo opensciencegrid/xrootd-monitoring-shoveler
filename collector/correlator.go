@@ -301,7 +301,6 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 	if c.perServerMetrics {
 		serverIP = canonicalServerIP(packet.RemoteAddr)
 	}
-	c.countByServer(packetsPerServerTotal, serverIP, PacketTypeName(packet.PacketType))
 
 	// Calculate server ID: serverStart#addr#port
 	serverID := c.getServerID(packet)
@@ -378,10 +377,8 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 		return nil, 0, nil
 	}
 
-	// Unlike ProcessPacket, serverIP is always needed here: it also populates the
-	// emitted event's server_ip field. Only the metric is optional.
+	// Use the same canonical IP as the ingest metrics and file records.
 	serverIP := canonicalServerIP(packet.RemoteAddr)
-	c.countByServer(packetsPerServerTotal, serverIP, "gstream")
 
 	gstream := packet.GStreamRecord
 	serverID := c.getServerID(packet)
