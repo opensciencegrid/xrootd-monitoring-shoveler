@@ -42,6 +42,10 @@ type scitagsDoc struct {
 	Modified string `json:"modified"`
 }
 
+// scitagsDefaultExperiment is the registry's name for flows tagged without a
+// specific experiment (expId 1). It is a real registry entry, but not a VO.
+const scitagsDefaultExperiment = "default"
+
 // activityKey packs an experiment id and activity id into a single map key.
 // Activity ids are only unique within an experiment, so both are needed. This
 // mirrors the ((expId<<32)|actId) key used by the xrootd collector (PR #2855).

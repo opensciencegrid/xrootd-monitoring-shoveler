@@ -139,7 +139,10 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 			// The SciTags experiment name is the VO the flow belongs to. It is kept
 			// in its own field so it never overwrites VO, which comes from the
 			// auth/token streams and downstream consumers already depend on it.
-			scitagsVO = experiment
+			// The "default" experiment means "no experiment given", so it gets no VO.
+			if experiment != scitagsDefaultExperiment {
+				scitagsVO = experiment
+			}
 			if record.ActivityID != 0 {
 				activity = scitags.ActivityName(record.ExperimentID, record.ActivityID)
 				if activity == "" {

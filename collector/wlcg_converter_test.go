@@ -283,6 +283,31 @@ func TestConvertToWLCG_WriteOperation(t *testing.T) {
 	}
 }
 
+// TestConvertToWLCG_ScitagsDefaultExperiment checks that the "default" SciTags
+// experiment keeps its name but gets no scitags_vo.
+func TestConvertToWLCG_ScitagsDefaultExperiment(t *testing.T) {
+	scitags := NewScitagsRegistry(newTestLogger())
+
+	wlcg, err := ConvertToWLCG(&CollectorRecord{ExperimentID: 1, ActivityID: 3}, testWLCGMetadata(), scitags)
+	if err != nil {
+		t.Fatalf("ConvertToWLCG() error = %v", err)
+	}
+	if wlcg.Experiment != "default" || wlcg.Activity != "Cache" {
+		t.Errorf("Experiment/Activity = %q/%q, expected 'default'/'Cache'", wlcg.Experiment, wlcg.Activity)
+	}
+	if wlcg.ScitagsVO != "" {
+		t.Errorf("ScitagsVO = %q, expected empty for the default experiment", wlcg.ScitagsVO)
+	}
+
+	wlcg, err = ConvertToWLCG(&CollectorRecord{ExperimentID: 2}, testWLCGMetadata(), scitags)
+	if err != nil {
+		t.Fatalf("ConvertToWLCG() error = %v", err)
+	}
+	if wlcg.ScitagsVO != "atlas" {
+		t.Errorf("ScitagsVO = %q, expected 'atlas'", wlcg.ScitagsVO)
+	}
+}
+
 func TestConvertToWLCG_UnknownOperation(t *testing.T) {
 	now := time.Now()
 	record := &CollectorRecord{
