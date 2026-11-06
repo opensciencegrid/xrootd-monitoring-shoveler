@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,28 +81,38 @@ func NewScitagsRegistry(logger *logrus.Logger) *ScitagsRegistry {
 	return r
 }
 
-// Load parses api.json bytes and atomically swaps in the new mappings. A parse
-// error or an empty experiments list leaves the current registry untouched so a
-// transient bad fetch never wipes a good in-memory registry.
+// Load parses api.json bytes and swaps in the new mappings. If the data is bad,
+// it returns an error and keeps the current registry.
+//
+// Entries need an id above 0 and a name; others are skipped (0 means "unset" on
+// the 'U' stream).
 func (r *ScitagsRegistry) Load(data []byte) error {
 	var doc scitagsDoc
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return fmt.Errorf("parse scitags registry: %w", err)
 	}
-	if len(doc.Experiments) == 0 {
-		return fmt.Errorf("scitags registry has no experiments")
-	}
 
 	experiments := make(map[int]string, len(doc.Experiments))
 	activities := make(map[int64]string)
 	for _, e := range doc.Experiments {
-		if e.ExpID == 0 {
+		name := strings.TrimSpace(e.ExpName)
+		if e.ExpID <= 0 || name == "" {
 			continue
 		}
-		experiments[e.ExpID] = e.ExpName
+		experiments[e.ExpID] = name
 		for _, a := range e.Activities {
-			activities[activityKey(e.ExpID, a.ActivityID)] = a.ActivityName
+			actName := strings.TrimSpace(a.ActivityName)
+			if a.ActivityID <= 0 || actName == "" {
+				continue
+			}
+			activities[activityKey(e.ExpID, a.ActivityID)] = actName
 		}
+	}
+
+	// Check what is left after skipping bad entries, so a file of only bad
+	// entries keeps the current registry.
+	if len(experiments) == 0 {
+		return fmt.Errorf("scitags registry has no usable experiments")
 	}
 
 	r.mu.Lock()

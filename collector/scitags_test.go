@@ -64,6 +64,51 @@ func TestScitagsLoadRejectsBadData(t *testing.T) {
 	assert.Equal(t, "atlas", r.ExperimentName(2))
 }
 
+// TestScitagsLoadDegenerateKeepsPreviousRegistry checks that a file with only
+// bad entries returns an error and keeps the current registry.
+func TestScitagsLoadDegenerateKeepsPreviousRegistry(t *testing.T) {
+	for name, doc := range map[string]string{
+		"only expId 0":        `{"experiments":[{"expId":0,"expName":"x"}]}`,
+		"negative expId":      `{"experiments":[{"expId":-1,"expName":"x"}]}`,
+		"only blank names":    `{"experiments":[{"expId":2,"expName":""},{"expId":3,"expName":"  "}]}`,
+		"missing experiments": `{"version":1}`,
+		"json null":           `null`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := NewScitagsRegistry(newTestLogger())
+
+			require.Error(t, r.Load([]byte(doc)), "file with only bad entries returns an error")
+
+			assert.Equal(t, "atlas", r.ExperimentName(2), "current registry is kept")
+			assert.Equal(t, "Cache", r.ActivityName(3, 3))
+		})
+	}
+}
+
+// TestScitagsLoadDropsUnusableEntries checks that bad entries are skipped and
+// the good ones still load.
+func TestScitagsLoadDropsUnusableEntries(t *testing.T) {
+	r := NewScitagsRegistry(newTestLogger())
+
+	doc := `{"experiments":[
+		{"expId":0,"expName":"zero"},
+		{"expId":5,"expName":""},
+		{"expId":42,"expName":" testexp ","activities":[
+			{"activityId":7,"activityName":"testact"},
+			{"activityId":0,"activityName":"zeroact"},
+			{"activityId":-1,"activityName":"negact"},
+			{"activityId":8,"activityName":""}
+		]}
+	]}`
+	require.NoError(t, r.Load([]byte(doc)))
+
+	assert.Equal(t, "testexp", r.ExperimentName(42), "names are trimmed")
+	assert.Equal(t, "testact", r.ActivityName(42, 7))
+	assert.Empty(t, r.ExperimentName(5), "blank experiment name is skipped")
+	assert.Empty(t, r.ActivityName(42, 8), "blank activity name is skipped")
+	assert.Empty(t, r.ActivityName(42, -1), "negative activity id is skipped")
+}
+
 // TestScitagsLoadReplaces verifies a good load atomically swaps in new mappings.
 func TestScitagsLoadReplaces(t *testing.T) {
 	r := NewScitagsRegistry(newTestLogger())
