@@ -34,12 +34,13 @@ var embeddedCRICDomains []byte
 // rate measurable end to end and are also exported via the
 // shoveler_site_unresolved metric (labelled by role and reason).
 const (
-	SiteStatusResolved         = "resolved"          // exactly one RCSite matched by domain suffix in the domains map
-	SiteStatusResolvedConfig   = "resolved_config"   // taken from the configured local site (site.local_site)
-	SiteStatusResolvedOverride = "resolved_override" // pinned by an operator entry in site.overrides
-	SiteStatusAmbiguous        = "ambiguous"         // matched >1 RCSite even after besttier=1; the site is a first-match guess
-	SiteStatusUnknown          = "unknown_domain"    // a host name was available but no domain suffix matched
-	SiteStatusNoHost           = "no_host"           // no usable host name (missing, still an IP literal, or DNS failed)
+	SiteStatusResolved           = "resolved"             // exactly one RCSite matched by domain suffix in the domains map
+	SiteStatusResolvedConfig     = "resolved_config"      // taken from the configured local site (site.local_site)
+	SiteStatusResolvedOverride   = "resolved_override"    // pinned by an operator entry in site.overrides
+	SiteStatusAmbiguous          = "ambiguous"            // matched >1 RCSite even after besttier=1; the site is a first-match guess
+	SiteStatusUnknown            = "unknown_domain"       // a host name was available but no domain suffix matched
+	SiteStatusNoHost             = "no_host"              // no usable host name (missing, still an IP literal, or DNS failed)
+	SiteStatusNoApplicableMethod = "no_applicable_method" // none of the configured methods could apply to this endpoint
 )
 
 // The methods that can map one endpoint to an RCSite, named as they appear in
@@ -505,15 +506,13 @@ func (s *siteRecordEnricher) Enrich(ctx context.Context, record *CollectorRecord
 }
 
 // isLocalClientAddress reports whether an address is one that puts the client at
-// the reporting server's own site without a lookup: any-local, loopback,
-// multicast, link-local or private (IsPrivate covers RFC1918 and the IPv6
-// unique-local range).
+// the reporting server's own site without a lookup: loopback, link-local unicast
+// or private (IsPrivate covers RFC1918 and the IPv6 unique-local range).
 func isLocalClientAddress(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
-	return ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() ||
-		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate()
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate()
 }
 
 // resolveEndpoint tries each configured method in order and returns the first
@@ -548,7 +547,7 @@ func (s *siteRecordEnricher) resolveEndpoint(ep siteEndpoint) siteResolution {
 		}
 	}
 	if failure.status == "" {
-		failure.status = SiteStatusNoHost
+		failure.status = SiteStatusNoApplicableMethod
 	}
 	// Nothing CRIC knows settled this endpoint, and no pin covered it. Name it once
 	// so the operator learns which key to add to site.overrides.

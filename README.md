@@ -406,6 +406,8 @@ endpoints behind them:
 | `unknown_domain` | not resolved — we had a host name, but it is no SE endpoint and no domain suffix matched |
 | `ambiguous` | **a guess** — the domain or range maps to more than one site; the first is reported |
 | `no_host` | not resolved — **no usable host name** (bare IP / `unknown` / DNS off) **and** no matching CIDR block |
+| `unknown_ip` | not resolved — the IP method ran but no CRIC CIDR matched, and no name-based method supplied a failure reason |
+| `no_applicable_method` | not resolved — none of the configured methods could apply to this endpoint, e.g. a remote client with `resolution_order: ["config"]` |
 
 A domain shared by several RCSites (`desy.de`, `scotgrid.ac.uk`) yields the
 first site CRIC lists for it, under the `ambiguous` status — so a consumer that

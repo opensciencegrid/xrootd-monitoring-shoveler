@@ -683,17 +683,10 @@ func extractIPFromHost(host string) string {
 		return v4.String()
 	}
 	// Handle IPv4-compatible IPv6 written in dotted notation (::a.b.c.d).
-	// net.ParseIP converts dotted notation to pure hex bytes, losing the
-	// dot-notation hint, so we detect this case from the original string.
-	// The distinguishing feature is a "." in the host (dotted-decimal IPv4).
-	if strings.Contains(host, ".") {
-		if idx := strings.LastIndex(host, ":"); idx >= 0 {
-			if v4 := net.ParseIP(host[idx+1:]); v4 != nil {
-				if v4addr := v4.To4(); v4addr != nil {
-					return v4addr.String()
-				}
-			}
-		}
+	// The first 96 bits must be zero: native IPv6 can also have a dotted
+	// suffix, and its prefix must be preserved for DNS and site matching.
+	if strings.Contains(host, ".") && bytes.Equal(ip[:12], net.IPv6zero[:12]) {
+		return net.IP(ip[12:]).String()
 	}
 	return host
 }

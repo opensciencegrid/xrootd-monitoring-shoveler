@@ -51,8 +51,8 @@ var (
 
 	// siteUnresolved counts transfer endpoints that no configured resolution
 	// method could map to an RCSite, broken down by role (src/dst) and reason
-	// (ambiguous, unknown_domain, no_host, unknown_ip). This is the primary
-	// "how many unknowns" signal; a resolved endpoint is not counted.
+	// (ambiguous, unknown_domain, no_host, unknown_ip, no_applicable_method).
+	// This is the primary "how many unknowns" signal; a resolved endpoint is not counted.
 	siteUnresolved = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "shoveler_site_unresolved",
 		Help: "Total number of transfer endpoints not resolved to an RCSite, by role and reason",
