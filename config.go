@@ -1,8 +1,11 @@
 package shoveler
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -23,6 +26,70 @@ type WLCGConfig struct {
 	GStreamProducer string // metadata.producer for gstream cache & TPC records
 }
 
+// SiteConfig configures the CRIC-backed src/dst site resolver (collector mode).
+// The resolved sites are emitted on WLCG-formatted records only, so only those
+// records are resolved. When Source is empty the embedded CRIC domains snapshot
+// (preset=domains&besttier=1) is used; set it to a file path or http(s):// URL
+// to override it, re-fetched every RefreshInterval seconds. Enabled=false
+// disables src_site/dst_site resolution entirely.
+type SiteConfig struct {
+	Enabled         bool   // resolve src_site/dst_site on WLCG records (default true)
+	Source          string // domains map: file path or http(s):// URL; empty = embedded snapshot
+	RefreshInterval int    // seconds between re-fetches of the domains URL source (default 86400; 0 disables)
+	// CAPath is a PEM file or directory of PEM files trusted, on top of the system
+	// roots, when fetching any of the URL sources. wlcg-cric.cern.ch uses a CERN
+	// Grid CA certificate that system trust stores do not carry.
+	CAPath string
+
+	// IP/CIDR resolution: matches an endpoint address against the CRIC netroutes
+	// CIDR blocks. IPSource expects CRIC's rcsite/query/?json structure
+	// (netroutes per site); empty uses the embedded snapshot.
+	IPEnabled         bool   // enable the IP/CIDR method (default true)
+	IPSource          string // netroutes: file path or http(s):// URL; empty = embedded snapshot
+	IPRefreshInterval int    // seconds between re-fetches of the netroutes URL source (default 86400; 0 disables)
+
+	// Hostname resolution: exact match against CRIC storage-element protocol
+	// endpoints (scheme and port stripped). HostnameSource expects CRIC's
+	// service/query/?json&type=SE structure; empty uses the embedded snapshot.
+	HostnameEnabled         bool   // enable the hostname method (default true)
+	HostnameSource          string // SE endpoints: file path or http(s):// URL; empty = embedded snapshot
+	HostnameRefreshInterval int    // seconds between re-fetches of the SE URL source (default 86400; 0 disables)
+
+	// OverridesEnabled gates Overrides. It defaults to FALSE, unlike the other
+	// site.*_enabled flags: a pin outrules everything CRIC says, so it is an
+	// escape hatch for a site that is wrong or ambiguous, not something a
+	// collector should be doing by accident. With it off the pins are ignored
+	// entirely and every endpoint resolves from CRIC alone.
+	OverridesEnabled bool
+
+	// Overrides is the operator's own answer for an endpoint, applied only when
+	// OverridesEnabled: site.overrides: {"ccsrm.in2p3.fr": "IN2P3-CC"}. A key is
+	// an exact host, a domain suffix, an address, or a CIDR. Host keys are matched
+	// like the domains map (full host first, then suffixes, longest key wins);
+	// address keys by longest-prefix containment.
+	Overrides map[string]string
+
+	// LocalSite is the RCSite this collector runs at, e.g. "CERN-PROD". Every
+	// server reporting to this collector sits at that site by definition, so when
+	// LocalSite is set the "config" method resolves the server end outright, with
+	// no DNS or CRIC lookup. Leave it empty on a collector that aggregates
+	// several sites, since there is then no single answer.
+	LocalSite string
+	// LocalSiteLANClients also applies LocalSite to clients on a private,
+	// loopback or link-local address (default true). Those clients are at the
+	// reporting server's site by definition, and CRIC declares no worker-node
+	// ranges, so otherwise they stay unresolved. Set false to leave them
+	// unresolved instead of assumed local.
+	LocalSiteLANClients bool
+	// ResolutionOrder is the order the per-endpoint methods are tried in, first
+	// hit wins: "config" (LocalSite), "hostname" (exact CRIC SE endpoint host),
+	// "ip" (netroutes CIDR containment), "domain" (longest domain-suffix match).
+	// Unknown or repeated names are dropped, and an empty list falls back to the
+	// default order. Overrides is not a method here: when enabled it is checked
+	// before the whole order and wins outright.
+	ResolutionOrder []string
+}
+
 type FilterConfig struct {
 	DropPathPrefixes []string // records whose path matches any prefix are dropped entirely
 	DropVOs          []string // records whose VO matches (case-insensitive) are dropped entirely
@@ -40,6 +107,7 @@ type InputConfig struct {
 	Base64Encoded bool
 	Path          string // File path for "file" input type
 	Follow        bool   // Follow mode (tail-like) for "file" input type
+	TokenLocation string // Token for the "rabbitmq" input when broker_url has no credentials
 }
 
 type StateConfig struct {
@@ -70,6 +138,7 @@ type Config struct {
 	State                 StateConfig
 	Output                OutputConfig
 	WLCG                  WLCGConfig
+	Site                  SiteConfig
 	Mode                  string   // Operating mode: "shoveler" or "collector"
 	MQ                    string   // Which technology to use for the MQ connection
 	AmqpURL               *url.URL // AMQP URL (password comes from the token)
@@ -82,6 +151,7 @@ type Config struct {
 	AmqpExchangeWLCGTPC   string   // Exchange for WLCG formatted TPC events
 	AmqpToken             string   // File location of the token
 	AmqpPublishWorkers    int      // Number of concurrent publishing workers
+	AmqpConfirmWindow     int      // Most unconfirmed messages in flight per worker
 	ListenPort            int
 	ListenIp              string
 	DestUdp               []string
@@ -99,9 +169,72 @@ type Config struct {
 	StompCert             string
 	StompCertKey          string
 	QueueDir              string
+	QueueMaxMessages      int // queue_max_messages: drop the oldest beyond this (0 = no limit)
 	IpMapAll              string
 	IpMap                 map[string]string
 	Filter                FilterConfig
+
+	// OAuth2 self-registration + private_key_jwt token fetch (optional).
+	// When enabled the shoveler registers its public key with the registry
+	// using a one-time registration token, then keeps AmqpToken populated with
+	// a fresh access token fetched via private_key_jwt. The site's exchange
+	// permissions are granted registry-side.
+	OAuthEnabled            bool     // amqp.oauth.enabled
+	OAuthTokenURL           string   // amqp.oauth.token_url
+	OAuthRegistrationURL    string   // amqp.oauth.registration_url
+	OAuthBootstrapToken     string   // amqp.oauth.bootstrap_token (one-time initial access token)
+	OAuthBootstrapTokenFile string   // amqp.oauth.bootstrap_token_file (preferred; file wins over inline)
+	OAuthPrivateKeyFile     string   // amqp.oauth.private_key_file
+	OAuthStateFile          string   // amqp.oauth.state_file
+	OAuthScopes             []string // amqp.oauth.scopes (optional; the registry may ignore them)
+	OAuthClientName         string   // amqp.oauth.client_name
+
+	// Health reports to the same registry, sent with the access token it
+	// issues, so it can show whether the shoveler is running correctly (see
+	// report.go). On by default once OAuth is enabled.
+	OAuthReportHealth   bool   // amqp.oauth.report_health
+	OAuthReportURL      string // amqp.oauth.report_url (default: beside token_url)
+	OAuthReportInterval int    // amqp.oauth.report_interval, in seconds
+}
+
+// OAuthStateDir is where OAuth mode keeps what the shoveler writes itself (its
+// private key, registration state and access token) by default. The packages
+// create it for the service user, and the systemd unit declares it as the
+// StateDirectory.
+const OAuthStateDir = "/var/lib/xrootd-monitoring-shoveler"
+
+// DefaultRegistryURL is the OSG shoveler registry. OAuth mode uses its /token
+// and /register endpoints unless amqp.oauth.token_url / registration_url are
+// set. token_url is used as the client assertion's audience, which the
+// registry compares exactly.
+const DefaultRegistryURL = "https://xrd-shoveler-auth.osg-htc.org"
+
+// legacyTokenLocation is where an external process kept the AMQP token before
+// OAuth mode, and what config.yaml shipped pinned until 2.3. The service user
+// can't write there, so OAuth mode moves the token to OAuthStateDir.
+const legacyTokenLocation = "/etc/xrootd-monitoring-shoveler/token"
+
+// parseBrokerURL parses a broker URL without echoing it in the error:
+// url.Error includes the raw URL, password and all.
+func parseBrokerURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return nil, fmt.Errorf("%w (URL not shown, it may contain credentials)", ue.Err)
+	}
+	return u, err
+}
+
+// siblingURL returns u with its final path element from replaced by to
+// (e.g. .../token → .../register), or "" if u doesn't end in from.
+func siblingURL(u, from, to string) string {
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.Host == "" || !strings.HasSuffix(parsed.Path, from) {
+		return ""
+	}
+	parsed.Path = strings.TrimSuffix(parsed.Path, from) + to
+	parsed.RawPath, parsed.RawQuery, parsed.Fragment = "", "", ""
+	return parsed.String()
 }
 
 func (c *Config) ReadConfig() {
@@ -224,14 +357,21 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		viper.SetDefault("amqp.exchange_cache", "xrd-cache-events")
 		viper.SetDefault("amqp.exchange_tcp", "xrd-tcp-events")
 		viper.SetDefault("amqp.exchange_tpc", "xrd-tpc-events")
-		viper.SetDefault("amqp.token_location", "/etc/xrootd-monitoring-shoveler/token")
+		// With OAuth the shoveler writes the token itself, so it defaults to
+		// the service's writable state directory. Otherwise an external
+		// process maintains it in /etc.
+		if viper.GetBool("amqp.oauth.enabled") {
+			viper.SetDefault("amqp.token_location", filepath.Join(OAuthStateDir, "token"))
+		} else {
+			viper.SetDefault("amqp.token_location", legacyTokenLocation)
+		}
 
 		// Get the AMQP URL
-		c.AmqpURL, err = url.Parse(viper.GetString("amqp.url"))
+		c.AmqpURL, err = parseBrokerURL(viper.GetString("amqp.url"))
 		if err != nil {
 			panic(fmt.Errorf("fatal error parsing AMQP URL: %w", err))
 		}
-		log.Debugln("AMQP URL:", c.AmqpURL.String())
+		log.Debugln("AMQP URL:", c.AmqpURL.Redacted())
 
 		// Get the AMQP Exchanges
 		c.AmqpExchange = viper.GetString("amqp.exchange")
@@ -266,6 +406,117 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		viper.SetDefault("amqp.publish_workers", 10)
 		c.AmqpPublishWorkers = viper.GetInt("amqp.publish_workers")
 		log.Debugln("AMQP Publish Workers:", c.AmqpPublishWorkers)
+
+		// Messages each worker publishes ahead of the broker's confirms.
+		viper.SetDefault("amqp.confirm_window", defaultConfirmWindow)
+		c.AmqpConfirmWindow = viper.GetInt("amqp.confirm_window")
+		if c.AmqpConfirmWindow < 1 {
+			log.Warningln("amqp.confirm_window must be at least 1; using", defaultConfirmWindow)
+			c.AmqpConfirmWindow = defaultConfirmWindow
+		}
+		log.Debugln("AMQP Confirm Window:", c.AmqpConfirmWindow)
+
+		// OAuth2 self-registration + private_key_jwt configuration
+		viper.SetDefault("amqp.oauth.enabled", false)
+		c.OAuthEnabled = viper.GetBool("amqp.oauth.enabled")
+		log.Debugln("AMQP OAuth Enabled:", c.OAuthEnabled)
+		if c.OAuthEnabled {
+			// Upgraded installs keep the old config.yaml (config|noreplace),
+			// which pinned the legacy path the service user can't write.
+			if c.AmqpToken == legacyTokenLocation {
+				c.AmqpToken = filepath.Join(OAuthStateDir, "token")
+				log.Warningln("amqp.oauth: ignoring token_location", legacyTokenLocation,
+					"(the shoveler can't write there); using", c.AmqpToken,
+					"- remove token_location from the config to silence this")
+			}
+
+			// The endpoints default to the OSG registry. Setting just one of
+			// them points the other at the same registry, so a token meant
+			// for one registry is never sent to another.
+			defaultToken, defaultRegistration := DefaultRegistryURL+"/token", DefaultRegistryURL+"/register"
+			tokenSet := viper.IsSet("amqp.oauth.token_url")
+			registrationSet := viper.IsSet("amqp.oauth.registration_url")
+			switch {
+			case tokenSet && !registrationSet:
+				defaultRegistration = siblingURL(viper.GetString("amqp.oauth.token_url"), "/token", "/register")
+				if defaultRegistration == "" {
+					log.Panicln("amqp.oauth.token_url doesn't end in /token, so set amqp.oauth.registration_url too")
+				}
+			case registrationSet && !tokenSet:
+				defaultToken = siblingURL(viper.GetString("amqp.oauth.registration_url"), "/register", "/token")
+				if defaultToken == "" {
+					log.Panicln("amqp.oauth.registration_url doesn't end in /register, so set amqp.oauth.token_url too")
+				}
+			}
+			viper.SetDefault("amqp.oauth.token_url", defaultToken)
+			c.OAuthTokenURL = viper.GetString("amqp.oauth.token_url")
+			log.Debugln("AMQP OAuth Token URL:", c.OAuthTokenURL)
+
+			viper.SetDefault("amqp.oauth.registration_url", defaultRegistration)
+			c.OAuthRegistrationURL = viper.GetString("amqp.oauth.registration_url")
+			log.Debugln("AMQP OAuth Registration URL:", c.OAuthRegistrationURL)
+
+			viper.SetDefault("amqp.oauth.private_key_file", filepath.Join(OAuthStateDir, "oauth", "private.pem"))
+			c.OAuthPrivateKeyFile = viper.GetString("amqp.oauth.private_key_file")
+			log.Debugln("AMQP OAuth Private Key File:", c.OAuthPrivateKeyFile)
+
+			viper.SetDefault("amqp.oauth.state_file", filepath.Join(OAuthStateDir, "oauth", "registration.json"))
+			c.OAuthStateFile = viper.GetString("amqp.oauth.state_file")
+			log.Debugln("AMQP OAuth State File:", c.OAuthStateFile)
+
+			// Default to the hostname so a site's shovelers can be told
+			// apart in the registry.
+			defaultClientName := "shoveler"
+			if hostname, err := os.Hostname(); err == nil && hostname != "" {
+				defaultClientName = "shoveler@" + hostname
+			}
+			viper.SetDefault("amqp.oauth.client_name", defaultClientName)
+			c.OAuthClientName = viper.GetString("amqp.oauth.client_name")
+			log.Debugln("AMQP OAuth Client Name:", c.OAuthClientName)
+
+			c.OAuthScopes = viper.GetStringSlice("amqp.oauth.scopes")
+			log.Debugln("AMQP OAuth Scopes:", c.OAuthScopes)
+
+			// Validation: token_url and registration_url default to the OSG
+			// registry, so they can only be empty if set that way explicitly.
+			if c.OAuthTokenURL == "" || c.OAuthRegistrationURL == "" {
+				log.Panicln("amqp.oauth.enabled is true but amqp.oauth.token_url or amqp.oauth.registration_url is set to an empty value")
+			}
+			// StartAMQP uses credentials in the URL instead of the token
+			// file, which would silently bypass the OAuth tokens.
+			if c.AmqpURL != nil && c.AmqpURL.User != nil {
+				log.Panicln("amqp.oauth.enabled is true but amqp.url contains credentials; remove them so the OAuth access token is used")
+			}
+
+			// Health reports go to the registry that issues the tokens, by
+			// default at its report endpoint beside the token endpoint.
+			viper.SetDefault("amqp.oauth.report_health", true)
+			c.OAuthReportHealth = viper.GetBool("amqp.oauth.report_health")
+			viper.SetDefault("amqp.oauth.report_url", defaultReportURL(c.OAuthTokenURL))
+			c.OAuthReportURL = viper.GetString("amqp.oauth.report_url")
+			viper.SetDefault("amqp.oauth.report_interval", 60)
+			c.OAuthReportInterval = viper.GetInt("amqp.oauth.report_interval")
+			if c.OAuthReportInterval < minReportInterval || c.OAuthReportInterval > maxReportInterval {
+				log.Warningf("amqp.oauth.report_interval must be %d to %d seconds; using 60",
+					minReportInterval, maxReportInterval)
+				c.OAuthReportInterval = 60
+			}
+			if c.OAuthReportHealth && c.OAuthReportURL == "" {
+				log.Warningln("amqp.oauth: health reports are off: no report_url, and token_url",
+					c.OAuthTokenURL, "doesn't end in /token to derive one from")
+				c.OAuthReportHealth = false
+			}
+			log.Debugln("AMQP OAuth Health Reports:", c.OAuthReportHealth, c.OAuthReportURL,
+				"every", c.OAuthReportInterval, "s")
+
+			// The bootstrap (registration) token may be supplied inline or via
+			// a file; the file wins when both are set. It is optional: without
+			// one, the shoveler registers anyway and waits for an admin to
+			// approve it. Only the OAuth manager reads the file, when it
+			// registers, so tools sharing this config never need it.
+			c.OAuthBootstrapToken = strings.TrimSpace(viper.GetString("amqp.oauth.bootstrap_token"))
+			c.OAuthBootstrapTokenFile = viper.GetString("amqp.oauth.bootstrap_token_file")
+		}
 	case "stomp":
 		viper.SetDefault("stomp.topic", "xrootd.shoveler")
 
@@ -274,11 +525,11 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		c.StompPassword = viper.GetString("stomp.password")
 
 		// Get the STOMP URL
-		c.StompURL, err = url.Parse(viper.GetString("stomp.url"))
+		c.StompURL, err = parseBrokerURL(viper.GetString("stomp.url"))
 		if err != nil {
 			panic(fmt.Errorf("fatal error parsing STOMP URL: %w", err))
 		}
-		log.Debugln("STOMP URL:", c.StompURL.String())
+		log.Debugln("STOMP URL:", c.StompURL.Redacted())
 
 		c.StompTopic = viper.GetString("stomp.topic")
 		log.Debugln("STOMP Topic:", c.StompTopic)
@@ -334,8 +585,69 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	viper.SetDefault("wlcg.gstream_producer", "cms-xrootd-cache")
 	c.WLCG.GStreamProducer = viper.GetString("wlcg.gstream_producer")
 
+	// Src/dst site resolver configuration (collector mode). By default the
+	// embedded CRIC domains snapshot (preset=domains&besttier=1) is used; set
+	// site.source to a file path or an http(s):// URL (e.g. the CRIC domains
+	// endpoint) to override it. A URL source is re-fetched every
+	// site.refresh_interval seconds (0 disables refreshing). Set site.enabled to
+	// false to skip src_site/dst_site resolution entirely.
+	viper.SetDefault("site.enabled", true)
+	c.Site.Enabled = viper.GetBool("site.enabled")
+	c.Site.Source = viper.GetString("site.source")
+	viper.SetDefault("site.refresh_interval", 86400)
+	c.Site.RefreshInterval = viper.GetInt("site.refresh_interval")
+	// CA trusted for the http(s):// sources above and below, e.g.
+	// /etc/grid-security/certificates: CRIC's certificate is from the CERN Grid CA.
+	c.Site.CAPath = viper.GetString("site.ca_path")
+
+	// IP/CIDR resolution. By default the embedded CRIC netroutes snapshot is used;
+	// set site.ip_source to a file path or an http(s):// URL serving CRIC's
+	// rcsite/query/?json (netroutes per site) for current coverage, re-fetched
+	// every site.ip_refresh_interval seconds.
+	viper.SetDefault("site.ip_enabled", true)
+	c.Site.IPEnabled = viper.GetBool("site.ip_enabled")
+	c.Site.IPSource = viper.GetString("site.ip_source")
+	viper.SetDefault("site.ip_refresh_interval", 86400)
+	c.Site.IPRefreshInterval = viper.GetInt("site.ip_refresh_interval")
+
+	// Site pins for endpoints CRIC reports ambiguously (or gets wrong).
+	// Off by default: a pin beats every CRIC answer, so it must be switched on
+	// deliberately rather than taking effect just because a key was left in a
+	// config file.
+	viper.SetDefault("site.overrides_enabled", false)
+	c.Site.OverridesEnabled = viper.GetBool("site.overrides_enabled")
+	c.Site.Overrides = viper.GetStringMapString("site.overrides")
+
+	// Hostname resolution. By default the embedded CRIC SE snapshot is used; set
+	// site.hostname_source to a file path or an http(s):// URL serving CRIC's
+	// service/query/?json&type=SE for current coverage, re-fetched every
+	// site.hostname_refresh_interval seconds.
+	viper.SetDefault("site.hostname_enabled", true)
+	c.Site.HostnameEnabled = viper.GetBool("site.hostname_enabled")
+	c.Site.HostnameSource = viper.GetString("site.hostname_source")
+	viper.SetDefault("site.hostname_refresh_interval", 86400)
+	c.Site.HostnameRefreshInterval = viper.GetInt("site.hostname_refresh_interval")
+
+	// The site this collector runs at (e.g. site.local_site: CERN-PROD). Setting
+	// it lets the resolver label the reporting server from the config instead of
+	// inferring it, which is both certain and free; it also covers LAN clients
+	// unless site.local_site_lan_clients is false. site.resolution_order sets
+	// which methods are tried and in what order (first hit wins).
+	c.Site.LocalSite = viper.GetString("site.local_site")
+	viper.SetDefault("site.local_site_lan_clients", true)
+	c.Site.LocalSiteLANClients = viper.GetBool("site.local_site_lan_clients")
+	viper.SetDefault("site.resolution_order", []string{"config", "hostname", "ip", "domain"})
+	c.Site.ResolutionOrder = viper.GetStringSlice("site.resolution_order")
+
 	viper.SetDefault("queue_directory", "/var/spool/xrootd-monitoring-shoveler/queue")
 	c.QueueDir = viper.GetString("queue_directory")
+
+	// Cap the queue so a long outage can't fill the disk. In OAuth mode a new
+	// registration can wait days for approval, so the cap is on by default.
+	if c.OAuthEnabled {
+		viper.SetDefault("queue_max_messages", 1000000)
+	}
+	c.QueueMaxMessages = viper.GetInt("queue_max_messages")
 
 	// Configure the mapper
 	// First, check for the map environment variable
@@ -354,4 +666,33 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	// Record drop filter (collector mode only); defaults to drop nothing.
 	c.Filter.DropPathPrefixes = viper.GetStringSlice("filter.drop_path_prefixes")
 	c.Filter.DropVOs = viper.GetStringSlice("filter.drop_vos")
+
+	c.readInputToken()
+}
+
+// readInputToken sets the token the "rabbitmq" input consumes with when its
+// broker URL has no credentials. It defaults to the AMQP output's token file;
+// in OAuth mode that file holds the registry's publish token, which the input
+// can't use (it's written later and lacks consume permission), so the input
+// then needs its own credentials.
+func (c *Config) readInputToken() {
+	c.Input.TokenLocation = viper.GetString("input.token_location")
+	if !viper.IsSet("input.token_location") && !c.OAuthEnabled {
+		c.Input.TokenLocation = c.AmqpToken
+	}
+	if !c.OAuthEnabled || (c.Input.Type != "rabbitmq" && c.Input.Type != "amqp") {
+		return
+	}
+	broker := c.Input.BrokerURL
+	if broker == "" && c.AmqpURL != nil {
+		broker = c.AmqpURL.String()
+	}
+	u, err := parseBrokerURL(broker)
+	if err != nil {
+		panic(fmt.Errorf("fatal error parsing the input broker URL: %w", err))
+	}
+	if u.User == nil && c.Input.TokenLocation == "" {
+		log.Panicln("amqp.oauth is enabled, so the rabbitmq input can't use the OAuth publish token:",
+			"put credentials in input.broker_url or set input.token_location")
+	}
 }

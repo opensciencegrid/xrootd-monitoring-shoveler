@@ -61,6 +61,7 @@ graph LR
     - [Message Bus Credentials](#message-bus-credentials)
     - [Packet Verification](#packet-verification)
     - [IP Mapping](#ip-mapping)
+    - [Src/Dst Site Resolution](#srcdst-site-resolution)
   - [Running the Shoveler](#running-the-shoveler)
   - [Testing Packet Flow with the Collector](#testing-packet-flow-with-the-collector)
   - [:compass: Design](#compass-design)
@@ -186,6 +187,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_INPUT_PORT` - Input port number
 * `<PREFIX>_INPUT_BUFFER_SIZE` - Buffer size for UDP packets (default: `65536`)
 * `<PREFIX>_INPUT_BROKER_URL` - Message broker URL (for rabbitmq input)
+* `<PREFIX>_INPUT_TOKEN_LOCATION` - Token for the rabbitmq input when its broker URL has no credentials (default: the AMQP `token_location`; required, or credentials in `broker_url`, when `amqp.oauth` is enabled, because the OAuth token only grants publishing)
 * `<PREFIX>_INPUT_TOPIC` - Message broker topic/queue name
 * `<PREFIX>_INPUT_QUEUE` - Alias for topic (RabbitMQ)
 * `<PREFIX>_INPUT_SUBSCRIPTION` - Subscription name (for message bus)
@@ -220,8 +222,23 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_AMQP_EXCHANGE_WLCG` - WLCG formatted events exchange (default: `xrd-wlcg-events`)
 * `<PREFIX>_AMQP_EXCHANGE_WLCG_CACHE` - WLCG formatted cache events exchange (default: `xrd-wlcg-cache-events`)
 * `<PREFIX>_AMQP_EXCHANGE_WLCG_TPC` - WLCG formatted TPC events exchange (default: `xrd-wlcg-tpc-events`)
-* `<PREFIX>_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`)
+* `<PREFIX>_AMQP_TOKEN_LOCATION` - JWT token file path (default: `/etc/xrootd-monitoring-shoveler/token`, or `/var/lib/xrootd-monitoring-shoveler/token` when OAuth is enabled)
 * `<PREFIX>_AMQP_PUBLISH_WORKERS` - Number of concurrent publishing workers for collector mode (default: `10`, forced to `1` in shoveler mode)
+* `<PREFIX>_AMQP_CONFIRM_WINDOW` - Messages each worker publishes ahead of the broker's confirms (default: `4096`; throughput per worker is capped at about window ÷ broker round-trip time)
+
+**AMQP OAuth2 Self-Registration (optional; shoveler: `SHOVELER_AMQP_OAUTH_*`, collector: `COLLECTOR_AMQP_OAUTH_*`):**
+* `<PREFIX>_AMQP_OAUTH_ENABLED` - Enable OAuth2 self-registration + token fetch: `true` or `false` (default: `false`)
+* `<PREFIX>_AMQP_OAUTH_TOKEN_URL` - Registry token endpoint (default: `https://xrd-shoveler-auth.osg-htc.org/token`)
+* `<PREFIX>_AMQP_OAUTH_REGISTRATION_URL` - Registry registration endpoint (default: `https://xrd-shoveler-auth.osg-htc.org/register`)
+* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN` - One-time registration token from the registry, inline (optional: without one the shoveler waits for approval)
+* `<PREFIX>_AMQP_OAUTH_BOOTSTRAP_TOKEN_FILE` - File holding the one-time registration token (preferred; wins over inline)
+* `<PREFIX>_AMQP_OAUTH_PRIVATE_KEY_FILE` - Generated private key path (default: `/var/lib/xrootd-monitoring-shoveler/oauth/private.pem`)
+* `<PREFIX>_AMQP_OAUTH_STATE_FILE` - Persisted registration state path (default: `/var/lib/xrootd-monitoring-shoveler/oauth/registration.json`)
+* `<PREFIX>_AMQP_OAUTH_CLIENT_NAME` - Client name sent at registration for display in the registry (default: `shoveler@<hostname>`)
+* `<PREFIX>_AMQP_OAUTH_SCOPES` - Optional scopes to request at token time (Shoveler-registry ignores them and issues the site's standard permissions)
+* `SHOVELER_AMQP_OAUTH_REPORT_HEALTH` - Send health reports to the registry: `true` or `false` (default: `true`; shoveler binary only)
+* `SHOVELER_AMQP_OAUTH_REPORT_URL` - Registry endpoint for health reports (default: `token_url` with its final `/token` replaced by `/report`)
+* `SHOVELER_AMQP_OAUTH_REPORT_INTERVAL` - Seconds between health reports, 10 to 3600 (default: `60`)
 
 **STOMP Configuration (shoveler: `SHOVELER_STOMP_*`, collector: `COLLECTOR_STOMP_*`):**
 * `<PREFIX>_STOMP_USER` - STOMP username
@@ -245,6 +262,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 
 **Queue (Shoveler Mode only):**
 * `SHOVELER_QUEUE_DIRECTORY` - Persistent queue directory (default: `/var/spool/xrootd-monitoring-shoveler/queue`)
+* `SHOVELER_QUEUE_MAX_MESSAGES` - Drop the oldest queued messages beyond this many (default: no limit, or `1000000` when `amqp.oauth` is enabled)
 
 **IP Mapping (Shoveler Mode only):**
 * `SHOVELER_MAP_ALL` - Map all IPs to a single address
@@ -255,6 +273,109 @@ When running using AMQP as the protocol to connect the shoveler uses a [JWT](htt
 automated process, but for now, long lived tokens are issued to sites. 
 
 On the other hand, if STOMP is the selected protocol user and password will need to be provided when configuring the shoveler.
+
+#### OAuth2 Self-Registration (private_key_jwt)
+
+Instead of a long-lived JWT pasted into the token file, the shoveler can onboard itself with a shoveler registry
+(such as Shoveler-registry) and keep its own access token fresh. No long-lived shared secret ever exists or crosses
+the wire. The protocol between the shoveler and the registry is specified in
+[docs/registry-protocol.md](docs/registry-protocol.md).
+
+There are two ways to onboard:
+
+* **With a registration token (instant).** A site owner logs in to the registry and creates a one-time registration
+  token for their site. The registry shows it once, with a ready-to-paste config block. Save the token to
+  `bootstrap_token_file`, readable by the service user (see below); the shoveler is active as soon as it starts.
+* **Without a token (approval).** Leave `bootstrap_token_file` out and just start the shoveler. It registers
+  itself and waits, queuing packets on disk, until a registry admin or site manager approves it on the dashboard
+  and assigns its site. The shoveler logs its key fingerprint (also shown in the registry) so the approver can
+  check they are approving the right host. Your registry must support this mode.
+
+The shoveler uses the OSG registry, `https://xrd-shoveler-auth.osg-htc.org`, by default, so the config is just this,
+minus `bootstrap_token_file` when registering without a token (see `config/config.yaml` for every option):
+
+```yaml
+amqp:
+  url: amqps://broker.example.com:5671/vhost
+  oauth:
+    enabled: true
+    bootstrap_token_file: /var/lib/xrootd-monitoring-shoveler/bootstrap.token
+```
+
+To use a different registry, set `token_url`, copying it exactly as that registry shows it: the registry checks it
+character for character. `registration_url` (and the health-report URL) then default to the same registry, with
+`/token` replaced by `/register` (or `/report`); set `registration_url` too if that registry is laid out differently.
+
+The shoveler runs as the `xrootd-monitoring-shoveler` user, so save the registration token as that user, for
+example (with the token in `token.txt`):
+
+```bash
+sudo install -o xrootd-monitoring-shoveler -g xrootd-monitoring-shoveler -m 0600 token.txt /var/lib/xrootd-monitoring-shoveler/bootstrap.token
+```
+
+Everything the shoveler writes in OAuth mode (its private key, `state_file` and the access token) lives in
+`/var/lib/xrootd-monitoring-shoveler/` by default. The RPM and DEB packages create it for the service user, and the
+systemd units declare it as their `StateDirectory`. It must survive restarts and redeploys: in a container, mount a
+persistent volume there.
+
+How it works end to end:
+
+1. **Registration (first run only).** The shoveler generates a 2048-bit RSA keypair (`private_key_file`, mode
+   `0600`; the private key **never leaves the host**) and registers its public key with the registry, using the
+   registration token, if any, as a bearer. With a token the new client is active immediately (creating the token
+   was the site owner's approval) and the token file can be deleted afterwards. Without one, the shoveler logs a
+   warning with its key fingerprint, repeated hourly, and polls every minute until the client is approved. Either
+   way the returned `client_id` is saved to `state_file` (mode `0600`).
+2. **Steady state (every run).** If `state_file` exists, registration is skipped. The shoveler signs a short-lived
+   client assertion with its private key and exchanges it at `token_url` for an access token. That token is written
+   atomically to `token_location`, AMQP starts (or the existing token-file watcher rotates its connections), and
+   the token is refreshed at ~50% of its lifetime. After a restart, a still-valid token from the previous run is
+   used straight away, so a registry outage doesn't hold up publishing. Registry outages and rate limiting are
+   retried and never crash the shoveler; packets keep going into the on-disk queue in the meantime, which is capped
+   at `queue_max_messages` (1,000,000 by default in OAuth mode; the oldest are dropped beyond that).
+
+If the registry rejects the registration (for example an expired, revoked or already-used registration token, or no
+token on a registry that requires one), the shoveler logs the error and keeps running: it re-reads the registration
+token every 10 minutes, so writing a new token to `bootstrap_token_file` is enough, with no restart. If
+`bootstrap_token_file` is set but can't be read, or is empty, the shoveler refuses to start rather than falling back
+to waiting for approval. If a pending registration is denied or expires, delete `state_file` and restart to register
+again. If the client is later disabled in the registry, the shoveler logs an error, keeps queuing, and retries every
+minute: a client disabled by its owner or for being idle starts working again once the owner re-enables it. A client
+revoked by a registry admin can't be re-enabled; delete `state_file` and restart the shoveler, with a new
+registration token or to wait for approval. It then generates a new key, so a key that may have leaked is never
+registered again.
+
+An existing config that still sets `token_location: /etc/xrootd-monitoring-shoveler/token` (as config.yaml did
+before 2.3) is ignored in OAuth mode, with a warning, because the service user can't write there.
+
+RabbitMQ must trust the registry's signing keys (via `rabbitmq_auth_backend_oauth2`) so that the permissions in the
+issued tokens map to the expected exchange.
+
+#### Health Reports
+
+Once the registry has issued it a token, the shoveler also reports its health to the registry, so the registry's
+admins can see whether it is running correctly: right away, then every `report_interval` seconds (default 60), it
+POSTs its counters since it started (packets received, packets that failed validation, messages published, message
+bus reconnects) and its queue size, authenticated with that token. The registry keeps about a day of reports and
+flags a shoveler that stops reporting, receives no packets, or stops publishing. The wire format is in
+[docs/registry-protocol.md](docs/registry-protocol.md#health-report-endpoint).
+
+This is on by default with OAuth. Reports go to `token_url` with its final `/token` replaced by `/report`
+(Shoveler-registry's layout); set `report_url` for a registry laid out differently, or `report_health: false` to
+stop sending them:
+
+```yaml
+amqp:
+  oauth:
+    # ...
+    report_health: true      # the default
+    report_interval: 60      # seconds, 10 to 3600
+    # report_url: https://registry.example.org/report
+```
+
+A shoveler awaiting approval sends nothing until it is approved. A failed report is logged once, as a warning, until
+reports succeed again (a registry with no report endpoint is asked again hourly), and never affects shoveling. Only
+the shoveler binary reports; the collector does not.
 
 ### Packet Verification
 
@@ -284,6 +405,264 @@ map:
    <ip address>: <ip address>
    
 ```
+
+### Src/Dst Site Resolution
+
+**Collector mode only, WLCG records only.** The collector resolves each end of a
+transfer to its WLCG **RCSite** (`CERN-PROD`, `AGLT2`, …) and stamps four fields
+on the WLCG-formatted record — `src_site`, `dst_site`, and a `src_site_status` /
+`dst_site_status` saying how (or whether) each end resolved. The fields are
+ordered by data-flow direction: on a read the server is the source and the client
+the destination; on a write they are inverted.
+
+Records that are not routed to the WLCG exchange are left exactly as they are
+today — the plain collector record gains no new fields, and resolution is skipped
+for those records entirely rather than computed and discarded.
+
+Resolution uses snapshots of the [CRIC](https://wlcg-cric.cern.ch/) domain map
+and network routes that are **embedded in the binary**, so it works out of the
+box with no network access and no per-record lookups. It is on by default.
+
+Each endpoint is resolved by trying identifiers in the configured order and
+taking the first hit:
+
+| method | matches on | CRIC source |
+|---|---|---|
+| `config` | `site.local_site`, the site this collector runs at | declared, no lookup |
+| `hostname` | exact host of a CRIC **SE protocol endpoint** | service API `query/?json&type=SE` |
+| `ip` | longest-prefix **CIDR containment** | netroutes `rcsite/query` |
+| `domain` | longest matching **domain suffix** | domains preset `besttier=1` |
+
+The default order is `["config", "hostname", "ip", "domain"]`: the operator's own
+declaration first (nothing inferred beats it, and it needs no DNS), then the
+identifiers from most to least specific. Leaving a method out of the list turns
+it off. `site.overrides` is not one of these — it is consulted before the order
+runs and wins outright (see below).
+
+> **`hostname` and `domain` need a name, and the server end only has one with DNS
+> enrichment on.** The client name arrives in the xrootd user record and is used
+> as-is, but the server end is derived from the packet's source address and is
+> always an IP literal, which the domain map deliberately refuses to match. Since
+> `state.enable_dns_enrichment` defaults to `false`, both name-based methods are
+> inert for *every server endpoint* under the shipped defaults, leaving `config`
+> and `ip` to resolve that end. The collector warns at startup when the order
+> asks for a name-based method that DNS has made inert, and stays quiet once
+> either of those is in place.
+>
+> What DNS actually buys is narrower than it looks: it only changes the outcome
+> when an endpoint is an address, **no** CRIC netroute CIDR covers it, and the
+> domain map does know its domain. A server on `203.0.113.9` with no CIDR match
+> is `no_host` with DNS off and `resolved` via `cern.ch` with it on; the same
+> server inside a declared CIDR resolves either way, since `ip` precedes `domain`.
+>
+> `site.local_site` covers the *server* end only, in both directions — it provides
+> where the reporting server sits, so it lands on `src` for a read and `dst` for
+> a write. A **remote client** on an address CRIC declares no range for still has
+> no name-based path with DNS off, and `config` does not apply to it (that extends
+> only to private/loopback clients, via `site.local_site_lan_clients`). Whether
+> that bites depends on what your servers report, so it shows up in
+> `shoveler_site_unresolved` rather than in the startup warning. Roles alternate
+> there too: an unresolved client is `role="dst"` on reads and `role="src"` on
+> writes, so check both before concluding one direction is worse.
+
+**If your collector serves a single site, set `site.local_site`.** It is the one
+thing you know for certain — every server reporting to that collector is at that
+site — and it resolves the server end with no DNS and no CRIC coverage
+dependency. It also covers clients on private addresses (your own worker nodes),
+which CRIC declares no ranges for.
+
+```yaml
+site:
+  enabled: true                 # false disables src_site/dst_site entirely
+  local_site: CERN-PROD         # leave empty on a collector aggregating several sites
+  local_site_lan_clients: true  # also apply local_site to private/loopback clients
+  resolution_order: ["config", "hostname", "ip", "domain"]
+
+  # Off by default. When enabled, a pin is consulted before any CRIC lookup and
+  # wins outright. A key is an exact host, a domain suffix, an address, or a CIDR.
+  overrides_enabled: true
+  overrides:
+    scotgrid.ac.uk: UKI-SCOTGRID-GLASGOW
+    159.93.39.0/24: JINR-T1
+
+  # All three maps default to the embedded snapshots. Point these at a file path
+  # or an http(s):// URL to follow CRIC live; a URL is re-fetched on the interval
+  # and a failed refresh keeps the previous data.
+  source: ""                    # domains map, backing "domain"
+  refresh_interval: 86400
+  hostname_enabled: true        # SE endpoints, backing "hostname"
+  hostname_source: ""
+  hostname_refresh_interval: 86400
+  ip_enabled: true              # netroutes, backing "ip"
+  ip_source: ""
+  ip_refresh_interval: 86400
+  # Extra CA certificates (PEM file or directory) trusted for the URL sources, in
+  # addition to the OS ones.
+  # Needed to follow CRIC live from a host without the CERN Grid CA (see below).
+  ca_path: /etc/grid-security/certificates
+```
+
+Equivalent environment variables use the collector prefix, e.g.
+`COLLECTOR_SITE_LOCAL_SITE`, `COLLECTOR_SITE_ENABLED`, `COLLECTOR_SITE_SOURCE`.
+
+#### Reading the emitted fields
+
+`src_site` / `dst_site` are empty unless the matching status is one of the
+resolved ones, and all four are omitted from the JSON when empty. The two
+endpoints behind them:
+
+- **server** — the monitored XRootD server. **Its IP is always known** (it is the
+  UDP packet's source address). On a read it is the source; on a write the
+  destination.
+- **client** — the peer that connected (a grid job / worker node, or a TPC peer).
+  On a read it is the destination; on a write the source.
+
+| status | the end was resolved… |
+|---|---|
+| `resolved_override` | pinned by the sites in `site.overrides` |
+| `resolved_config` | from `site.local_site` — the operator's declaration, no lookup |
+| `resolved_hostname` | by an **exact CRIC SE endpoint** host (`xrootd.aglt2.org` → `AGLT2`) |
+| `resolved` | by **domain suffix** against the CRIC domain map (`x.cern.ch` → `CERN-PROD`) |
+| `resolved_ip` | by **address**, inside a CRIC-declared CIDR block |
+| `unknown_domain` | not resolved — we had a host name, but it is no SE endpoint and no domain suffix matched |
+| `ambiguous` | **a guess** — the domain or range maps to more than one site; the first is reported |
+| `no_host` | not resolved — **no usable host name** (bare IP / `unknown` / DNS off) **and** no matching CIDR block |
+| `unknown_ip` | not resolved — the IP method ran but no CRIC CIDR matched, and no name-based method supplied a failure reason |
+| `no_applicable_method` | not resolved — none of the configured methods could apply to this endpoint, e.g. a remote client with `resolution_order: ["config"]` |
+
+A domain shared by several RCSites (`desy.de`, `scotgrid.ac.uk`) yields the
+first site CRIC lists for it, under the `ambiguous` status — so a consumer that
+needs certainty can filter on the status, and one that just wants a usable label
+has one. Treat `ambiguous` as unresolved when computing a resolution rate.
+
+**Settling an ambiguous host.** `shoveler_site_unresolved{reason="ambiguous"}`
+counts these but cannot name them — a host name in a metric label would be
+unbounded cardinality — so the collector logs each ambiguous host once, with its
+candidates and the line that fixes it:
+
+```
+WARN site: "host.scotgrid.ac.uk" is ambiguous between UKI-SCOTGRID-DURHAM,
+     UKI-SCOTGRID-GLASGOW; using "UKI-SCOTGRID-DURHAM" as a guess.
+     Pin it with site.overrides: {"host.scotgrid.ac.uk": "UKI-SCOTGRID-DURHAM"}
+```
+
+Put that key in `site.overrides`, turn the option on, and the host resolves
+definitively from then on with status `resolved_override`:
+
+```yaml
+site:
+  overrides_enabled: true
+  overrides:
+    host.scotgrid.ac.uk: UKI-SCOTGRID-GLASGOW
+```
+
+Both lines are needed: the keys alone do nothing until the option is on.
+
+**Overriding is off by default.** `site.overrides_enabled` defaults to `false`,
+unlike the other `site.*_enabled` flags, and while it is off the pins are ignored
+entirely: every endpoint resolves from CRIC alone, and a host CRIC cannot settle
+keeps reporting `ambiguous`. A pin beats everything CRIC says, so switching it on
+is a deliberate act — this is the escape hatch for a CRIC entry you know is wrong
+or that CRIC cannot disambiguate, not routine configuration. Leaving keys in
+`site.overrides` with the option off is a no-op, and the collector says so at
+startup rather than letting you debug a pin that was never applied.
+
+**With the option on, a pin is the site's own answer and wins outright.** It is
+consulted before any CRIC lookup, so it corrects a CRIC answer as well as settling
+one CRIC reports ambiguously. It is **not** a `resolution_order` method and cannot
+be scheduled, reordered or left out there.
+
+A key is matched by what it parses as:
+
+| key | matches |
+|---|---|
+| `xrootd.example.org` | that exact host |
+| `example.org` | every host under the suffix |
+| `192.0.2.7` | that one address |
+| `192.0.2.0/24` | every address in the range (IPv6 CIDRs too) |
+
+Host keys use the domains-map walk (full host first, then broader suffixes,
+longest key wins); address keys use longest-prefix containment, so a single
+address beats a range containing it. Host keys are tried before address keys, so
+a host pinned by name beats a range that merely covers its address.
+
+Address keys matter because the `ip` method reports `ambiguous` when two sites
+declare equally specific CIDRs, and an endpoint reported as a bare address has no
+name to key on.
+
+Name matching takes the **longest** matching suffix and stops there, so
+`n01.gla.scotgrid.ac.uk` resolves via `gla.scotgrid.ac.uk` and never falls
+through to the broad `ac.uk`.
+
+The `hostname` method matches the host of a CRIC **storage-element** protocol
+endpoint, with scheme and port stripped — `root://xrootd.aglt2.org:1094` makes
+`xrootd.aglt2.org` an exact key for `AGLT2`. That is why it sits above `ip` and
+`domain`: a storage host CRIC names outright is not a guess, where a suffix match
+can over-reach. The embedded snapshot holds 567 hosts across 168 RCSites.
+
+**Expect the client side to resolve less often than the server side.** Clients
+are often bare IPs with no PTR record, they are not storage elements so the
+`hostname` method cannot name them, and CRIC's ranges cover
+storage/LHCOPN/LHCONE networks, not the worker-node subnets clients connect from.
+In the embedded snapshot only 143 of 392 sites declare any CIDR range at all.
+`site.local_site` removes the server side of that problem outright, and
+`site.local_site_lan_clients` covers local worker nodes, which CRIC cannot.
+
+Both count WLCG-bound records only, since those are the only
+ones resolved.
+
+#### Refreshing the embedded CRIC snapshots
+
+The snapshots live in `collector/cric_domains.json`, `collector/cric_se.json`
+and `collector/cric_netroutes.json`. Point `site.source` / `site.hostname_source`
+/ `site.ip_source` at the CRIC URLs to follow them live instead, or regenerate
+the committed files with the commands below.
+
+`wlcg-cric.cern.ch` serves a certificate issued by the **CERN Grid CA**, which
+standard system trust stores do not include. On a host without it, every fetch
+fails with `x509: certificate signed by unknown authority` and the collector
+stays on the embedded snapshots. Set `site.ca_path` to the CA: on grid hosts the
+IGTF bundle in `/etc/grid-security/certificates` (`ca-policy-egi-core` or
+`osg-ca-certs`) already has it, and otherwise you can download it from
+[CERN CA](https://cafiles.cern.ch/cafiles/). The `curl` commands below need the
+same CA through `--capath` (or `--cacert` for a single file). `-f` makes a failed
+fetch exit non-zero, `set -o pipefail` carries that through `jq`, and writing to a
+temporary file first keeps a failed run from truncating the committed snapshot.
+
+```bash
+set -o pipefail
+CA=/etc/grid-security/certificates
+
+# Domain map. besttier=1 collapses noisy low-tier/test entries
+# (cern.ch: [BOINC, CERN-PROD] -> CERN-PROD). Served on the dev instance.
+curl -fsS --capath "$CA" 'https://wlcg-cric.cern.ch/api/core/rcsite/query/?json&preset=domains&besttier=1' \
+  -o collector/cric_domains.json
+
+# Storage-element endpoints, backing the "hostname" method. Reduced to the rcsite
+# and protocol endpoints the collector reads; an unreduced response parses
+# identically if you drop the jq. "aprotocols" is not kept: it indexes protocol
+# names by access pattern rather than carrying endpoints of its own. Nor are the
+# lifecycle fields ("state", "status"), which are irrelevant to a host -> site
+# mapping - a machine does not change site because one of its doors is retired.
+curl -fsS --capath "$CA" 'https://wlcg-cric.cern.ch/api/core/service/query/?json&type=SE' \
+  | jq -S 'map_values({rcsite, protocols: ((.protocols // {}) | map_values({endpoint}))})
+           | with_entries(select(.value.rcsite != null and .value.rcsite != ""
+                                 and (.value.protocols | length) > 0))' \
+  > collector/cric_se.json.tmp && mv collector/cric_se.json.tmp collector/cric_se.json
+
+# Network routes. The full rcsite/query response is ~1.1 MB and mostly fields the
+# collector ignores, so the committed snapshot is reduced to the netroutes it
+# actually reads; an unreduced response parses identically if you drop the jq.
+curl -fsS --capath "$CA" 'https://wlcg-cric.cern.ch/api/core/rcsite/query/?json' \
+  | jq -S 'map_values({netroutes: (.netroutes // {} | map_values({networks: (.networks | {ipv4, ipv6} | with_entries(select(.value != null and (.value | length) > 0)))}) | with_entries(select(.value.networks | length > 0)))})
+           | with_entries(select(.value.netroutes | length > 0))' \
+  > collector/cric_netroutes.json.tmp && mv collector/cric_netroutes.json.tmp collector/cric_netroutes.json
+```
+
+Address matching is longest-prefix containment over the declared blocks, which is
+exactly what CRIC does server-side — replicated locally so no record ever waits on
+a network call. The server's self-reported `site` field (from the `=` map packet)
+is left untouched; `src_site`/`dst_site` are new fields alongside it.
 
 ## Running the Shoveler
 
@@ -407,11 +786,15 @@ When debug is enabled, the collector logs details for every packet:
 ```
 time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: =, IsXML: false, MapRecord: &{...}, UserRecord: <nil>, FileRecords: 0"
 time="..." level=debug msg="  MapRecord - DictId: 1, Info: /store/data/file.root"
-time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 1"
-time="..." level=debug msg="  FileRecord[0] - Open: FileId=42, User=1, Lfn=/store/data/file.root"
-time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 1"
-time="..." level=debug msg="  FileRecord[0] - Close: FileId=42, Read=131072, Write=0"
+time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 2"
+time="..." level=debug msg="  FileRecord[0] - Time: TBeg=1700000100, TEnd=1700000130"
+time="..." level=debug msg="  FileRecord[1] - Open: FileId=42, User=1, Lfn=/store/data/file.root"
+time="..." level=debug msg="Parsed packet from 192.0.2.10:1234 (ServerID: 1700000000#192.0.2.10) - Type: f, IsXML: false, MapRecord: <nil>, UserRecord: <nil>, FileRecords: 2"
+time="..." level=debug msg="  FileRecord[0] - Time: TBeg=1700000160, TEnd=1700000190"
+time="..." level=debug msg="  FileRecord[1] - Close: FileId=42, Read=131072, Write=0"
 ```
+
+Every f-stream packet starts with a `Time` record (XRootD's FileTOD). Its `TBeg`/`TEnd` bound when the packet's file events happened, and they become the operation's `start_time` and `end_time`.
 
 ### Viewing the Output
 
@@ -435,7 +818,7 @@ Example output record:
   "@timestamp": "2025-01-15T12:34:56Z",
   "start_time": 1736944496,
   "end_time": 1736944530,
-  "operation_time": 34000,
+  "operation_time": 34,
   "read_operations": 5,
   "read": 524288,
   "write": 0,
@@ -468,6 +851,20 @@ The system uses a configurable pool of concurrent worker goroutines for publishi
 - **Independent Connections**: Each worker maintains its own AMQP connection to the broker
 - **Context-Based Cancellation**: Clean shutdown using Go contexts
 - **Automatic Token Rotation**: Workers restart with new credentials when JWT tokens are updated
+
+#### Publisher Confirms
+
+Every message is published with RabbitMQ publisher confirms, and counted in `shoveler_messages_published` only once
+the broker acknowledges it. Each worker keeps up to `amqp.confirm_window` (default 4096) messages in flight, so
+throughput isn't limited to one message per round trip to the broker: it is capped at about window ÷ round-trip
+time, about 40,000 messages per second at 100 ms with the default, so it shouldn't need tuning. If the broker refuses a message, closes the
+channel, or stops confirming for 30 seconds, the worker opens a new channel and republishes every unconfirmed
+message, in order, before anything new; the same happens across token rotations. Delivery is therefore
+at-least-once: a message can occasionally arrive twice, but none is dropped.
+
+On SIGTERM or SIGINT (e.g. `systemctl stop`, or a pod being deleted) the shoveler stops publishing and saves every
+message it has taken from the queue but the broker hasn't confirmed to `<queue_directory>-inflight`, then exits.
+After a restart those messages are sent first, in their original order, ahead of the rest of the queue.
 
 #### Mode-Specific Behavior
 
@@ -592,6 +989,8 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_packets_received` - Total packets received
 - `shoveler_validations_failed` - Packets that failed validation
 - `shoveler_queue_size` - Current queue size
+- `shoveler_queue_dropped` - Oldest messages dropped because the queue reached `queue_max_messages`
+- `shoveler_messages_published` - Messages the message bus confirmed receiving (refused messages are kept and retried)
 - `shoveler_rabbitmq_reconnects` - MQ reconnection count
 
 **Collector Binary (additional):**
@@ -605,6 +1004,10 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 **Note:** The enrichment queue grows lazily in memory up to `COLLECTOR_STATE_ENRICHMENT_QUEUE_SIZE`; `1000000` queued request descriptors are about `32 MiB`, but the retained `CollectorRecord` objects are much larger and can exceed `600 MiB` before counting string data.
 - `shoveler_ttl_evictions` - State entries evicted due to TTL
 - `shoveler_records_emitted` - Collector records emitted
+- `shoveler_site_resolved_by_method{role,method}` - Transfer endpoints resolved to an RCSite, by which resolution method produced it
+- `shoveler_site_unresolved{role,reason}` - Transfer endpoints no method could resolve, by reason
+- `shoveler_site_registry_domains` / `shoveler_site_registry_hosts` / `shoveler_site_ip_routes` - Size of the currently loaded CRIC domain map / SE endpoint map / route table
+- `shoveler_site_registry_reload_failures` / `shoveler_site_hostname_reload_failures` / `shoveler_site_ip_reload_failures` - Failed fetches of a CRIC URL, including the first one at startup (the current data is kept)
 - `shoveler_parse_time_ms` - Packet parsing time histogram
 - `shoveler_request_latency_ms` - Request latency histogram
 
@@ -691,10 +1094,15 @@ if err != nil {
     // Handle error
 }
 
-// Access parsed data
-switch rec := packet.FileRecords[0].(type) {
-case parser.FileCloseRecord:
-    fmt.Printf("Read: %d bytes\n", rec.Xfr.Read)
+// Access parsed data. f-stream packets start with a FileTimeRecord,
+// followed by the open/close/disconnect records it covers.
+for _, r := range packet.FileRecords {
+    switch rec := r.(type) {
+    case parser.FileTimeRecord:
+        fmt.Printf("Window: %d-%d\n", rec.TBeg, rec.TEnd)
+    case parser.FileCloseRecord:
+        fmt.Printf("Read: %d bytes\n", rec.Xfr.Read)
+    }
 }
 ```
 
@@ -743,9 +1151,9 @@ The correlator (`collector/correlator.go`) correlates file operations across pac
 ```json
 {
   "@timestamp": "2025-11-20T19:33:40.526767022Z",
-  "start_time": 1763663574000,
-  "end_time": 1763663574000,
-  "operation_time": 0,
+  "start_time": 1763663544,
+  "end_time": 1763663574,
+  "operation_time": 30,
   "read_operations": 1,
   "read": 131072,
   "write": 0,

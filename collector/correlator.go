@@ -80,6 +80,37 @@ type CollectorRecord struct {
 	enrichmentIP       string `json:"-"` // User IP address that needs enrichment
 	needsServerDNS     bool   `json:"-"` // True if server hostname needs async DNS enrichment
 	serverEnrichmentIP string `json:"-"` // Server IP address that needs enrichment
+	clientHostname     string `json:"-"` // Full resolved client hostname for site matching (UserDomain keeps only the 2-label domain, which is too coarse for longest-suffix CRIC matching)
+
+	// Src/dst site resolution results. These are carriers for the WLCG converter
+	// and are deliberately NOT serialized: the site fields are emitted on the WLCG
+	// record only, so the plain collector record keeps its existing shape.
+	//
+	// srcSite/dstSite are the WLCG RCSite names of the transfer's source and
+	// destination endpoints, resolved from the configured local site, the CRIC SE
+	// endpoints, the CRIC domains map and the CRIC IP ranges (in
+	// site.resolution_order) and ordered by data-flow direction (read: src=server,
+	// dst=client; write: inverted).
+	// srcSiteStatus/dstSiteStatus record the per-endpoint resolution outcome
+	// (resolved_config/resolved_hostname/resolved/resolved_ip, or
+	// ambiguous/unknown_domain/no_host)
+	// so the UNKNOWN rate stays measurable. A site is empty unless its status is
+	// one of the resolved ones or "ambiguous", which names the first of the
+	// several sites the endpoint matched and must be read as a guess.
+	srcSite       string `json:"-"`
+	dstSite       string `json:"-"`
+	srcSiteStatus string `json:"-"`
+	dstSiteStatus string `json:"-"`
+}
+
+// clientHost returns the best available fully-qualified client host name for
+// site resolution: the DNS-resolved hostname when we have it, otherwise the raw
+// Host (which is only usable when it is already a name rather than an IP).
+func (r *CollectorRecord) clientHost() string {
+	if r.clientHostname != "" {
+		return r.clientHostname
+	}
+	return r.Host
 }
 
 // GStreamEvent represents a gstream event with added server information
@@ -160,10 +191,22 @@ type CorrelatorConfig struct {
 	EnableDNSEnrichment bool
 	DNSCacheTTL         time.Duration
 	DNSTimeout          time.Duration
-	EnrichmentWorkers   int          // Number of enrichment worker goroutines (default: 5)
-	EnrichmentQueueSize int          // Maximum number of pending enrichment requests (default: 1000000)
-	WLCGMetadata        WLCGMetadata // producer/type values used in WLCG records
+	EnrichmentWorkers   int               // Number of enrichment worker goroutines (default: 5)
+	EnrichmentQueueSize int               // Maximum number of pending enrichment requests (default: 1000000)
+	WLCGMetadata        WLCGMetadata      // producer/type values used in WLCG records
+	SiteRegistry        *SiteRegistry     // src/dst RCSite resolver; nil disables src_site/dst_site resolution
+	SiteOverrides       *SiteOverrides    // operator pins consulted before every CRIC lookup; nil disables overriding
+	SiteHostRegistry    *HostSiteRegistry // CRIC SE endpoint resolver backing the "hostname" method; nil drops that method
+	SiteIPRegistry      *IPSiteRegistry   // CRIC netroutes resolver backing the "ip" method; nil drops that method
 	Logger              *logrus.Logger
+
+	// Site resolution tuning. SiteLocalSite is the RCSite this collector runs at,
+	// which resolves the reporting server without any lookup; empty disables the
+	// "config" method. SiteResolutionOrder is the order the per-endpoint methods
+	// are tried in (nil/empty uses DefaultSiteResolutionOrder).
+	SiteLocalSite           string
+	SiteLocalSiteLANClients bool // also apply SiteLocalSite to clients on private/loopback addresses
+	SiteResolutionOrder     []string
 
 	// PerServerMetrics enables the optional metrics labelled by server_ip.
 	// Off by default - see countByServer.
@@ -248,6 +291,27 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 	if config.EnableDNSEnrichment {
 		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
 		c.registerEnricher(&dnsRecordEnricher{correlator: c})
+	}
+
+	if config.SiteRegistry != nil {
+		// Registered after the DNS enricher so the resolved server/client host
+		// names are already populated when src/dst site resolution runs. The
+		// hostname and IP registries are optional and only used when the
+		// order reaches them.
+		order := NormalizeSiteResolutionOrder(config.SiteResolutionOrder, config.Logger)
+		config.Logger.Infof("site: resolution order %s (local site %q)",
+			strings.Join(order, " -> "), config.SiteLocalSite)
+		c.registerEnricher(&siteRecordEnricher{
+			domains:             config.SiteRegistry,
+			overrides:           config.SiteOverrides,
+			ambig:               newAmbiguityReporter(config.Logger),
+			hosts:               config.SiteHostRegistry,
+			ips:                 config.SiteIPRegistry,
+			wlcgOnly:            c.matchesWLCG,
+			localSite:           config.SiteLocalSite,
+			localSiteLANClients: config.SiteLocalSiteLANClients,
+			order:               order,
+		})
 	}
 
 	c.startEnrichmentWorkers()
@@ -715,17 +779,10 @@ func extractIPFromHost(host string) string {
 		return v4.String()
 	}
 	// Handle IPv4-compatible IPv6 written in dotted notation (::a.b.c.d).
-	// net.ParseIP converts dotted notation to pure hex bytes, losing the
-	// dot-notation hint, so we detect this case from the original string.
-	// The distinguishing feature is a "." in the host (dotted-decimal IPv4).
-	if strings.Contains(host, ".") {
-		if idx := strings.LastIndex(host, ":"); idx >= 0 {
-			if v4 := net.ParseIP(host[idx+1:]); v4 != nil {
-				if v4addr := v4.To4(); v4addr != nil {
-					return v4addr.String()
-				}
-			}
-		}
+	// The first 96 bits must be zero: native IPv6 can also have a dotted
+	// suffix, and its prefix must be preserved for DNS and site matching.
+	if strings.Contains(host, ".") && ip.Mask(net.CIDRMask(96, 128)).IsUnspecified() {
+		return net.IP(ip[12:]).String()
 	}
 	return host
 }
@@ -1199,6 +1256,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	// DNS enrichment tracking
 	var needsDNSEnrichment bool
 	var enrichmentIP string
+	var clientHostname string
 
 	if userInfo != nil {
 		// Use username from userInfo
@@ -1218,6 +1276,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 				if hostname != "" {
 					// Successfully resolved - extract domain from hostname
 					userDomain = extractDomainFromHostname(hostname)
+					clientHostname = hostname
 				} else if needsAsync {
 					// Mark record as needing async DNS enrichment
 					needsDNSEnrichment = true
@@ -1226,6 +1285,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 			} else {
 				// Host is already a hostname - extract domain directly
 				userDomain = extractDomainFromHostname(host)
+				clientHostname = host
 			}
 		}
 
@@ -1372,6 +1432,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		enrichmentIP:           enrichmentIP,
 		needsServerDNS:         needsServerDNS,
 		serverEnrichmentIP:     serverEnrichmentIP,
+		clientHostname:         clientHostname,
 	}
 }
 

@@ -539,6 +539,21 @@ func TestExtractIPFromHost(t *testing.T) {
 			expected: "2001:db8::1",
 		},
 		{
+			name:     "native IPv6 with dotted suffix",
+			host:     "2001:db8::192.0.2.5",
+			expected: "2001:db8::192.0.2.5",
+		},
+		{
+			name:     "native IPv6 with brackets and dotted suffix",
+			host:     "[2001:db8::192.0.2.5]",
+			expected: "2001:db8::192.0.2.5",
+		},
+		{
+			name:     "IPv4-compatible IPv6 with expanded prefix",
+			host:     "0:0:0:0:0:0:192.0.2.5",
+			expected: "192.0.2.5",
+		},
+		{
 			name:     "IPv4",
 			host:     "192.168.1.1",
 			expected: "192.168.1.1",
