@@ -134,7 +134,7 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 			// namespaced per experiment, so the activity lookup cannot succeed
 			// either; skip it rather than counting the same unknown experiment a
 			// second time under kind="activity".
-			scitagsUnmappedIDsTotal.WithLabelValues("experiment").Inc()
+			scitagsUnmappedIDs.WithLabelValues("experiment").Inc()
 		} else {
 			// The SciTags experiment name is the VO the flow belongs to. It is kept
 			// in its own field so it never overwrites VO, which comes from the
@@ -146,7 +146,7 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 			if record.ActivityID != 0 {
 				activity = scitags.ActivityName(record.ExperimentID, record.ActivityID)
 				if activity == "" {
-					scitagsUnmappedIDsTotal.WithLabelValues("activity").Inc()
+					scitagsUnmappedIDs.WithLabelValues("activity").Inc()
 				}
 			}
 		}

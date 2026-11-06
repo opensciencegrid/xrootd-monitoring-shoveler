@@ -96,20 +96,20 @@ var (
 		Help: "Number of (experiment, activity) pairs in the currently loaded SciTags registry",
 	})
 
-	// scitagsRegistryReloadFailures counts background refresh attempts that failed;
-	// on failure the previous registry is retained. A sustained rise indicates the
-	// configured SciTags URL is unreachable or serving invalid data.
+	// scitagsRegistryReloadFailures counts failed fetches of a SciTags URL,
+	// including the first one at startup; the current registry is kept. A steady
+	// rise means the URL is down or serving bad data.
 	scitagsRegistryReloadFailures = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "shoveler_scitags_registry_reload_failures_total",
-		Help: "Total number of SciTags registry background refresh attempts that failed",
+		Name: "shoveler_scitags_registry_reload_failures",
+		Help: "Total number of failed SciTags registry URL fetches",
 	})
 
-	// scitagsUnmappedIDsTotal counts U-stream experiment/activity ids that could
+	// scitagsUnmappedIDs counts U-stream experiment/activity ids that could
 	// not be resolved to a name against the loaded registry, broken down by which
 	// id was missing. A sustained rise usually means the registry snapshot is
 	// stale relative to what the servers are tagging.
-	scitagsUnmappedIDsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "shoveler_scitags_unmapped_ids_total",
+	scitagsUnmappedIDs = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "shoveler_scitags_unmapped_ids",
 		Help: "Total number of SciTags ids that could not be resolved to a name",
 	}, []string{"kind"})
 )

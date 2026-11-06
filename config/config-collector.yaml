@@ -102,6 +102,17 @@ state:
 #   ip_source: ""
 #   ip_refresh_interval: 86400
 
+# SciTags experiment/activity names (collector mode only)
+# Transfers tagged with SciTags carry an experiment id and activity id (Ec/Ac on
+# the 'U' stream). Every record gets experiment_id/activity_id; WLCG records also
+# get the names (experiment, activity, scitags_vo) from the SciTags registry.
+# Uses the registry snapshot embedded in the binary by default.
+# scitags:
+#   # "" = the embedded snapshot; else a file path or URL, e.g.
+#   # https://scitags.docs.cern.ch/api.json
+#   source: ""
+#   refresh_interval: 3600     # seconds between re-fetches of a URL source (0 = fetch once)
+
 # Select which protocol to use in order to connect to the MQ
 # mq: amqp/stomp
 

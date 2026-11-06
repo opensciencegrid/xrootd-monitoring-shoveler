@@ -62,6 +62,7 @@ graph LR
     - [Packet Verification](#packet-verification)
     - [IP Mapping](#ip-mapping)
     - [Src/Dst Site Resolution](#srcdst-site-resolution)
+    - [SciTags Experiment and Activity](#scitags-experiment-and-activity)
   - [Running the Shoveler](#running-the-shoveler)
   - [Testing Packet Flow with the Collector](#testing-packet-flow-with-the-collector)
   - [:compass: Design](#compass-design)
@@ -541,6 +542,55 @@ exactly what CRIC does server-side — replicated locally so no record ever wait
 a network call. The server's self-reported `site` field (from the `=` map packet)
 is left untouched; `src_site`/`dst_site` are new fields alongside it.
 
+### SciTags Experiment and Activity
+
+**Collector mode only.** [SciTags](https://scitags.docs.cern.ch) labels a
+transfer with an experiment id and an activity id, for example through
+`scitag.flow` in the XRootD URL. The server reports the two ids on the 'U'
+monitoring stream (`&Ec=2&Ac=15`), and the collector puts them on its records:
+
+| field | plain record | WLCG record | example |
+|---|---|---|---|
+| `experiment_id` | yes | yes | `2` |
+| `activity_id` | yes | yes | `15` |
+| `experiment` | – | yes | `atlas` |
+| `activity` | – | yes | `Production Input` |
+| `scitags_vo` | – | yes | `atlas` |
+
+All of them are omitted when the transfer has no tag. Activity ids are numbered
+per experiment (activity 3 is `Data Brokering` for atlas and `Cache` for cms),
+so the collector always looks up the pair. `scitags_vo` is the experiment name,
+kept apart from `vo`, which still comes from the auth/token streams. It is left
+empty for the registry's `default` experiment (id 1), which is not a VO.
+
+> **Changed output:** plain records used to carry the raw values as strings in
+> `experiment` / `activity`. They now carry `experiment_id` / `activity_id` as
+> numbers; the names are only on WLCG records.
+
+Names come from the [SciTags registry](https://scitags.docs.cern.ch/api.json).
+A snapshot of it is **embedded in the binary**, so this works with no
+configuration and no network access. To follow the registry live, or use your
+own copy:
+
+```yaml
+scitags:
+  source: https://scitags.docs.cern.ch/api.json  # "" (default) = embedded snapshot; or a file path
+  refresh_interval: 3600                          # seconds between re-fetches of a URL (0 = fetch once)
+```
+
+A URL is fetched in the background, so a slow server does not delay startup,
+and a failed fetch keeps the current registry. A document with no usable
+experiments (every entry has id 0 or a blank name) counts as a failed fetch.
+The environment variables are `COLLECTOR_SCITAGS_SOURCE` and
+`COLLECTOR_SCITAGS_REFRESH_INTERVAL`.
+
+To refresh the embedded snapshot, replace `collector/scitags_api.json`:
+
+```bash
+curl -fsS https://scitags.docs.cern.ch/api.json -o collector/scitags_api.json.tmp \
+  && mv collector/scitags_api.json.tmp collector/scitags_api.json
+```
+
 ## Running the Shoveler
 
 The shoveler is a statically linked binary, distributed as an RPM and uploaded to docker hub and OSG's container hub.
@@ -865,6 +915,9 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_site_unresolved{role,reason}` - Transfer endpoints no method could resolve, by reason
 - `shoveler_site_registry_domains` / `shoveler_site_registry_hosts` / `shoveler_site_ip_routes` - Size of the currently loaded CRIC domain map / SE endpoint map / route table
 - `shoveler_site_registry_reload_failures` / `shoveler_site_hostname_reload_failures` / `shoveler_site_ip_reload_failures` - Failed fetches of a CRIC URL, including the first one at startup (the current data is kept)
+- `shoveler_scitags_registry_experiments` / `shoveler_scitags_registry_activities` - Number of experiments / (experiment, activity) pairs in the currently loaded SciTags registry
+- `shoveler_scitags_registry_reload_failures` - Failed fetches of a SciTags URL, including the first one at startup (the current registry is kept)
+- `shoveler_scitags_unmapped_ids{kind}` - SciTags ids on WLCG records that the registry has no name for, by `kind` (`experiment` or `activity`). A steady rise usually means the registry is out of date
 - `shoveler_parse_time_ms` - Packet parsing time histogram
 - `shoveler_request_latency_ms` - Request latency histogram
 
