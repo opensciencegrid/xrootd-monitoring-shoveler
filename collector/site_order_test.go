@@ -214,7 +214,7 @@ func TestSiteResolutionNoApplicableMethod(t *testing.T) {
 			}
 			rec := &CollectorRecord{Host: tc.host, Read: 1}
 			e.Enrich(context.Background(), rec)
-			wlcg, err := ConvertToWLCG(rec, WLCGMetadata{})
+			wlcg, err := ConvertToWLCG(rec, WLCGMetadata{}, nil)
 			require.NoError(t, err)
 			assert.Empty(t, wlcg.DstSite)
 			assert.Equal(t, "no_applicable_method", wlcg.DstSiteStatus)
