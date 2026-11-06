@@ -685,7 +685,7 @@ func extractIPFromHost(host string) string {
 	// Handle IPv4-compatible IPv6 written in dotted notation (::a.b.c.d).
 	// The first 96 bits must be zero: native IPv6 can also have a dotted
 	// suffix, and its prefix must be preserved for DNS and site matching.
-	if strings.Contains(host, ".") && bytes.Equal(ip[:12], net.IPv6zero[:12]) {
+	if strings.Contains(host, ".") && ip.Mask(net.CIDRMask(96, 128)).IsUnspecified() {
 		return net.IP(ip[12:]).String()
 	}
 	return host
