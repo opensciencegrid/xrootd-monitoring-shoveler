@@ -275,26 +275,26 @@ func buildWLCGMetadata(config *shoveler.Config) collector.WLCGMetadata {
 	}
 }
 
-// cricRegistry is the part the domains, SE and netroutes registries have in
-// common, so they can all be set up by startCRICSource.
-type cricRegistry interface {
+// sourceRegistry is the part the CRIC (domains, SE, netroutes) and SciTags
+// registries have in common, so they can all be set up by startSource.
+type sourceRegistry interface {
 	SetHTTPClient(client *http.Client)
 	LoadSource(ctx context.Context, src string) error
 	StartRefresh(ctx context.Context, src string, interval time.Duration)
 }
 
-// startCRICSource loads a registry's configured source. The registry already
+// startSource loads a registry's configured source. The registry already
 // holds the built-in snapshot, so it works even if this fails.
 //
 //   - No source: keep the built-in snapshot.
 //   - A file: read it now. It is local, so this is fast.
 //   - A URL: fetch it in the background and re-fetch it every intervalSeconds.
-//     Startup does not wait for it, so a slow or down CRIC cannot delay the
+//     Startup does not wait for it, so a slow or down server cannot delay the
 //     collector. The built-in snapshot is used until the first fetch succeeds.
 //
-// what is a short name for the source ("domains", "SE", "netroutes"), used in
-// log messages.
-func startCRICSource(ctx context.Context, registry cricRegistry, what, src string, intervalSeconds int,
+// what is a short name for the source ("CRIC domains", "SciTags"), used in log
+// messages.
+func startSource(ctx context.Context, registry sourceRegistry, what, src string, intervalSeconds int,
 	client *http.Client, logger *logrus.Logger) {
 	registry.SetHTTPClient(client)
 	switch {
@@ -303,7 +303,7 @@ func startCRICSource(ctx context.Context, registry cricRegistry, what, src strin
 		registry.StartRefresh(ctx, src, time.Duration(intervalSeconds)*time.Second)
 	default:
 		if err := registry.LoadSource(ctx, src); err != nil {
-			logger.Warnf("Failed to load CRIC %s source %q, using embedded snapshot: %v", what, src, err)
+			logger.Warnf("Failed to load %s source %q, using embedded snapshot: %v", what, src, err)
 		}
 	}
 }
@@ -316,7 +316,7 @@ func buildSiteRegistry(ctx context.Context, config *shoveler.Config, client *htt
 		return nil
 	}
 	registry := collector.NewSiteRegistry(logger)
-	startCRICSource(ctx, registry, "domains", config.Site.Source, config.Site.RefreshInterval, client, logger)
+	startSource(ctx, registry, "CRIC domains", config.Site.Source, config.Site.RefreshInterval, client, logger)
 	return registry
 }
 
@@ -351,7 +351,7 @@ func buildHostSiteRegistry(ctx context.Context, config *shoveler.Config, client 
 		return nil
 	}
 	registry := collector.NewHostSiteRegistry(logger)
-	startCRICSource(ctx, registry, "SE", config.Site.HostnameSource, config.Site.HostnameRefreshInterval, client, logger)
+	startSource(ctx, registry, "CRIC SE", config.Site.HostnameSource, config.Site.HostnameRefreshInterval, client, logger)
 	return registry
 }
 
@@ -363,7 +363,7 @@ func buildIPSiteRegistry(ctx context.Context, config *shoveler.Config, client *h
 		return nil
 	}
 	registry := collector.NewIPSiteRegistry(logger)
-	startCRICSource(ctx, registry, "netroutes", config.Site.IPSource, config.Site.IPRefreshInterval, client, logger)
+	startSource(ctx, registry, "CRIC netroutes", config.Site.IPSource, config.Site.IPRefreshInterval, client, logger)
 	return registry
 }
 
@@ -428,22 +428,12 @@ func buildCRICHTTPClient(config *shoveler.Config, logger *logrus.Logger) *http.C
 	return client
 }
 
-// buildScitagsRegistry constructs the SciTags registry from config. It always
-// starts from the embedded snapshot; when a source is configured it attempts to
-// load it, and on failure keeps the embedded data (fail-open). URL sources are
-// refreshed in the background for the life of the process.
+// buildScitagsRegistry creates the SciTags registry, starting from the built-in
+// snapshot and loading scitags.source the same way as the CRIC sources. It uses
+// the OS CA certificates; site.ca_path is for CRIC only.
 func buildScitagsRegistry(ctx context.Context, config *shoveler.Config, logger *logrus.Logger) *collector.ScitagsRegistry {
 	registry := collector.NewScitagsRegistry(logger)
-
-	src := config.Scitags.Source
-	if src == "" {
-		return registry
-	}
-
-	if err := registry.LoadSource(ctx, src); err != nil {
-		logger.Warnf("Failed to load SciTags source %q, using embedded snapshot: %v", src, err)
-	}
-	registry.StartRefresh(ctx, src, time.Duration(config.Scitags.RefreshInterval)*time.Second)
+	startSource(ctx, registry, "SciTags", config.Scitags.Source, config.Scitags.RefreshInterval, nil, logger)
 	return registry
 }
 

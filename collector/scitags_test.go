@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -159,4 +161,66 @@ func TestScitagsLoadSourceURLBadStatus(t *testing.T) {
 
 	r := NewScitagsRegistry(newTestLogger())
 	require.Error(t, r.LoadSource(context.Background(), srv.URL))
+}
+
+// TestScitagsStartRefreshFetchesRightAway checks that a URL source is fetched
+// as soon as the refresh starts, not only after the first interval.
+func TestScitagsStartRefreshFetchesRightAway(t *testing.T) {
+	doc := `{"experiments":[{"expName":"urlexp","expId":60}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(doc))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r := NewScitagsRegistry(newTestLogger())
+	r.StartRefresh(ctx, srv.URL, time.Hour)
+
+	assert.Eventually(t, func() bool { return r.ExperimentName(60) == "urlexp" },
+		2*time.Second, 10*time.Millisecond, "the first fetch should happen right away")
+}
+
+// TestScitagsStartRefreshRetriesFailedFirstFetch checks that a failed first
+// fetch keeps the built-in snapshot and is retried before the full interval.
+func TestScitagsStartRefreshRetriesFailedFirstFetch(t *testing.T) {
+	defer func(d time.Duration) { refreshRetryMin = d }(refreshRetryMin)
+	refreshRetryMin = 5 * time.Millisecond
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"experiments":[{"expName":"urlexp","expId":60}]}`))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r := NewScitagsRegistry(newTestLogger())
+	r.StartRefresh(ctx, srv.URL, time.Hour)
+
+	assert.Eventually(t, func() bool { return r.ExperimentName(60) == "urlexp" },
+		2*time.Second, 5*time.Millisecond, "a failed first fetch should be retried well before an hour")
+	assert.GreaterOrEqual(t, calls.Load(), int32(2))
+}
+
+// TestScitagsSetHTTPClient checks that URL sources are fetched with the client
+// set by SetHTTPClient, e.g. one that trusts a test server's certificate.
+func TestScitagsSetHTTPClient(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"experiments":[{"expName":"tlsexp","expId":61}]}`))
+	}))
+	defer srv.Close()
+
+	r := NewScitagsRegistry(newTestLogger())
+	require.Error(t, r.LoadSource(context.Background(), srv.URL), "default client should not trust the test certificate")
+
+	r.SetHTTPClient(srv.Client())
+	require.NoError(t, r.LoadSource(context.Background(), srv.URL))
+	assert.Equal(t, "tlsexp", r.ExperimentName(61))
 }

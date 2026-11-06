@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -59,6 +57,7 @@ func activityKey(expID, actID int) int64 {
 // swaps in a freshly fetched registry under the write lock.
 type ScitagsRegistry struct {
 	logger *logrus.Logger
+	client *http.Client // fetches URL sources; nil trusts only the OS CA certificates
 
 	mu          sync.RWMutex
 	experiments map[int]string   // expId -> expName
@@ -159,63 +158,31 @@ func (r *ScitagsRegistry) ActivityName(expID, actID int) string {
 // LoadSource fetches and loads a registry from a source that is either a local
 // file path or an http(s):// URL.
 func (r *ScitagsRegistry) LoadSource(ctx context.Context, src string) error {
-	data, err := fetchScitagsSource(ctx, src)
+	data, err := fetchSource(ctx, r.client, src, "SciTags")
 	if err != nil {
 		return err
 	}
 	return r.Load(data)
 }
 
-// fetchScitagsSource reads a registry document from a file path or http(s) URL.
-func fetchScitagsSource(ctx context.Context, src string) ([]byte, error) {
-	if !isURL(src) {
-		data, err := os.ReadFile(src)
-		if err != nil {
-			return nil, fmt.Errorf("read scitags file %q: %w", src, err)
-		}
-		return data, nil
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build scitags request: %w", err)
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch scitags url %q: %w", src, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch scitags url %q: unexpected status %s", src, resp.Status)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // cap at 8 MiB
-	if err != nil {
-		return nil, fmt.Errorf("read scitags url body %q: %w", src, err)
-	}
-	return data, nil
-}
-
-// StartRefresh periodically re-fetches a URL source and reloads the registry
-// until ctx is cancelled. It is a no-op for file sources or when interval <= 0.
-// A failed refresh is logged and the previous registry is retained.
+// StartRefresh keeps the registry up to date from a URL, in the background. It
+// fetches right away, then again every interval (only once if interval is 0).
+// If a fetch fails, the current registry is kept and the error is logged. It
+// does nothing for a file; use LoadSource for that.
 func (r *ScitagsRegistry) StartRefresh(ctx context.Context, src string, interval time.Duration) {
-	if src == "" || !isURL(src) || interval <= 0 {
+	if !isURL(src) {
 		return
 	}
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := r.LoadSource(ctx, src); err != nil {
-					scitagsRegistryReloadFailures.Inc()
-					r.logger.Warnf("scitags: registry refresh failed, keeping previous data: %v", err)
-				}
-			}
-		}
-	}()
+	go refreshLoop(ctx, interval,
+		func(ctx context.Context) error { return r.LoadSource(ctx, src) },
+		func(err error) {
+			scitagsRegistryReloadFailures.Inc()
+			r.logger.Warnf("scitags: registry fetch failed, keeping current data: %v", err)
+		})
+}
+
+// SetHTTPClient sets the client used to fetch URL sources. Call it before
+// LoadSource and StartRefresh. A nil client trusts only the OS CA certificates.
+func (r *ScitagsRegistry) SetHTTPClient(client *http.Client) {
+	r.client = client
 }
