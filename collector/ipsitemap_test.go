@@ -164,3 +164,32 @@ func TestSiteEnricherNoIPRegistry(t *testing.T) {
 	assert.Empty(t, rec.dstSite)
 	assert.Equal(t, SiteStatusNoHost, rec.dstSiteStatus)
 }
+
+func TestSiteEnricherPreservesNativeIPv6(t *testing.T) {
+	ips := NewIPSiteRegistry(newSiteTestLogger())
+	require.NoError(t, ips.Load([]byte(`{
+		"SITE-V6": {"netroutes": {"r": {"networks": {"ipv6": ["2001:db8::/32"]}}}},
+		"SITE-V4": {"netroutes": {"r": {"networks": {"ipv4": ["192.0.2.0/24"]}}}}
+	}`)))
+	e := &siteRecordEnricher{domains: NewSiteRegistry(newSiteTestLogger()), ips: ips}
+
+	for _, host := range []string{"[2001:db8::192.0.2.5]", "2001:db8::c000:205"} {
+		rec := &CollectorRecord{ServerIP: host, Host: host, Read: 1}
+		e.Enrich(context.Background(), rec)
+		assert.Equal(t, "SITE-V6", rec.srcSite, "server %s", host)
+		assert.Equal(t, "SITE-V6", rec.dstSite, "client %s", host)
+		assert.Equal(t, SiteStatusResolvedIP, rec.srcSiteStatus)
+		assert.Equal(t, SiteStatusResolvedIP, rec.dstSiteStatus)
+	}
+
+	// Address overrides must use the IPv6 prefix as well, even when the dotted
+	// suffix happens to fall inside a pinned IPv4 range.
+	e.overrides = NewSiteOverrides(map[string]string{
+		"2001:db8::/32": "PIN-V6",
+		"192.0.2.0/24":  "PIN-V4",
+	}, newSiteTestLogger())
+	rec := &CollectorRecord{Host: "[2001:db8::192.0.2.5]", Read: 1}
+	e.Enrich(context.Background(), rec)
+	assert.Equal(t, "PIN-V6", rec.dstSite)
+	assert.Equal(t, SiteStatusResolvedOverride, rec.dstSiteStatus)
+}

@@ -3,6 +3,7 @@ package input
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/url"
@@ -58,12 +59,23 @@ func NewRabbitMQReader(brokerURL, queueName, exchange, routingKey, tokenPath str
 	}
 }
 
+// parseBrokerURL parses a broker URL without echoing it in the error:
+// url.Error includes the raw URL, password and all.
+func parseBrokerURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return nil, fmt.Errorf("invalid broker URL (not shown, it may contain credentials): %w", ue.Err)
+	}
+	return u, err
+}
+
 // Start begins reading from RabbitMQ
 func (r *RabbitMQReader) Start() error {
 	// Check if broker URL already has credentials
-	brokerURL, err := url.Parse(r.brokerURL)
+	brokerURL, err := parseBrokerURL(r.brokerURL)
 	if err != nil {
-		return fmt.Errorf("invalid broker URL: %w", err)
+		return err
 	}
 
 	// Only read token if URL doesn't have credentials and token path is provided
@@ -115,9 +127,9 @@ func (r *RabbitMQReader) readToken() (string, error) {
 // connect establishes connection to RabbitMQ
 func (r *RabbitMQReader) connect() error {
 	// Parse broker URL
-	brokerURL, err := url.Parse(r.brokerURL)
+	brokerURL, err := parseBrokerURL(r.brokerURL)
 	if err != nil {
-		return fmt.Errorf("invalid broker URL: %w", err)
+		return err
 	}
 
 	// Add credentials if token is available and URL doesn't have credentials

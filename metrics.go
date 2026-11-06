@@ -20,9 +20,19 @@ var (
 		Help: "The total number of packets that failed validation",
 	})
 
+	MessagesPublished = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_messages_published",
+		Help: "The total number of messages published to the message bus",
+	})
+
 	RabbitmqReconnects = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "shoveler_rabbitmq_reconnects",
 		Help: "The total number of reconnections to rabbitmq bus",
+	})
+
+	QueueDropped = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_queue_dropped",
+		Help: "The oldest queued messages dropped because the queue reached queue_max_messages",
 	})
 
 	QueueSize = promauto.NewGauge(prometheus.GaugeOpts{
@@ -61,6 +71,17 @@ var (
 		Help: "The total number of collector records emitted",
 	})
 
+	// RecordsEmittedByServer counts correlated file-access records published per upstream
+	// server IP.
+	//
+	// Opt-in via metrics.per_server; exports no series unless enabled, because the
+	// server_ip cardinality is set by the number of reporting XRootD servers and is
+	// unbounded from the collector's point of view.
+	RecordsEmittedByServer = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "shoveler_records_emitted_by_server_total",
+		Help: "Total number of collector records emitted, partitioned by upstream server IP (opt-in: metrics.per_server)",
+	}, []string{"server_ip"})
+
 	ParseTimeMs = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "shoveler_parse_time_ms",
 		Help:    "Packet parsing time in milliseconds",
@@ -87,6 +108,18 @@ var (
 		Name: "shoveler_gstream_queue_size",
 		Help: "Current number of pending gstream packets in the async worker queue",
 	})
+
+	// PacketsByType counts successfully parsed packets broken down by XRootD frame type.
+	// Label values: "fstat" (f), "dict" (d), "user" (u), "eainfo" (U), "map" (=),
+	// "gstream" (g), "info" (i), "trace" (t), "token" (T), "purge" (p), "redir" (r),
+	// "xfr" (x), and "xml" (XML summary packets).
+	// Use this alongside shoveler_records_emitted: when records_emitted is low relative
+	// to packets_received but "fstat" counts are also low, the traffic is dominated by
+	// context packets (dict/user/eainfo/map) rather than missing close events.
+	PacketsByType = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "shoveler_packets_by_type",
+		Help: "Total number of successfully parsed packets, partitioned by XRootD packet type",
+	}, []string{"packet_type"})
 )
 
 func StartMetrics(metricsPort int) {
