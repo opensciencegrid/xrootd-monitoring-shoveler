@@ -1,6 +1,10 @@
 package main
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -142,5 +146,103 @@ func TestGStreamWorkers_ProcessAndEmit(t *testing.T) {
 	}
 	if len(exchanges) != 1 || exchanges[0] != "cache-exchange" {
 		t.Fatalf("expected exchange cache-exchange, got %#v", exchanges)
+	}
+}
+
+// TestWarnInertNameMethods covers when the collector tells an operator that
+// name-based site resolution cannot answer for the server endpoint. The warning
+// must fire on the shipped defaults (DNS off, no local_site) and stay quiet
+// whenever the server end is already covered — otherwise it trains operators to
+// ignore it.
+func TestWarnInertNameMethods(t *testing.T) {
+	defaultOrder := []string{"config", "hostname", "ip", "domain"}
+
+	cases := []struct {
+		name     string
+		site     shoveler.SiteConfig
+		dnsOn    bool
+		wantWarn bool
+	}{
+		{
+			name:     "shipped defaults: DNS off and no local_site",
+			site:     shoveler.SiteConfig{Enabled: true, ResolutionOrder: defaultOrder},
+			wantWarn: true,
+		},
+		{
+			name:     "local_site set: config resolves the server end first",
+			site:     shoveler.SiteConfig{Enabled: true, LocalSite: "CERN-PROD", ResolutionOrder: defaultOrder},
+			wantWarn: false,
+		},
+		{
+			name:     "local_site set but config method dropped from the order",
+			site:     shoveler.SiteConfig{Enabled: true, LocalSite: "CERN-PROD", ResolutionOrder: []string{"hostname", "ip", "domain"}},
+			wantWarn: true,
+		},
+		{
+			name:     "DNS on: names are available for the server end",
+			site:     shoveler.SiteConfig{Enabled: true, ResolutionOrder: defaultOrder},
+			dnsOn:    true,
+			wantWarn: false,
+		},
+		{
+			name:     "no name-based method requested",
+			site:     shoveler.SiteConfig{Enabled: true, ResolutionOrder: []string{"config", "ip"}},
+			wantWarn: false,
+		},
+		{
+			name:     "site resolution disabled entirely",
+			site:     shoveler.SiteConfig{Enabled: false, ResolutionOrder: defaultOrder},
+			wantWarn: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := logrus.New()
+			var buf strings.Builder
+			logger.SetOutput(&buf)
+			logger.SetLevel(logrus.WarnLevel)
+
+			cfg := &shoveler.Config{Site: tc.site}
+			cfg.State.EnableDNSEnrichment = tc.dnsOn
+
+			warnInertNameMethods(cfg, logger)
+
+			warned := strings.Contains(buf.String(), "enable_dns_enrichment")
+			if warned != tc.wantWarn {
+				t.Errorf("warned = %v, want %v; log: %s", warned, tc.wantWarn, buf.String())
+			}
+		})
+	}
+}
+
+// TestStartCRICSourceDoesNotBlockOnURL verifies that a CRIC URL is fetched in
+// the background: an endpoint that never answers must not hold up startup, and
+// the registry keeps serving the embedded snapshot meanwhile.
+func TestStartCRICSourceDoesNotBlockOnURL(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	registry := collector.NewSiteRegistry(logger)
+
+	start := time.Now()
+	startCRICSource(ctx, registry, "domains", srv.URL, 3600, nil, logger)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("startCRICSource blocked for %s on an unresponsive URL", elapsed)
+	}
+	if site, _ := registry.ResolveHost("x.cern.ch"); site != "CERN-PROD" {
+		t.Errorf("embedded snapshot not served while the fetch is pending: got %q", site)
 	}
 }
