@@ -93,7 +93,7 @@ func createFStreamPacket(pseq uint8, tBeg, tEnd uint32, records ...[]byte) []byt
 	b = binary.BigEndian.AppendUint32(b, 1000) // server start
 
 	// FileTOD: recType, recFlag, recSize, nRecs[0] (xfr records), nRecs[1] (total records), tBeg, tEnd, sid
-	b = append(b, parser.RecTypeTime, 0)
+	b = append(b, parser.RecTypeTime, 0x01) // hasSID
 	b = binary.BigEndian.AppendUint16(b, 24)
 	b = binary.BigEndian.AppendUint16(b, 0)
 	b = binary.BigEndian.AppendUint16(b, uint16(len(records)))
