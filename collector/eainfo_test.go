@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -271,10 +272,16 @@ func TestCorrelator_EAInfoInCorrelatedRecord(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, record)
 
-	// The collector record carries the raw ids; the names are resolved during
-	// WLCG conversion, so they are not on this record at all.
+	// The collector record carries the raw ids; the names are looked up during
+	// WLCG conversion.
 	assert.Equal(t, 4, record.ExperimentID, "Experiment id should be in record")
 	assert.Equal(t, 3, record.ActivityID, "Activity id should be in record")
+
+	plain, err := json.Marshal(record)
+	require.NoError(t, err)
+	assert.Contains(t, string(plain), `"experiment_id":4`, "plain record JSON should carry the experiment id")
+	assert.Contains(t, string(plain), `"activity_id":3`, "plain record JSON should carry the activity id")
+	assert.NotContains(t, string(plain), `"experiment":`, "plain record JSON should have no experiment name")
 	assert.Equal(t, "cms", record.VO, "Auth-derived VO should be untouched")
 	assert.Equal(t, "testuser", record.User)
 	assert.Equal(t, int64(1000), record.Read)

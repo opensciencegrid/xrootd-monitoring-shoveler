@@ -121,12 +121,9 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 	// Generate unique ID
 	uniqueID := uuid.New().String()
 
-	// Resolve the numeric SciTags ids from the 'U' stream to the names published
-	// by the registry. This happens here rather than at record creation because
-	// the names belong to the WLCG record: ConvertToWLCG is only ever reached
-	// through the WLCG routing predicate, so a record that is not WLCG-bound
-	// never pays for the lookups and never carries the fields. A nil registry
-	// disables resolution and leaves the ids unaccompanied.
+	// Look up the names for the SciTags ids from the 'U' stream. Names go on
+	// WLCG records only, so the lookup lives here; plain records keep just the
+	// ids. A nil registry turns the lookup off and the ids are sent alone.
 	experiment := ""
 	activity := ""
 	scitagsVO := ""

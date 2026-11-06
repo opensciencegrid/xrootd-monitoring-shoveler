@@ -37,18 +37,12 @@ type CollectorRecord struct {
 	TokenOrg       string    `json:"token_org,omitempty"`
 	TokenRole      string    `json:"token_role,omitempty"`
 	TokenGroups    string    `json:"token_groups,omitempty"`
-	// ExperimentID and ActivityID are the raw numeric SciTags flow-label ids
-	// carried on the 'U' (MAPUEAC) stream, 0 when unset. Activity ids are
-	// namespaced per experiment, so ActivityID is only meaningful alongside
-	// ExperimentID.
-	//
-	// SciTags is a WLCG concern end to end: ConvertToWLCG resolves these to
-	// names and emits both the ids and the names on the WLCG record. They carry
-	// json:"-" so they never reach the plain collector record, which is not a
-	// WLCG record and must not carry SciTags data. The fields stay exported
-	// because they are still the in-memory carrier the converter reads.
-	ExperimentID           int     `json:"-"`
-	ActivityID             int     `json:"-"`
+	// ExperimentID and ActivityID are the raw SciTags ids from the 'U' (MAPUEAC)
+	// stream, 0 when unset. An activity id only means something together with
+	// its experiment id. Plain records carry just the ids; ConvertToWLCG also
+	// looks up the names for WLCG records.
+	ExperimentID           int     `json:"experiment_id,omitempty"`
+	ActivityID             int     `json:"activity_id,omitempty"`
 	Filename               string  `json:"filename"`
 	Dirname1               string  `json:"dirname1"`
 	Dirname2               string  `json:"dirname2"`
@@ -1263,9 +1257,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		}
 	}
 
-	// Carry the raw SciTags ids from the 'U' stream. They are parsed packet data,
-	// so they are stamped here unconditionally; turning them into names happens
-	// in ConvertToWLCG, for WLCG-bound records only.
+	// Carry the raw SciTags ids from the 'U' stream. ConvertToWLCG adds the
+	// names for WLCG records.
 	experimentID := 0
 	activityID := 0
 	if userInfo != nil {
