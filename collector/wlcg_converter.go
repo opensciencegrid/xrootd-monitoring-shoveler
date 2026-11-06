@@ -35,6 +35,8 @@ type WLCGRecord struct {
 	Operation              string                 `json:"operation"`
 	ServerSite             string                 `json:"server_site"`
 	UserProtocol           string                 `json:"user_protocol,omitempty"`
+	ClientApp              string                 `json:"client_app,omitempty"`
+	ClientInfo             string                 `json:"client_info,omitempty"`
 	VO                     string                 `json:"vo,omitempty"`
 	WriteBytes             int64                  `json:"write_bytes"`
 	ReadAverage            int64                  `json:"read_average,omitempty"`
@@ -172,6 +174,8 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata) (*WLCGRecord, err
 		WriteOperations:        record.WriteOperations,
 		Experiment:             record.Experiment,
 		Activity:               record.Activity,
+		ClientApp:              record.ClientApp,
+		ClientInfo:             record.ClientInfo,
 	}
 
 	// Parse appinfo for CRAB information if present
