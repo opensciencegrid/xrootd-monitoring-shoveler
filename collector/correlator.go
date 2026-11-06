@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 )
 
@@ -79,6 +80,37 @@ type CollectorRecord struct {
 	enrichmentIP       string `json:"-"` // User IP address that needs enrichment
 	needsServerDNS     bool   `json:"-"` // True if server hostname needs async DNS enrichment
 	serverEnrichmentIP string `json:"-"` // Server IP address that needs enrichment
+	clientHostname     string `json:"-"` // Full resolved client hostname for site matching (UserDomain keeps only the 2-label domain, which is too coarse for longest-suffix CRIC matching)
+
+	// Src/dst site resolution results. These are carriers for the WLCG converter
+	// and are deliberately NOT serialized: the site fields are emitted on the WLCG
+	// record only, so the plain collector record keeps its existing shape.
+	//
+	// srcSite/dstSite are the WLCG RCSite names of the transfer's source and
+	// destination endpoints, resolved from the configured local site, the CRIC SE
+	// endpoints, the CRIC domains map and the CRIC IP ranges (in
+	// site.resolution_order) and ordered by data-flow direction (read: src=server,
+	// dst=client; write: inverted).
+	// srcSiteStatus/dstSiteStatus record the per-endpoint resolution outcome
+	// (resolved_config/resolved_hostname/resolved/resolved_ip, or
+	// ambiguous/unknown_domain/no_host)
+	// so the UNKNOWN rate stays measurable. A site is empty unless its status is
+	// one of the resolved ones or "ambiguous", which names the first of the
+	// several sites the endpoint matched and must be read as a guess.
+	srcSite       string `json:"-"`
+	dstSite       string `json:"-"`
+	srcSiteStatus string `json:"-"`
+	dstSiteStatus string `json:"-"`
+}
+
+// clientHost returns the best available fully-qualified client host name for
+// site resolution: the DNS-resolved hostname when we have it, otherwise the raw
+// Host (which is only usable when it is already a name rather than an IP).
+func (r *CollectorRecord) clientHost() string {
+	if r.clientHostname != "" {
+		return r.clientHostname
+	}
+	return r.Host
 }
 
 // GStreamEvent represents a gstream event with added server information
@@ -147,6 +179,9 @@ type Correlator struct {
 	// Record drop filter
 	dropPathPrefixes []string
 	dropVOs          []string
+
+	// perServerMetrics gates the optional server_ip-labelled metrics
+	perServerMetrics bool
 }
 
 // CorrelatorConfig holds configuration for the correlator including DNS enrichment
@@ -156,10 +191,26 @@ type CorrelatorConfig struct {
 	EnableDNSEnrichment bool
 	DNSCacheTTL         time.Duration
 	DNSTimeout          time.Duration
-	EnrichmentWorkers   int // Number of enrichment worker goroutines (default: 5)
-	EnrichmentQueueSize int // Maximum number of pending enrichment requests (default: 1000000)
-	WLCGMetadata        WLCGMetadata // producer/type values used in WLCG records
+	EnrichmentWorkers   int               // Number of enrichment worker goroutines (default: 5)
+	EnrichmentQueueSize int               // Maximum number of pending enrichment requests (default: 1000000)
+	WLCGMetadata        WLCGMetadata      // producer/type values used in WLCG records
+	SiteRegistry        *SiteRegistry     // src/dst RCSite resolver; nil disables src_site/dst_site resolution
+	SiteOverrides       *SiteOverrides    // operator pins consulted before every CRIC lookup; nil disables overriding
+	SiteHostRegistry    *HostSiteRegistry // CRIC SE endpoint resolver backing the "hostname" method; nil drops that method
+	SiteIPRegistry      *IPSiteRegistry   // CRIC netroutes resolver backing the "ip" method; nil drops that method
 	Logger              *logrus.Logger
+
+	// Site resolution tuning. SiteLocalSite is the RCSite this collector runs at,
+	// which resolves the reporting server without any lookup; empty disables the
+	// "config" method. SiteResolutionOrder is the order the per-endpoint methods
+	// are tried in (nil/empty uses DefaultSiteResolutionOrder).
+	SiteLocalSite           string
+	SiteLocalSiteLANClients bool // also apply SiteLocalSite to clients on private/loopback addresses
+	SiteResolutionOrder     []string
+
+	// PerServerMetrics enables the optional metrics labelled by server_ip.
+	// Off by default - see countByServer.
+	PerServerMetrics bool
 
 	// WLCG routing: records matching any VO (case-insensitive) or path prefix are
 	// converted and routed to the WLCG exchange.
@@ -234,6 +285,7 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		wlcgPathPrefixes:      wlcgPathPrefixes,
 		dropPathPrefixes:      config.DropPathPrefixes,
 		dropVOs:               config.DropVOs,
+		perServerMetrics:      config.PerServerMetrics,
 	}
 
 	if config.EnableDNSEnrichment {
@@ -241,9 +293,62 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		c.registerEnricher(&dnsRecordEnricher{correlator: c})
 	}
 
+	if config.SiteRegistry != nil {
+		// Registered after the DNS enricher so the resolved server/client host
+		// names are already populated when src/dst site resolution runs. The
+		// hostname and IP registries are optional and only used when the
+		// order reaches them.
+		order := NormalizeSiteResolutionOrder(config.SiteResolutionOrder, config.Logger)
+		config.Logger.Infof("site: resolution order %s (local site %q)",
+			strings.Join(order, " -> "), config.SiteLocalSite)
+		c.registerEnricher(&siteRecordEnricher{
+			domains:             config.SiteRegistry,
+			overrides:           config.SiteOverrides,
+			ambig:               newAmbiguityReporter(config.Logger),
+			hosts:               config.SiteHostRegistry,
+			ips:                 config.SiteIPRegistry,
+			wlcgOnly:            c.matchesWLCG,
+			localSite:           config.SiteLocalSite,
+			localSiteLANClients: config.SiteLocalSiteLANClients,
+			order:               order,
+		})
+	}
+
 	c.startEnrichmentWorkers()
 
 	return c
+}
+
+// PacketTypeName maps an XRootD packet-type byte to a readable label.
+func PacketTypeName(code byte) string {
+	switch code {
+	case parser.PacketTypeMap:
+		return "map"
+	case parser.PacketTypeDictID:
+		return "dict"
+	case parser.PacketTypeFStat:
+		return "fstat"
+	case parser.PacketTypeGStream:
+		return "gstream"
+	case parser.PacketTypeInfo:
+		return "info"
+	case parser.PacketTypePurg:
+		return "purge"
+	case parser.PacketTypeRedir:
+		return "redir"
+	case parser.PacketTypeTrace:
+		return "trace"
+	case parser.PacketTypeToken:
+		return "token"
+	case parser.PacketTypeUser:
+		return "user"
+	case parser.PacketTypeEAInfo:
+		return "eainfo"
+	case parser.PacketTypeXFR:
+		return "xfr"
+	default:
+		return "unknown"
+	}
 }
 
 // ProcessPacket processes a packet and returns records for all correlated file operations
@@ -252,6 +357,13 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 	if packet.IsXML {
 		// XML packets are not correlated
 		return nil, nil
+	}
+
+	// serverIP only ever labels the optional per-server metrics here, so skip
+	// the address parse entirely when they are disabled.
+	var serverIP string
+	if c.perServerMetrics {
+		serverIP = canonicalServerIP(packet.RemoteAddr)
 	}
 
 	// Calculate server ID: serverStart#addr#port
@@ -288,6 +400,7 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 	for _, rec := range packet.FileRecords {
 		switch r := rec.(type) {
 		case parser.FileOpenRecord:
+			c.countByServer(fileOpenRecordsTotal, serverIP)
 			result, err := c.handleFileOpen(r, packet, serverID, windowBeg)
 			if err != nil {
 				return records, err
@@ -296,6 +409,7 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 				records = append(records, result)
 			}
 		case parser.FileCloseRecord:
+			c.countByServer(fileCloseRecordsTotal, serverIP)
 			result, err := c.handleFileClose(r, packet, serverID, windowBeg, windowEnd)
 			if err != nil {
 				return records, err
@@ -306,6 +420,7 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 		case parser.FileTimeRecord:
 			// The window was already extracted above; the FileTOD record itself
 			// does not correlate to a file operation.
+			c.countByServer(fileTimeRecordsTotal, serverIP)
 		case parser.FileDisconnectRecord:
 			c.handleDisconnect(r, serverID)
 			// Disconnect doesn't generate a record, just cleanup
@@ -326,21 +441,22 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 		return nil, 0, nil
 	}
 
+	// Use the same canonical IP as the ingest metrics and file records.
+	serverIP := canonicalServerIP(packet.RemoteAddr)
+
 	gstream := packet.GStreamRecord
 	serverID := c.getServerID(packet)
 
 	// Extract address from packet
 	addr := packet.RemoteAddr
-	host := extractHostFromRemoteAddr(addr)
 
 	// Resolve server hostname via DNS lookup (mirrors Python _determineHostname).
 	// lookupDNSHostname checks the cache first and, on a miss, performs a bounded
-	// reverse DNS lookup and caches the result.  Falls back to the raw IP when DNS
-	// is disabled or the lookup fails.
-	serverHostname := host
-	if isIPPattern(host) {
-		ipStr := extractIPFromHost(host)
-		if resolved := c.lookupDNSHostname(c.ctx, ipStr); resolved != "" {
+	// reverse DNS lookup and caches the result.  Falls back to the canonical IP when
+	// DNS is disabled or the lookup fails.
+	serverHostname := serverIP
+	if isIPPattern(serverIP) {
+		if resolved := c.lookupDNSHostname(c.ctx, serverIP); resolved != "" {
 			serverHostname = resolved
 		}
 	}
@@ -356,7 +472,9 @@ func (c *Correlator) ProcessGStreamPacket(packet *parser.Packet) ([]map[string]i
 
 		// Add server information
 		enrichedEvent["sid"] = serverID
-		enrichedEvent["server_ip"] = host
+		// serverIP (not the raw host) so the event's server_ip matches the
+		// server_ip metric labels and can be joined against them.
+		enrichedEvent["server_ip"] = serverIP
 		enrichedEvent["server_hostname"] = serverHostname
 		enrichedEvent["from"] = addr
 
@@ -594,6 +712,48 @@ func isIPPattern(s string) bool {
 		(firstChar >= '0' && firstChar <= '9') || firstChar == '.'
 }
 
+// canonicalServerIP derives the canonical upstream-server IP from a packet's
+// RemoteAddr. This is the single source of truth for every "server_ip" value the
+// collector produces. The server_ip metric label on shoveler_packets_by_server_total,
+// shoveler_file_{open,close,time}_records_total and shoveler_records_emitted_by_server_total,
+// as well as the server_ip field on emitted collector records and gstream events.
+//
+// Deriving it in one place matters because the forms are not interchangeable: the
+// same server reaching us as "[::ffff:1.2.3.4]:1094" would otherwise appear as
+// "1.2.3.4" on one metric and "::ffff:1.2.3.4" on another, breaking PromQL joins
+// and aggregations by server_ip. Returns "unknown" when the address is absent.
+func canonicalServerIP(remoteAddr string) string {
+	if remoteAddr == "" {
+		return "unknown"
+	}
+	ip := extractIPFromHost(extractHostFromRemoteAddr(remoteAddr))
+	if ip == "" {
+		return "unknown"
+	}
+	return ip
+}
+
+// countByServer increments a server_ip-labelled counter, but only when the
+// per-server metrics are enabled.
+//
+// These metrics are opt-in because their cardinality is set by the number of
+// XRootD servers reporting to this collector, which the collector cannot bound:
+// every new server that sends a packet creates a new series in each affected
+// family, and the series are never reclaimed for a server that goes away. A
+// large site can therefore grow the metric families without limit. Capping the
+// label count or tracking reporting servers in a side map both cost memory and
+// give unreliable numbers, so the breakdown is simply left off unless a site
+// asks for it via metrics.per_server.
+//
+// When disabled, nothing is ever observed and the families export no series at
+// all, so the server_ip label never reaches the registry.
+func (c *Correlator) countByServer(vec *prometheus.CounterVec, labelValues ...string) {
+	if !c.perServerMetrics {
+		return
+	}
+	vec.WithLabelValues(labelValues...).Inc()
+}
+
 // extractIPFromHost extracts the IP address from a host string
 // Host format can be: "[::ipv6:addr]" or "ipv4.addr" or "hostname"
 func extractIPFromHost(host string) string {
@@ -619,17 +779,10 @@ func extractIPFromHost(host string) string {
 		return v4.String()
 	}
 	// Handle IPv4-compatible IPv6 written in dotted notation (::a.b.c.d).
-	// net.ParseIP converts dotted notation to pure hex bytes, losing the
-	// dot-notation hint, so we detect this case from the original string.
-	// The distinguishing feature is a "." in the host (dotted-decimal IPv4).
-	if strings.Contains(host, ".") {
-		if idx := strings.LastIndex(host, ":"); idx >= 0 {
-			if v4 := net.ParseIP(host[idx+1:]); v4 != nil {
-				if v4addr := v4.To4(); v4addr != nil {
-					return v4addr.String()
-				}
-			}
-		}
+	// The first 96 bits must be zero: native IPv6 can also have a dotted
+	// suffix, and its prefix must be preserved for DNS and site matching.
+	if strings.Contains(host, ".") && ip.Mask(net.CIDRMask(96, 128)).IsUnspecified() {
+		return net.IP(ip[12:]).String()
 	}
 	return host
 }
@@ -764,6 +917,7 @@ func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.
 	val, exists := c.stateMap.Get(key)
 	if !exists {
 		c.logger.Debugf("No open record found for file close: serverID=%s, fileID=%d - creating standalone record", serverID, rec.Header.FileId)
+		standaloneCloseRecordsTotal.Inc()
 		// No open record found, create a standalone close record
 		return c.createStandaloneCloseRecord(rec, packet, windowBeg, windowEnd), nil
 	}
@@ -1102,6 +1256,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	// DNS enrichment tracking
 	var needsDNSEnrichment bool
 	var enrichmentIP string
+	var clientHostname string
 
 	if userInfo != nil {
 		// Use username from userInfo
@@ -1121,6 +1276,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 				if hostname != "" {
 					// Successfully resolved - extract domain from hostname
 					userDomain = extractDomainFromHostname(hostname)
+					clientHostname = hostname
 				} else if needsAsync {
 					// Mark record as needing async DNS enrichment
 					needsDNSEnrichment = true
@@ -1129,6 +1285,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 			} else {
 				// Host is already a hostname - extract domain directly
 				userDomain = extractDomainFromHostname(host)
+				clientHostname = host
 			}
 		}
 
@@ -1188,18 +1345,19 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 	var needsServerDNS bool
 	var serverEnrichmentIP string
 	if packet.RemoteAddr != "" {
-		serverIP = extractHostFromRemoteAddr(packet.RemoteAddr)
+		// Same derivation as the server_ip metric labels so records and metrics
+		// can be correlated on server_ip.
+		serverIP = canonicalServerIP(packet.RemoteAddr)
 		serverHostname = serverIP
 
 		// Try DNS enrichment for server hostname
 		if isIPPattern(serverIP) {
-			ipStr := extractIPFromHost(serverIP)
-			hostname, needsAsync := c.enrichWithDNSSync(ipStr)
+			hostname, needsAsync := c.enrichWithDNSSync(serverIP)
 			if hostname != "" {
 				serverHostname = hostname
 			} else if needsAsync {
 				needsServerDNS = true
-				serverEnrichmentIP = ipStr
+				serverEnrichmentIP = serverIP
 			}
 		}
 	}
@@ -1274,6 +1432,7 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		enrichmentIP:           enrichmentIP,
 		needsServerDNS:         needsServerDNS,
 		serverEnrichmentIP:     serverEnrichmentIP,
+		clientHostname:         clientHostname,
 	}
 }
 

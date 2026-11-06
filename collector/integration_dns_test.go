@@ -341,7 +341,7 @@ func TestEndToEnd_WLCGDNSEnrichment(t *testing.T) {
 
 	// Open packet for a /store path (WLCG-eligible)
 	openRec := parser.FileOpenRecord{
-		Header: parser.FileHeader{RecType: parser.RecTypeOpen, FileId: 1, UserId: 100},
+		Header:   parser.FileHeader{RecType: parser.RecTypeOpen, FileId: 1, UserId: 100},
 		FileSize: 1024,
 		User:     100,
 		Lfn:      []byte("/store/data/Run2026/file.root"),

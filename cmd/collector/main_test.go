@@ -1,6 +1,11 @@
 package main
 
 import (
+	"context"
+	"encoding/binary"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -9,8 +14,12 @@ import (
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/collector"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/connectors"
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/input"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/require"
 )
 
 type mockOutputConnector struct {
@@ -142,5 +151,195 @@ func TestGStreamWorkers_ProcessAndEmit(t *testing.T) {
 	}
 	if len(exchanges) != 1 || exchanges[0] != "cache-exchange" {
 		t.Fatalf("expected exchange cache-exchange, got %#v", exchanges)
+	}
+}
+
+type testPacketSource struct {
+	packets chan input.PacketWithAddr
+}
+
+func (s *testPacketSource) Start() error                                 { return nil }
+func (s *testPacketSource) Stop() error                                  { return nil }
+func (s *testPacketSource) PacketsWithAddr() <-chan input.PacketWithAddr { return s.packets }
+
+func packetsByServer(t *testing.T, serverIP string) map[string]float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	counts := make(map[string]float64)
+	for _, family := range families {
+		if family.GetName() != "shoveler_packets_by_server_total" {
+			continue
+		}
+		for _, metric := range family.Metric {
+			labels := make(map[string]string)
+			for _, label := range metric.Label {
+				labels[label.GetName()] = label.GetValue()
+			}
+			if labels["server_ip"] == serverIP {
+				counts[labels["packet_type"]] = metric.GetCounter().GetValue()
+			}
+		}
+	}
+	return counts
+}
+
+func TestProcessPackets_PerServerMetricsBeforeDispatch(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		enabled bool
+		ip      string
+	}{
+		{name: "enabled", enabled: true, ip: "198.51.100.97"},
+		{name: "disabled", ip: "203.0.113.97"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := logrus.New()
+			logger.SetLevel(logrus.ErrorLevel)
+			cor := collector.NewCorrelatorWithConfig(collector.CorrelatorConfig{
+				TTL: time.Minute, PerServerMetrics: tt.enabled, Logger: logger,
+			})
+			defer cor.Stop()
+
+			gstream := make([]byte, 24)
+			gstream[0] = parser.PacketTypeGStream
+			binary.BigEndian.PutUint16(gstream[2:4], uint16(len(gstream)))
+			gstream[16] = 'T'
+			xfr := []byte{parser.PacketTypeXFR, 0, 0, 8, 0, 0, 0, 1}
+			data := [][]byte{gstream, gstream, xfr, []byte("<statistics/>"), {}}
+			source := &testPacketSource{packets: make(chan input.PacketWithAddr, len(data))}
+			for _, packet := range data {
+				// Verify metrics use the same canonical IP as emitted records.
+				source.packets <- input.PacketWithAddr{Data: packet, RemoteAddr: "[::ffff:" + tt.ip + "]:1094"}
+			}
+			close(source.packets)
+
+			// With no worker draining this queue, one gstream packet must be dropped.
+			queue := make(chan *parser.Packet, 1)
+			var dropped int64
+			before := packetsByServer(t, tt.ip)
+			beforeParsed := testutil.ToFloat64(shoveler.PacketsParsedOK)
+			beforeErrors := testutil.ToFloat64(shoveler.ParseErrors)
+			processPackets(source, cor, queue, &dropped, collector.EnrichmentDestination{}, logger)
+			require.Equal(t, int64(1), dropped)
+			require.Equal(t, beforeParsed+4, testutil.ToFloat64(shoveler.PacketsParsedOK))
+			require.Equal(t, beforeErrors+1, testutil.ToFloat64(shoveler.ParseErrors))
+
+			want := make(map[string]float64)
+			for stream, count := range before {
+				want[stream] = count
+			}
+			if tt.enabled {
+				want["gstream"] += 2
+				want["xfr"]++
+				want["xml"]++
+			}
+			require.Equal(t, want, packetsByServer(t, tt.ip), "count parsed packets before dispatch, including queue drops")
+
+			close(queue)
+			for packet := range queue {
+				_, _, err := cor.ProcessGStreamPacket(packet)
+				require.NoError(t, err)
+			}
+			require.Equal(t, want, packetsByServer(t, tt.ip), "workers must not count packets again")
+		})
+	}
+}
+
+// TestWarnInertNameMethods covers when the collector tells an operator that
+// name-based site resolution cannot answer for the server endpoint. The warning
+// must fire on the shipped defaults (DNS off, no local_site) and stay quiet
+// whenever the server end is already covered — otherwise it trains operators to
+// ignore it.
+func TestWarnInertNameMethods(t *testing.T) {
+	defaultOrder := []string{"config", "hostname", "ip", "domain"}
+
+	cases := []struct {
+		name     string
+		site     shoveler.SiteConfig
+		dnsOn    bool
+		wantWarn bool
+	}{
+		{
+			name:     "shipped defaults: DNS off and no local_site",
+			site:     shoveler.SiteConfig{Enabled: true, ResolutionOrder: defaultOrder},
+			wantWarn: true,
+		},
+		{
+			name:     "local_site set: config resolves the server end first",
+			site:     shoveler.SiteConfig{Enabled: true, LocalSite: "CERN-PROD", ResolutionOrder: defaultOrder},
+			wantWarn: false,
+		},
+		{
+			name:     "local_site set but config method dropped from the order",
+			site:     shoveler.SiteConfig{Enabled: true, LocalSite: "CERN-PROD", ResolutionOrder: []string{"hostname", "ip", "domain"}},
+			wantWarn: true,
+		},
+		{
+			name:     "DNS on: names are available for the server end",
+			site:     shoveler.SiteConfig{Enabled: true, ResolutionOrder: defaultOrder},
+			dnsOn:    true,
+			wantWarn: false,
+		},
+		{
+			name:     "no name-based method requested",
+			site:     shoveler.SiteConfig{Enabled: true, ResolutionOrder: []string{"config", "ip"}},
+			wantWarn: false,
+		},
+		{
+			name:     "site resolution disabled entirely",
+			site:     shoveler.SiteConfig{Enabled: false, ResolutionOrder: defaultOrder},
+			wantWarn: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := logrus.New()
+			var buf strings.Builder
+			logger.SetOutput(&buf)
+			logger.SetLevel(logrus.WarnLevel)
+
+			cfg := &shoveler.Config{Site: tc.site}
+			cfg.State.EnableDNSEnrichment = tc.dnsOn
+
+			warnInertNameMethods(cfg, logger)
+
+			warned := strings.Contains(buf.String(), "enable_dns_enrichment")
+			if warned != tc.wantWarn {
+				t.Errorf("warned = %v, want %v; log: %s", warned, tc.wantWarn, buf.String())
+			}
+		})
+	}
+}
+
+// TestStartCRICSourceDoesNotBlockOnURL verifies that a CRIC URL is fetched in
+// the background: an endpoint that never answers must not hold up startup, and
+// the registry keeps serving the embedded snapshot meanwhile.
+func TestStartCRICSourceDoesNotBlockOnURL(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	registry := collector.NewSiteRegistry(logger)
+
+	start := time.Now()
+	startCRICSource(ctx, registry, "domains", srv.URL, 3600, nil, logger)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("startCRICSource blocked for %s on an unresponsive URL", elapsed)
+	}
+	if site, _ := registry.ResolveHost("x.cern.ch"); site != "CERN-PROD" {
+		t.Errorf("embedded snapshot not served while the fetch is pending: got %q", site)
 	}
 }

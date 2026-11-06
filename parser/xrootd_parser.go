@@ -60,16 +60,17 @@ type binaryFileHeaderCommon struct {
 	FileId  uint32
 }
 
+// binaryFileTimeRecord is XrdXrootdMonFileTOD without its trailing sID. For
+// isTime records the header's fileID union holds nRecs[2] instead, so tBeg
+// starts at offset 8. sID (8 more bytes) is present only when recSize >= 24.
 type binaryFileTimeRecord struct {
 	RecType uint8
 	RecFlag uint8
 	RecSize uint16
-	FileId  uint32
-	NRecs0  uint16
-	NRecs1  uint16
+	NRecs0  uint16 // isXfr records in this packet
+	NRecs1  uint16 // total records in this packet
 	TBeg    uint32
 	TEnd    uint32
-	SID     uint64
 }
 
 type binaryFileCloseRecordHeader struct {
@@ -123,7 +124,9 @@ type FileHeader struct {
 	NRecs1  int16  // Number of records (part 1)
 }
 
-// FileTimeRecord represents a TOD (time of day) record
+// FileTimeRecord represents a TOD (time of day) record. Every f-stream packet
+// leads with one; TBeg/TEnd bound when the packet's file events happened.
+// Header.FileId is unused (the wire field holds NRecs0/NRecs1 instead).
 type FileTimeRecord struct {
 	Header FileHeader
 	TBeg   int32 // Begin time
@@ -780,31 +783,10 @@ func parseFileRecords(header Header, b []byte, packetType byte) ([]interface{}, 
 	// Skip the main packet header (8 bytes)
 	reader := bytes.NewReader(b[8:])
 
-	// f-stream packets always start with a FileTOD structure (RecType=isTime=2)
-	// We need to skip this first record before processing actual file records
-	if reader.Len() >= 8 {
-		// Peek at the first record to check if it's a time record
-		var firstHeader binaryFileHeaderCommon
-		pos, _ := reader.Seek(0, io.SeekCurrent)
-		if err := binary.Read(reader, binary.BigEndian, &firstHeader); err == nil {
-			if firstHeader.RecType == RecTypeTime {
-				// Skip to the end of this record
-				if _, err := reader.Seek(pos+int64(firstHeader.RecSize), io.SeekStart); err != nil {
-					return nil, fmt.Errorf("failed to seek past time record: %w", err)
-				}
-			} else {
-				// Reset to the start of this record
-				if _, err := reader.Seek(pos, io.SeekStart); err != nil {
-					return nil, fmt.Errorf("failed to seek back to record start: %w", err)
-				}
-			}
-		} else {
-			if _, err := reader.Seek(pos, io.SeekStart); err != nil {
-				return nil, fmt.Errorf("failed to seek back after read error: %w", err)
-			}
-		}
-	}
-
+	// f-stream packets always start with a FileTOD structure (RecType=isTime=2).
+	// It is returned as the first record: its tBeg/tEnd bound the window in
+	// which the packet's file events happened, which the correlator uses as
+	// the operation start/end times.
 	var records []interface{}
 
 parseLoop:
@@ -833,28 +815,41 @@ parseLoop:
 			break parseLoop // Failed to seek back
 		}
 
-		// Parse based on record type
-		switch commonHeader.RecType {
-		case RecTypeTime:
+		// Parse based on record type. A time record too short to hold
+		// tBeg/tEnd (16 bytes) falls through to default and is skipped.
+		switch {
+		case commonHeader.RecType == RecTypeTime && commonHeader.RecSize >= 16:
 			var timeRec binaryFileTimeRecord
 			if err := binary.Read(reader, binary.BigEndian, &timeRec); err != nil {
 				return records, fmt.Errorf("failed to parse time record: %w", err)
+			}
+
+			// sID is absent from the 16-byte records older servers send
+			var sid uint64
+			if timeRec.RecSize >= 24 {
+				if err := binary.Read(reader, binary.BigEndian, &sid); err != nil {
+					return records, fmt.Errorf("failed to parse time record sID: %w", err)
+				}
+			}
+
+			// Ensure we're at the end of the record
+			if _, err := reader.Seek(pos+int64(timeRec.RecSize), io.SeekStart); err != nil {
+				break parseLoop
 			}
 			records = append(records, FileTimeRecord{
 				Header: FileHeader{
 					RecType: timeRec.RecType,
 					RecFlag: timeRec.RecFlag,
 					RecSize: timeRec.RecSize,
-					FileId:  timeRec.FileId,
 					NRecs0:  int16(timeRec.NRecs0),
 					NRecs1:  int16(timeRec.NRecs1),
 				},
 				TBeg: int32(timeRec.TBeg),
 				TEnd: int32(timeRec.TEnd),
-				SID:  int64(timeRec.SID),
+				SID:  int64(sid),
 			})
 
-		case RecTypeClose:
+		case commonHeader.RecType == RecTypeClose:
 			var closeHeader binaryFileCloseRecordHeader
 			if err := binary.Read(reader, binary.BigEndian, &closeHeader); err != nil {
 				return records, fmt.Errorf("failed to parse close record header: %w", err)
@@ -874,8 +869,10 @@ parseLoop:
 				},
 			}
 
-			// Check if ops stats are present (RecFlag & 0x02 means hasOPS)
-			if (closeHeader.RecFlag&0x02) != 0 && reader.Len() >= 48 {
+			// Check if ops stats are present (RecFlag & 0x02 means hasOPS) and
+			// fit in this record (8 header + 24 xfr + 48 ops), so a short record
+			// can't pull ops from the records after it
+			if (closeHeader.RecFlag&0x02) != 0 && closeHeader.RecSize >= 80 {
 				var ops binaryStatOPS
 				if err := binary.Read(reader, binary.BigEndian, &ops); err == nil {
 					closeRec.Ops = StatOPS{
@@ -901,7 +898,7 @@ parseLoop:
 			}
 			records = append(records, closeRec)
 
-		case RecTypeOpen:
+		case commonHeader.RecType == RecTypeOpen:
 			var openHeader binaryFileOpenRecordHeader
 			if err := binary.Read(reader, binary.BigEndian, &openHeader); err != nil {
 				return records, fmt.Errorf("failed to parse open record header: %w", err)
@@ -930,7 +927,7 @@ parseLoop:
 			// Read remaining bytes as filename
 			currentPos, seekErr := reader.Seek(0, io.SeekCurrent)
 			if seekErr != nil {
-				break
+				break parseLoop
 			}
 			recordEnd := pos + int64(openHeader.RecSize)
 			lfnLen := recordEnd - currentPos
@@ -951,7 +948,7 @@ parseLoop:
 			}
 			records = append(records, openRec)
 
-		case RecTypeDisc:
+		case commonHeader.RecType == RecTypeDisc:
 			// Disconnect record - userID field contains the dictid of disconnecting user
 			discRec := FileDisconnectRecord{
 				Header: FileHeader{
@@ -986,8 +983,17 @@ func (p *Packet) GetRequestID() string {
 		return fmt.Sprintf("map-%d", p.MapRecord.DictId)
 	}
 
-	if len(p.FileRecords) > 0 {
-		switch rec := p.FileRecords[0].(type) {
+	fileRecs := p.FileRecords
+	// Skip the leading FileTOD every f-stream packet carries: it has no file
+	// ID, so it would give every packet from a server the same request ID
+	if len(fileRecs) > 1 {
+		if _, ok := fileRecs[0].(FileTimeRecord); ok {
+			fileRecs = fileRecs[1:]
+		}
+	}
+
+	if len(fileRecs) > 0 {
+		switch rec := fileRecs[0].(type) {
 		case FileTimeRecord:
 			return fmt.Sprintf("time-%d-%d", rec.Header.FileId, rec.SID)
 		case FileCloseRecord:
