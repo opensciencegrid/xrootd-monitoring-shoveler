@@ -283,6 +283,25 @@ func emitGStreamEvent(event map[string]interface{}, streamType byte, config *sho
 	}
 }
 
+// buildRecordWLCGMetadata is buildWLCGMetadata plus the VO settings, which only
+// apply to file-transfer records. It is separate because buildWLCGMetadata runs
+// once per gstream event, while normalizing the VO order is startup work: it
+// allocates and warns about unknown or repeated names. This runs once, when the
+// correlator is built. With wlcg.enabled off it adds nothing.
+func buildRecordWLCGMetadata(config *shoveler.Config, logger *logrus.Logger) collector.WLCGMetadata {
+	meta := buildWLCGMetadata(config)
+	if !config.WLCG.Enabled {
+		return meta
+	}
+
+	meta.VOResolution = collector.VOResolution{
+		Enabled: true,
+		VO:      config.WLCG.VO,
+		Order:   collector.NormalizeVOOrder(config.WLCG.VOOrder, logger),
+	}
+	return meta
+}
+
 // buildWLCGMetadata maps the WLCG producer/type config into the collector's
 // metadata struct used when creating WLCG-formatted records.
 func buildWLCGMetadata(config *shoveler.Config) collector.WLCGMetadata {
@@ -470,7 +489,7 @@ func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger 
 		DNSTimeout:          time.Duration(config.State.DNSTimeout) * time.Second,
 		EnrichmentWorkers:   config.State.EnrichmentWorkers,
 		EnrichmentQueueSize: config.State.EnrichmentQueueSize,
-		WLCGMetadata:        buildWLCGMetadata(config),
+		WLCGMetadata:        buildRecordWLCGMetadata(config, logger),
 		SiteRegistry:        buildSiteRegistry(ctx, config, cricClient, logger),
 		SiteOverrides:       buildSiteOverrides(config, logger),
 		SiteHostRegistry:    buildHostSiteRegistry(ctx, config, cricClient, logger),
@@ -484,6 +503,11 @@ func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger 
 
 		WLCGVOs:          config.WLCG.VOs,
 		WLCGPathPrefixes: config.WLCG.PathPrefixes,
+
+		WLCGEnabled:             config.WLCG.Enabled,
+		WLCGExcludeVOs:          config.WLCG.ExcludeVOs,
+		WLCGExcludePathPrefixes: config.WLCG.ExcludePathPrefixes,
+
 		DropPathPrefixes: config.Filter.DropPathPrefixes,
 		DropVOs:          config.Filter.DropVOs,
 		PerServerMetrics: config.MetricsPerServer,

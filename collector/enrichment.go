@@ -237,7 +237,15 @@ func (c *Correlator) enrichmentWorker() {
 }
 
 func (c *Correlator) processEnrichmentRequest(req enrichmentRequest) {
-	// Drop filter runs first — a matching record is published to neither exchange.
+	// Find the VO first, so the drop filter and the WLCG rules below all match
+	// the same value. Most records have no VO from the auth stream, so a VO rule
+	// would have almost nothing to match otherwise.
+	//
+	// Does nothing when wlcg.enabled is off; the rules then see the packet's VO,
+	// as upstream.
+	c.resolveRecordVO(req.record)
+
+	// Drop filter runs next. A matching record goes to neither exchange.
 	if drop, reason := c.shouldDrop(req.record); drop {
 		recordsDropped.WithLabelValues(reason).Inc()
 		return

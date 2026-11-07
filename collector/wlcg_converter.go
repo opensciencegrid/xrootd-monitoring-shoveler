@@ -40,6 +40,8 @@ type WLCGRecord struct {
 	DstSiteStatus          string                 `json:"dst_site_status,omitempty"`
 	UserProtocol           string                 `json:"user_protocol,omitempty"`
 	VO                     string                 `json:"vo,omitempty"`
+	RecordVO               string                 `json:"record_vo,omitempty"`
+	VOSource               string                 `json:"vo_source,omitempty"`
 	WriteBytes             int64                  `json:"write_bytes"`
 	ReadAverage            int64                  `json:"read_average,omitempty"`
 	ReadBytesAtClose       int64                  `json:"read_bytes_at_close,omitempty"`
@@ -81,10 +83,10 @@ type WLCGRecord struct {
 // IsWLCGPacket determines if a record should be converted to WLCG format
 // using the default routing rules from the reference implementation.
 //
-// Deprecated: runtime routing uses CorrelatorConfig (WLCGVOs/WLCGPathPrefixes)
-// and may differ when those values are overridden.
+// Deprecated: runtime routing uses CorrelatorConfig (WLCGVOs/WLCGPathPrefixes
+// and the WLCGExclude* lists) and may differ when those values are overridden.
 func IsWLCGPacket(record *CollectorRecord) bool {
-	return matchesWLCGWithRules(record, defaultWLCGVOs, defaultWLCGPathPrefixes)
+	return wlcgRouting{VOs: defaultWLCGVOs, PathPrefixes: defaultWLCGPathPrefixes}.eligible(record.VO, record.Filename)
 }
 
 // WLCGMetadata holds the configurable producer/type values used to create the
@@ -97,6 +99,25 @@ type WLCGMetadata struct {
 	Producer        string // metadata.producer for file-transfer (file-close) records
 	Type            string // metadata.type for file-transfer records
 	GStreamProducer string // metadata.producer for gstream cache & TPC records
+
+	// VOResolution holds the VO settings; they only apply when it is enabled.
+	VOResolution VOResolution
+}
+
+// VOResolution holds the VO settings for a converted record, off by default.
+// While Enabled is false "vo" is whatever the packet said and record_vo is not
+// written at all, so the output matches a collector without any of this.
+type VOResolution struct {
+	Enabled bool
+
+	// VO names the VO this collector serves: one of the three sources the resolved
+	// "vo" field can come from, used last by default. Empty leaves it out of
+	// the resolution entirely.
+	VO string
+
+	// Order is the order the VO sources are tried in, first hit wins. Nil means
+	// DefaultVOOrder (record, scitags, config). See NormalizeVOOrder.
+	Order []string
 }
 
 // deriveOperation classifies a record as "read", "write", or "unknown" from its
@@ -121,35 +142,13 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 	// Generate unique ID
 	uniqueID := uuid.New().String()
 
-	// Look up the names for the SciTags ids from the 'U' stream. Names go on
-	// WLCG records only, so the lookup lives here; plain records keep just the
-	// ids. A nil registry turns the lookup off and the ids are sent alone.
-	experiment := ""
-	activity := ""
-	scitagsVO := ""
-	if scitags != nil && record.ExperimentID != 0 {
-		experiment = scitags.ExperimentName(record.ExperimentID)
-		if experiment == "" {
-			// The experiment id is unknown to the registry. Activity ids are
-			// namespaced per experiment, so the activity lookup cannot succeed
-			// either; skip it rather than counting the same unknown experiment a
-			// second time under kind="activity".
-			scitagsUnmappedIDs.WithLabelValues("experiment").Inc()
-		} else {
-			// The SciTags experiment name is the VO the flow belongs to. It is kept
-			// in its own field so it never overwrites VO, which comes from the
-			// auth/token streams and downstream consumers already depend on it.
-			// The "default" experiment means "no experiment given", so it gets no VO.
-			if experiment != scitagsDefaultExperiment {
-				scitagsVO = experiment
-			}
-			if record.ActivityID != 0 {
-				activity = scitags.ActivityName(record.ExperimentID, record.ActivityID)
-				if activity == "" {
-					scitagsUnmappedIDs.WithLabelValues("activity").Inc()
-				}
-			}
-		}
+	// SciTags names for the 'U'-stream ids. When wlcg.enabled is on the correlator
+	// has already looked these up, before routing, so reuse its answer rather than
+	// looking them up twice and counting unmapped ids twice. With it off nothing
+	// has run yet, so do it here, where records that are not WLCG-bound skip it.
+	experiment, activity, scitagsVO := record.experiment, record.activity, record.scitagsVO
+	if !record.voResolved {
+		experiment, activity, scitagsVO = resolveScitagsNames(record, scitags)
 	}
 
 	// Extract server domain from server hostname
@@ -228,6 +227,19 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 		ExperimentID:           record.ExperimentID,
 		ActivityID:             record.ActivityID,
 		ScitagsVO:              scitagsVO,
+	}
+
+	// With wlcg.enabled, "vo" is found out from the record, scitags, and config in the order of vo_order. The
+	// correlator did that before routing (see Correlator.resolveRecordVO) so the
+	// WLCG rules could match on it; here we just publish it, with record_vo and
+	// vo_source so a reader can see where it came from.
+	//
+	// With it off, "vo" stays as the packet reported it and neither record_vo nor
+	// vo_source is written.
+	if meta.VOResolution.Enabled {
+		wlcg.RecordVO = record.recordVO()
+		wlcg.VO = record.resolvedVO
+		wlcg.VOSource = record.voSource
 	}
 
 	// Parse appinfo for CRAB information if present
