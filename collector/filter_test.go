@@ -214,17 +214,16 @@ func TestMatchesWLCG_CustomConfig(t *testing.T) {
 	}
 }
 
-// TestMatchesWLCG_DisabledIgnoresEverything guards the OSG deployments that
-// share this collector. wlcg.enabled is off by default, and with it off the
-// other fields do nothing even when set: routing is the upstream rule.
-func TestMatchesWLCG_DisabledIgnoresEverything(t *testing.T) {
+// Legacy routing lists still apply with WLCG mode off; only the new exclusions
+// are gated by the switch.
+func TestMatchesWLCG_DisabledPreservesRouting(t *testing.T) {
 	c := newTestCorrelator(CorrelatorConfig{
 		TTL: time.Minute,
 		// Every field set, but the switch left off.
 		WLCGVOs:                 []string{"atlas"},
 		WLCGPathPrefixes:        []string{"/eos/atlas"},
-		WLCGExcludeVOs:          []string{"cms"},
-		WLCGExcludePathPrefixes: []string{"/store"},
+		WLCGExcludeVOs:          []string{"atlas"},
+		WLCGExcludePathPrefixes: []string{"/eos/atlas"},
 	})
 	defer c.Stop()
 
@@ -233,14 +232,11 @@ func TestMatchesWLCG_DisabledIgnoresEverything(t *testing.T) {
 		record   *CollectorRecord
 		expected bool
 	}{
-		// A record outside the CMS rule stays out.
-		{"outside the CMS rule", &CollectorRecord{VO: "osg", Filename: "/ospool/data.txt"}, false},
-		// The exclusions are ignored, so records the upstream rule picks up still go.
-		{"vo exclusion is ignored", &CollectorRecord{VO: "cms", Filename: "/other/path"}, true},
-		{"path exclusion is ignored", &CollectorRecord{VO: "osg", Filename: "/store/data/f.root"}, true},
-		// The configured lists are ignored too.
-		{"configured vos are ignored", &CollectorRecord{VO: "atlas", Filename: "/other/path"}, false},
-		{"configured path prefixes are ignored", &CollectorRecord{VO: "osg", Filename: "/eos/atlas/f.root"}, false},
+		{"outside the configured rules", &CollectorRecord{VO: "osg", Filename: "/ospool/data.txt"}, false},
+		{"default VO is overridden", &CollectorRecord{VO: "cms", Filename: "/other/path"}, false},
+		{"default paths are overridden", &CollectorRecord{VO: "osg", Filename: "/store/data/f.root"}, false},
+		{"configured VO applies despite exclusion", &CollectorRecord{VO: "atlas", Filename: "/other/path"}, true},
+		{"configured path applies despite exclusion", &CollectorRecord{VO: "osg", Filename: "/eos/atlas/f.root"}, true},
 	}
 
 	for _, tt := range tests {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -241,14 +242,13 @@ type CorrelatorConfig struct {
 	// Off by default - see countByServer.
 	PerServerMetrics bool
 
-	// WLCG routing. When WLCGEnabled is false, which is the default, routing is
-	// the upstream rule ("cms", /store, /user/dteam) and the fields below are
-	// ignored. See shoveler.WLCGConfig.
+	// WLCGEnabled turns on convert-all routing and exclusions.
+	// False preserves the legacy WLCGVOs/WLCGPathPrefixes routing rules.
 	WLCGEnabled bool
 
-	// Used only when WLCGEnabled is true. WLCGVOs/WLCGPathPrefixes pick which
-	// records to convert; leaving both empty converts everything. The Exclude
-	// lists then take records back out.
+	// WLCGVOs/WLCGPathPrefixes pick which records to convert. With WLCGEnabled
+	// false, nil uses defaults and an empty slice clears that list. With it true,
+	// both empty converts everything. Exclusions apply only with WLCGEnabled.
 	WLCGVOs                 []string
 	WLCGPathPrefixes        []string
 	WLCGExcludeVOs          []string
@@ -299,10 +299,10 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Copy the lists so the caller and the correlator cannot change each other's.
-	// nil and empty mean the same thing here: convert everything.
-	wlcgVOs := append([]string(nil), config.WLCGVOs...)
-	wlcgPathPrefixes := append([]string(nil), config.WLCGPathPrefixes...)
+	// Preserve nil versus empty: legacy routing uses nil for default lists and
+	// explicit empty slices to disable them.
+	wlcgVOs := slices.Clone(config.WLCGVOs)
+	wlcgPathPrefixes := slices.Clone(config.WLCGPathPrefixes)
 
 	routing := wlcgRouting{
 		Enabled:             config.WLCGEnabled,

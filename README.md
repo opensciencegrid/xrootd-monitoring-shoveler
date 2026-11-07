@@ -274,10 +274,10 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `COLLECTOR_WLCG_TYPE` - `metadata.type` for WLCG file-transfer records (default: `aaa-ng`)
 * `COLLECTOR_WLCG_GSTREAM_PRODUCER` - `metadata.producer` for WLCG gstream cache/TPC events (default: `cms-xrootd-cache`)
 
-**WLCG site behaviour (Collector Mode only, prefix: `COLLECTOR_`):** none of these do anything unless enabled. See [WLCG Site Behaviour](#wlcg-site-behaviour).
+**WLCG routing and site behaviour (Collector Mode only, prefix: `COLLECTOR_`):** routing lists also apply with WLCG mode off; exclusions and VO resolution require it to be enabled. See [WLCG Site Behaviour](#wlcg-site-behaviour).
 * `COLLECTOR_WLCG_ENABLED` - turn the WLCG-site settings on (default: `false`)
-* `COLLECTOR_WLCG_VOS` - only these VOs are included (no default: unset means all)
-* `COLLECTOR_WLCG_PATH_PREFIXES` - only these paths are included (no default: unset means all)
+* `COLLECTOR_WLCG_VOS` - VOs included by routing (mode off: defaults to `cms`; mode on: unset means unrestricted)
+* `COLLECTOR_WLCG_PATH_PREFIXES` - paths included by routing (mode off: defaults to `/store /user/dteam`; mode on: unset means unrestricted)
 * `COLLECTOR_WLCG_EXCLUDE_VOS` - these VOs are excluded from the WLCG feed (default: empty)
 * `COLLECTOR_WLCG_EXCLUDE_PATH_PREFIXES` - these path prefixes are excluded (default: empty)
 * `COLLECTOR_WLCG_VO` - VO for a collector running at a specific VO (no default)
@@ -732,11 +732,12 @@ curl -fsS https://scitags.docs.cern.ch/api.json -o collector/scitags_api.json.tm
 
 ### WLCG Site Behaviour
 
-**Collector mode only.** `wlcg.enabled` turns on the settings a WLCG site needs.
-It is off by default, and while it is off none of the keys below do anything:
-records are converted by the upstream rule (VO `cms`, or a path under `/store` or
-`/user/dteam`) and a record's `vo` is whatever the packet said. That is what lets
-OSG and WLCG share one collector.
+**Collector mode only.** `wlcg.enabled` turns on convert-all routing, exclusions
+and VO resolution. It is off by default. With it off, existing `vos` and
+`path_prefixes` settings still apply, and a record's `vo` is whatever the packet
+said. An omitted VO list defaults to `["cms"]`, and an omitted path list defaults
+to `["/store", "/user/dteam"]`; an explicit `[]` clears that list. Clearing both
+disables conversion. Exclusions and VO resolution are ignored in this mode.
 
 With it on, every record is converted as a WLCG record. `vos` and `path_prefixes`
 have no defaults, so nothing limits that unless you set them.
@@ -758,9 +759,10 @@ wlcg:
 
 #### What becomes a WLCG record
 
-A record matching any VO (case-insensitive) or any path prefix is included; the
-rest stay on the main exchange. Setting just one list leaves that one working on
-its own, and an explicit `[]` is the same as leaving a list out.
+With `wlcg.enabled: true`, a record matching any VO (case-insensitive) or any path
+prefix is included; the rest stay on the main exchange. Setting just one list
+leaves that one working on its own, and an explicit `[]` is the same as leaving
+a list out.
 
 Leaving both unset includes everything. That is also the only rule that covers
 records with no VO, and most have none: a VO only shows up when the auth or token
@@ -787,10 +789,13 @@ record carries four fields:
 | `vo` | the one to read, determined from the other two and `wlcg.vo` | only if all three are |
 | `vo_source` | which source `vo` came from: `record`, `scitags` or `config` | only when `vo` is |
 
-`record_vo` and `scitags_vo` are published as-is and `vo_source` says which one
-was used, so a consumer can see where `vo` came from. All four go on the record
-itself, not in the `metadata` block, because MONIT checks that block against a
-fixed schema.
+`record_vo` uses the authentication VO, falling back to the token organization
+when it is absent. Token organizations receive the same whitespace and duplicate
+normalization as authentication organizations. The original collector fields
+remain unchanged. `scitags_vo` keeps the registry name, and `vo_source` says which
+source was used, so a consumer can see where `vo` came from. All four go on the
+record itself, not in the `metadata` block, because MONIT checks that block
+against a fixed schema.
 
 `vo_order` sets the order the sources are tried in and the first VO that is found
 is used. The default tries the record before `wlcg.vo`, since the configured VO

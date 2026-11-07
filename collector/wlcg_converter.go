@@ -237,7 +237,7 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 	// With it off, "vo" stays as the packet reported it and neither record_vo nor
 	// vo_source is written.
 	if meta.VOResolution.Enabled {
-		wlcg.RecordVO = record.VO
+		wlcg.RecordVO = record.recordVO()
 		wlcg.VO = record.resolvedVO
 		wlcg.VOSource = record.voSource
 	}

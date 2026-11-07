@@ -7,8 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// Default WLCG matching values, as used by the upstream OSG collector.
-// These are the rule when wlcg.enabled is off.
+// Default WLCG matching values, used for unset routing lists when WLCG mode is off.
 var (
 	defaultWLCGVOs          = []string{"cms"}
 	defaultWLCGPathPrefixes = []string{"/store", "/user/dteam"}
@@ -23,16 +22,17 @@ var recordsDropped = promauto.NewCounterVec(prometheus.CounterOpts{
 
 // wlcgRouting decides which records are converted to WLCG format.
 //
-// When Enabled is false the other fields are ignored and the rule is the
-// upstream one: VO "cms", or a path under /store or /user/dteam.
+// When Enabled is false, VOs and PathPrefixes retain their legacy semantics:
+// nil selects the corresponding default list and an empty slice matches nothing.
+// The exclusions are ignored.
 //
 // When it is true, records are converted unless VOs/PathPrefixes narrow that,
 // and the Exclude lists then take records back out.
 type wlcgRouting struct {
 	Enabled bool
 
-	// Which records to convert. Leaving both empty converts everything, which is
-	// the default. Set either one to narrow it. Used only when Enabled is true.
+	// Which records to convert. When Enabled, leaving both empty converts
+	// everything. Otherwise, nil uses defaults and an empty slice clears a list.
 	VOs          []string // case-insensitive exact match
 	PathPrefixes []string // HasPrefix match
 
@@ -44,7 +44,14 @@ type wlcgRouting struct {
 // eligible reports whether one record should be converted to WLCG format.
 func (r wlcgRouting) eligible(vo, path string) bool {
 	if !r.Enabled {
-		return matchesVOOrPath(vo, path, defaultWLCGVOs, defaultWLCGPathPrefixes)
+		vos, prefixes := r.VOs, r.PathPrefixes
+		if vos == nil {
+			vos = defaultWLCGVOs
+		}
+		if prefixes == nil {
+			prefixes = defaultWLCGPathPrefixes
+		}
+		return matchesVOOrPath(vo, path, vos, prefixes)
 	}
 
 	// With no lists set, everything is converted. That is what a WLCG site wants,

@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,8 +21,69 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCollectorWLCGRoutingConfiguration(t *testing.T) {
+	records := []struct {
+		vo   string
+		path string
+	}{
+		{"atlas", "/eos/atlas/file.root"},
+		{"cms", "/other/file.root"},
+		{"osg", "/store/file.root"},
+		{"", "/other/file.root"},
+	}
+	for _, tc := range []struct {
+		name        string
+		config      string
+		envVOs      string
+		envPrefixes string
+		wantWLCG    [4]bool
+	}{
+		{name: "legacy defaults", config: "{}", wantWLCG: [4]bool{false, true, true, false}},
+		{name: "legacy custom VO retains default paths", config: "wlcg:\n  vos: [atlas]\n", wantWLCG: [4]bool{true, false, true, false}},
+		{name: "legacy custom path retains default VO", config: "wlcg:\n  path_prefixes: [/eos/atlas]\n", wantWLCG: [4]bool{true, true, false, false}},
+		{name: "legacy custom lists", config: "wlcg:\n  vos: [atlas]\n  path_prefixes: []\n", wantWLCG: [4]bool{true, false, false, false}},
+		{name: "legacy empty lists disable conversion", config: "wlcg:\n  vos: []\n  path_prefixes: []\n"},
+		{name: "legacy environment overrides", config: "{}", envVOs: "atlas", envPrefixes: "/eos/atlas", wantWLCG: [4]bool{true, false, false, false}},
+		{name: "enabled unset lists convert all", config: "wlcg:\n  enabled: true\n", wantWLCG: [4]bool{true, true, true, true}},
+		{name: "enabled empty lists convert all", config: "wlcg:\n  enabled: true\n  vos: []\n  path_prefixes: []\n", wantWLCG: [4]bool{true, true, true, true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			t.Setenv("COLLECTOR_WLCG_ENABLED", "")
+			t.Setenv("COLLECTOR_WLCG_VOS", tc.envVOs)
+			t.Setenv("COLLECTOR_WLCG_PATH_PREFIXES", tc.envPrefixes)
+			configPath := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(configPath, []byte(tc.config), 0600))
+			config := shoveler.Config{}
+			config.ReadConfigWithPathAndPrefix(configPath, "COLLECTOR")
+			config.Site.Enabled = false
+			logger := logrus.New()
+			logger.SetLevel(logrus.ErrorLevel)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			correlator := collector.NewCorrelatorWithConfig(buildCorrelatorConfig(ctx, &config, logger))
+			defer correlator.Stop()
+			results := make(chan collector.EnrichedRecord, 1)
+			for i, record := range records {
+				correlator.EnqueueForEnrichment(
+					&collector.CollectorRecord{VO: record.vo, Filename: record.path},
+					collector.EnrichmentDestination{Results: results, WLCGExchange: "wlcg"},
+				)
+				select {
+				case result := <-results:
+					require.Equal(t, tc.wantWLCG[i], result.Exchange == "wlcg", "VO %q, path %q", record.vo, record.path)
+				case <-time.After(2 * time.Second):
+					t.Fatal("timed out waiting for enriched record")
+				}
+			}
+		})
+	}
+}
 
 type mockOutputConnector struct {
 	mu        sync.Mutex

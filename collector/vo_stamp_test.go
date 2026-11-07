@@ -9,10 +9,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// TestResolvedVOFallback covers the default resolution order for the WLCG
-// record's "vo" field: what the record itself reported, then its SciTags
-// marking, then the operator's declaration. The two derived-from fields are
-// always published unmodified alongside the answer.
 // enabledVOConfig is a correlator with wlcg.enabled on and the VO settings
 // wired the way the binary wires them.
 func enabledVOConfig(configVO string, order []string) CorrelatorConfig {
@@ -45,7 +41,7 @@ func resolveAndConvert(t *testing.T, cfg CorrelatorConfig, record *CollectorReco
 
 // TestResolvedVOFallback covers the default order on the emitted record: what
 // the record said, then its SciTags marking, then the configured VO. record_vo
-// and scitags_vo are always published as-is, and vo_source says which one won.
+// and scitags_vo keep the record source and registry name; vo_source says which won.
 func TestResolvedVOFallback(t *testing.T) {
 	// Experiment id 2 is "atlas" in the embedded registry. Checked here so the
 	// fallback cases are not quietly comparing empty strings.
@@ -57,6 +53,7 @@ func TestResolvedVOFallback(t *testing.T) {
 		name          string
 		configured    string
 		packetVO      string
+		tokenOrg      string
 		experimentID  int
 		wantVO        string
 		wantSource    string
@@ -71,6 +68,21 @@ func TestResolvedVOFallback(t *testing.T) {
 			name:     "record_vo alone answers",
 			packetVO: "cms",
 			wantVO:   "cms", wantSource: VOSourceRecord, wantRecordVO: "cms", wantScitagsVO: "",
+		},
+		{
+			name:     "token VO beats scitags and config when auth VO is absent",
+			tokenOrg: "dune", experimentID: 2, configured: "cms",
+			wantVO: "dune", wantSource: VOSourceRecord, wantRecordVO: "dune", wantScitagsVO: "atlas",
+		},
+		{
+			name:     "auth VO beats token VO",
+			packetVO: "cms", tokenOrg: "dune",
+			wantVO: "cms", wantSource: VOSourceRecord, wantRecordVO: "cms",
+		},
+		{
+			name:     "token VO is normalized like auth VO",
+			tokenOrg: " dune dune DUNE ",
+			wantVO:   "dune", wantSource: VOSourceRecord, wantRecordVO: "dune",
 		},
 		{
 			name:         "scitags_vo answers when record_vo is absent",
@@ -106,6 +118,7 @@ func TestResolvedVOFallback(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			record := &CollectorRecord{
 				VO:           tc.packetVO,
+				TokenOrg:     tc.tokenOrg,
 				ExperimentID: tc.experimentID,
 				Filename:     "/store/data/file.root",
 			}
@@ -134,6 +147,63 @@ func TestResolvedVOFallback(t *testing.T) {
 			// not rewrite its VO.
 			if record.VO != tc.packetVO {
 				t.Errorf("source record VO = %q, expected the packet VO %q", record.VO, tc.packetVO)
+			}
+			if record.TokenOrg != tc.tokenOrg {
+				t.Errorf("source token org = %q, expected %q", record.TokenOrg, tc.tokenOrg)
+			}
+		})
+	}
+}
+
+func TestTokenVOFeedsRules(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		includeVOs   []string
+		excludeVOs   []string
+		dropVOs      []string
+		wantExchange string
+		wantDrop     bool
+	}{
+		{name: "included by token VO", includeVOs: []string{"dune"}, wantExchange: "wlcg"},
+		{name: "excluded by token VO", excludeVOs: []string{"dune"}},
+		{name: "dropped by token VO", dropVOs: []string{"dune"}, wantDrop: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := enabledVOConfig("cms", nil)
+			cfg.WLCGVOs = tc.includeVOs
+			cfg.WLCGExcludeVOs = tc.excludeVOs
+			cfg.DropVOs = tc.dropVOs
+			c := NewCorrelatorWithConfig(cfg)
+			defer c.Stop()
+
+			results := make(chan EnrichedRecord, 1)
+			c.processEnrichmentRequest(enrichmentRequest{
+				record:      &CollectorRecord{TokenOrg: "dune", Filename: "/other/file.root"},
+				destination: EnrichmentDestination{Results: results, WLCGExchange: "wlcg"},
+			})
+			select {
+			case result := <-results:
+				if tc.wantDrop {
+					t.Fatal("record matching drop_vos was published")
+				}
+				if result.Exchange != tc.wantExchange {
+					t.Fatalf("exchange = %q, want %q", result.Exchange, tc.wantExchange)
+				}
+				var payload map[string]interface{}
+				if err := json.Unmarshal(result.Payload, &payload); err != nil {
+					t.Fatal(err)
+				}
+				if result.Exchange == "wlcg" {
+					if payload["vo"] != "dune" || payload["record_vo"] != "dune" || payload["vo_source"] != VOSourceRecord {
+						t.Errorf("unexpected WLCG VO fields: %v", payload)
+					}
+				} else if payload["token_org"] != "dune" || payload["vo"] != nil || payload["record_vo"] != nil {
+					t.Errorf("plain record was changed by VO resolution: %v", payload)
+				}
+			default:
+				if !tc.wantDrop {
+					t.Fatal("record was not published")
+				}
 			}
 		})
 	}
@@ -426,7 +496,7 @@ func TestConfiguredVOLeavesCollectorRecordsAlone(t *testing.T) {
 
 // TestWLCGDisabledLeavesRecordUnchanged guards the OSG deployments that share
 // this collector. With wlcg.enabled off, "vo" is whatever the packet said,
-// record_vo is not written, and the other settings do nothing even when set.
+// record_vo is not written, and VO resolution settings do nothing even when set.
 func TestWLCGDisabledLeavesRecordUnchanged(t *testing.T) {
 	registry := NewScitagsRegistry(nil)
 
@@ -444,6 +514,7 @@ func TestWLCGDisabledLeavesRecordUnchanged(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			record := &CollectorRecord{
 				VO:           tc.packetVO,
+				TokenOrg:     "dune",
 				ExperimentID: tc.experimentID,
 				Filename:     "/store/data/file.root",
 			}

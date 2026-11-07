@@ -128,6 +128,16 @@ func resolveVOWithSource(order []string, recordVO, scitagsVO, configVO string) (
 	return "", ""
 }
 
+// recordVO prefers the authentication VO, then the token organization. Token
+// organizations use the same normalization as authentication organizations.
+// Neither original field is changed, so plain collector records stay unchanged.
+func (r *CollectorRecord) recordVO() string {
+	if r.VO != "" {
+		return r.VO
+	}
+	return normalizeVO(r.TokenOrg)
+}
+
 // resolveRecordVO works out the record's VO and stores it on the record, along
 // with the SciTags names it may have come from. It runs before every rule that
 // looks at a VO (the drop filter, wlcg.vos, wlcg.exclude_vos) so they all see
@@ -145,7 +155,7 @@ func (c *Correlator) resolveRecordVO(record *CollectorRecord) {
 	record.experiment, record.activity, record.scitagsVO = resolveScitagsNames(record, c.scitags)
 	record.resolvedVO, record.voSource = resolveVOWithSource(
 		c.wlcgMetadata.VOResolution.Order,
-		record.VO,
+		record.recordVO(),
 		record.scitagsVO,
 		c.wlcgMetadata.VOResolution.VO,
 	)

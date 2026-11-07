@@ -37,18 +37,19 @@ state:
 
 # WLCG configuration
 #
-# wlcg.enabled turns on the settings a WLCG site needs. It is off by default, and
-# while it is off none of the keys below do anything: records are converted by the
-# upstream rule (VO "cms", or a path under /store or /user/dteam) and a record's
-# "vo" is whatever the packet said. That is what lets OSG and WLCG share one
-# collector.
+# wlcg.enabled turns on convert-all routing, exclusions and VO resolution.
+# It is off by default. With it off, vos and path_prefixes keep their legacy
+# behavior: unset lists default to ["cms"] and ["/store", "/user/dteam"],
+# respectively; [] clears a list, and clearing both disables conversion.
+# Exclusions and VO resolution are ignored, and "vo" stays as the packet said.
 #
 # With it on, every record is converted as a WLCG record. vos and path_prefixes have no defaults,
-# so nothing limits that unless you set them. 
+# so nothing limits that unless you set them.
 #
 # You can include, exclude specific VOs and path prefixes.
 # You can also set the VO order in which the VO is determined (default is ["record", "scitags", "config"]).
 # The first VO that is found is used.
+# The record source prefers the authentication VO, then the token organization.
 #
 # Environment variables use the COLLECTOR_WLCG_ prefix, for example
 # COLLECTOR_WLCG_ENABLED and COLLECTOR_WLCG_EXCLUDE_VOS.

@@ -15,15 +15,13 @@ import (
 // packet, the producer/type values for the metadata block, and the settings
 // behind Enabled.
 type WLCGConfig struct {
-	// Enabled turns on the WLCG-site settings: the routing lists, the exclusions
-	// and the VO handling below. False, the default, leaves the collector working
-	// as before: the upstream rule ("cms", /store, /user/dteam) decides what is
-	// converted, and a record's "vo" is whatever the packet said.
+	// Enabled turns on convert-all routing, exclusions and VO resolution. False,
+	// the default, preserves legacy routing lists and the packet's own VO.
 	Enabled bool
 
-	// Which records to convert. Used only when Enabled is true. Neither has a
-	// default: leaving both empty converts everything, which is what a WLCG site
-	// wants. Set either one to narrow it.
+	// Which records to convert. With Enabled false, nil uses the legacy defaults
+	// (["cms"], ["/store", "/user/dteam"]) and [] clears that list. With Enabled
+	// true, both empty converts everything; set either list to narrow it.
 	VOs          []string // case-insensitive exact match
 	PathPrefixes []string // HasPrefix match
 
@@ -693,11 +691,18 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	// If the map is not set
 	c.IpMap = viper.GetStringMapString("map")
 
-	// WLCG routing (collector mode only), used only when wlcg.enabled is set.
-	// No defaults on purpose: unset means convert everything Set either list to narrow it: records matching any VO
-	// With wlcg.enabled off both are ignored and the upstream rule applies.
+	// Leave unset lists nil so the correlator can apply defaults in legacy mode
+	// while preserving explicit empty lists. WLCG mode treats both as unrestricted.
 	c.WLCG.VOs = viper.GetStringSlice("wlcg.vos")
 	c.WLCG.PathPrefixes = viper.GetStringSlice("wlcg.path_prefixes")
+	// Viper returns nil for YAML [], too. Keep an explicitly cleared list
+	// distinct from an absent key so legacy routing does not restore its default.
+	if c.WLCG.VOs == nil && viper.IsSet("wlcg.vos") {
+		c.WLCG.VOs = []string{}
+	}
+	if c.WLCG.PathPrefixes == nil && viper.IsSet("wlcg.path_prefixes") {
+		c.WLCG.PathPrefixes = []string{}
+	}
 
 	// WLCG-site behaviour, behind one option that is off by
 	// default. Nothing below has any effect while wlcg.enabled is false.
