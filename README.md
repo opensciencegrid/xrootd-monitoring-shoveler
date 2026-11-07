@@ -680,6 +680,42 @@ exactly what CRIC does server-side — replicated locally so no record ever wait
 a network call. The server's self-reported `site` field (from the `=` map packet)
 is left untouched; `src_site`/`dst_site` are new fields alongside it.
 
+#### Clients reported by an unqualified name
+
+XRootD reports the client host as it saw it, so a client in the reporting
+server's own DNS domain arrives unqualified — `b9p04p7188` rather than
+`b9p04p7188.cern.ch`. That endpoint has nothing any resolution method can use:
+no domain to suffix-match, no address to place in a netroute, and it is not a
+private address, so `site.local_site` cannot claim it either. It lands on
+`no_host`, and because a scope needs both ends, the record's `traffic_scope`
+comes out `UNKNOWN` however well the server end resolved.
+
+With `state.enable_dns_enrichment` on, such a name is resolved forward during
+enrichment: the name is handed to the system resolver as-is, exactly as
+`host b9p04p7188` would, and the resolver expands it through the `search` list in
+the collector VM's own `/etc/resolv.conf`. **No domain is configured or appended
+anywhere in the collector** — a name with no dots gets search expansion by the
+default `ndots:1`, so each deployment simply inherits its own site's list. The
+address
+that comes back feeds the `ip` method, and reverse-resolving it yields the FQDN
+the `hostname` and `domain` methods need. A CERN worker node reading from CERN
+EOS then resolves through the CRIC netroute that owns its range and the record
+becomes `LAN` / `site_internal_traffic: true` instead of `UNKNOWN`.
+
+Answers are cached for `state.dns_cache_ttl`, **including failures**: a busy
+worker node that DNS cannot place is looked up once, not once per record. Only
+unqualified names trigger it — a client reported as an address or as an FQDN
+already carries what the resolver needs.
+
+> **Beware of short names from other sites.** The search list is the collector
+> VM's own, so an unqualified name from a remote site is looked up in the
+> collector's domain, not in the site that reported it. Usually it simply does
+> not resolve and the endpoint stays `no_host`, which is the right answer — a
+> bare name is only meaningful inside the DNS that issued it, so no collector can
+> place one from elsewhere. The risk is a collision: a client called `wn001` at
+> another site, when a `wn001` also exists in the collector's own domain, would be
+> placed at the wrong site.
+
 ### SciTags Experiment and Activity
 
 **Collector mode only.** [SciTags](https://scitags.docs.cern.ch) labels a
@@ -844,6 +880,102 @@ almost nothing to match otherwise. A record whose VO came from SciTags or from
 
 With `wlcg.enabled` off nothing is determined, and every rule matches the VO from
 the packet, as upstream.
+
+#### Internal traffic flags
+
+Every WLCG record answers two independent questions about the transfer: where it
+went on the network, and who generated it. Three fields carry the answers, next
+to the `user` the record already had:
+
+| field | type | meaning |
+|---|---|---|
+| `traffic_scope` | `LAN` / `WAN` / `UNKNOWN` | the canonical topology answer |
+| `site_internal_traffic` | bool, or absent | both ends at the same site; absent when the topology is unknown |
+| `xrootd_internal_traffic` | bool | XRootD generated the operation itself, rather than an end user |
+
+They are written only while `wlcg.enabled` is on. `wlcg.traffic_enabled` (default
+true) switches them off again, and a collector with either off emits exactly what
+it emitted before.
+
+##### Network scope
+
+The scope is read from the `src_site` and `dst_site`
+[the site resolver](#srcdst-site-resolution) already worked out:
+
+| src/dst sites | `traffic_scope` | `site_internal_traffic` |
+|---|---|---|
+| both resolved, equal | `LAN` | `true` |
+| both resolved, different | `WAN` | `false` |
+| either one unresolved | `UNKNOWN` | **not written** |
+
+`site_internal_traffic` is derived from the scope, so the two can never
+disagree: `LAN` always means `true`, `WAN` always means `false`, and an
+unresolved topology means the field is left off the record rather than published
+as a `false`. That is deliberate — `false` says the two ends *were* resolved and
+turned out to be different sites, which is not what an unresolved endpoint knows.
+Read `traffic_scope == "UNKNOWN"` for that case, or `src_site_status` /
+`dst_site_status` for why.
+
+An endpoint CRIC reports **ambiguously** does not settle the topology either: the
+site named there is explicitly a guess, so such a record is `UNKNOWN` rather than
+a definite `LAN` or `WAN`.
+
+Site resolution can be off (`site.enabled: false`) while these flags are on; every
+scope is then `UNKNOWN`, and `xrootd_internal_traffic` still works, because the
+two axes are independent.
+
+##### XRootD-internal traffic
+
+`xrootd_internal_traffic` says the operation is the infrastructure's own work
+rather than a user's. The rules are the ones the MonALISA xrootd collector uses and are suggested by the XrootD team
+(`isActualUser` in `lia/Monitor/modules/monXrootd.java`), checked in this order,
+first hit wins:
+
+1. an account is one of `wlcg.traffic_internal_users` (default `root`)
+2. an account is an all-digit job-agent id within
+   `wlcg.traffic_job_agent_min`-`wlcg.traffic_job_agent_max` (default 1-8)
+3. the protocol, the appinfo or the path has a `/`-separated segment starting with
+   one of `wlcg.traffic_replication_prefixes` (default `replicate`, which covers
+   XrootD's `/replicate:` paths)
+
+Nothing else counts, and a record matching none of them is `false` rather than
+unknown: calling an ordinary user's transfer infrastructure traffic is the worse
+mistake. Three details are worth knowing:
+
+- **A record names its account in two places, and both are judged.** `user` is
+  what the `u` stream reported next to the protocol and host. `user_dn` is the
+  auth stream's `n=` value, which despite the field name is usually a mapped
+  account rather than a distinguished name — and it is where the system accounts
+  actually turn up, on records whose `user` is an ordinary account or a fallback.
+  When `user_dn` *is* a real DN, its `CN` is used.
+- **`user` only counts when it came from the `u` stream.** A record whose user
+  info was never correlated carries a hex of the numeric user id there, which for
+  a low id is indistinguishable from a job-agent account. Those records skip that
+  half of the account check; `user_dn` and the replication rule still apply.
+- **Replication alone is enough.** XrootD only treats a `/replicate:` path as
+  internal for the `daemon` account; here the path is a signal on its own, so
+  everything XrootD would flag is flagged, plus replication run under any other
+  account. `daemon` is not a system account by itself, so an ordinary transfer
+  under it stays a user's.
+
+The two dimensions are independent on purpose. All four combinations are
+possible, and cross-site XRootD-internal traffic (`WAN` + `xrootd_internal_traffic:
+true`) is neither filtered out nor asserted to exist — the data model simply does
+not rule it out.
+
+```yaml
+wlcg:
+  enabled: true
+  traffic_enabled: true                        # emit the three fields (default true)
+  traffic_internal_users: ["root"]             # system accounts
+  traffic_job_agent_min: 1                     # numeric job-agent accounts...
+  traffic_job_agent_max: 8                     # ...set max below min to turn the rule off
+  traffic_replication_prefixes: ["replicate"]  # replication markers
+  traffic_case_sensitive: false                # match accounts and markers exactly as written
+```
+
+The defaults are general WLCG/XRootD ones, not CMS values. A site whose system
+accounts or replication paths are named differently sets them here.
 
 #### Exclusions vs. the drop filter
 
@@ -1202,6 +1334,8 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_scitags_registry_experiments` / `shoveler_scitags_registry_activities` - Number of experiments / (experiment, activity) pairs in the currently loaded SciTags registry
 - `shoveler_scitags_registry_reload_failures` - Failed fetches of a SciTags URL, including the first one at startup (the current registry is kept)
 - `shoveler_scitags_unmapped_ids{kind}` - SciTags ids on WLCG records that the registry has no name for, by `kind` (`experiment` or `activity`). A steady rise usually means the registry is out of date
+- `shoveler_traffic_scope{scope}` - WLCG records classified by network scope (`LAN`, `WAN`, `UNKNOWN`); the `UNKNOWN` count is the whole-record topology failure rate
+- `shoveler_traffic_xrootd_internal{signal}` - WLCG records classified as XRootD-internal, by the signal that matched (`internal_user`, `job_agent`, `replication`, `storage_to_storage`)
 - `shoveler_parse_time_ms` - Packet parsing time histogram
 - `shoveler_request_latency_ms` - Request latency histogram
 
