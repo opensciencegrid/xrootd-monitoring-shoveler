@@ -306,32 +306,40 @@ func (r *SiteRegistry) LoadSource(ctx context.Context, src string) error {
 // fetchSiteSource reads a CRIC document from a file path or http(s) URL. A nil
 // client trusts only the OS CA certificates (see NewCRICHTTPClient).
 func fetchSiteSource(ctx context.Context, client *http.Client, src string) ([]byte, error) {
+	data, err := fetchSource(ctx, client, src, "CRIC")
+	return data, withCAHint(err)
+}
+
+// fetchSource reads a document from a file path or http(s) URL. what names the
+// source in errors ("CRIC", "SciTags"). A nil client trusts only the OS CA
+// certificates.
+func fetchSource(ctx context.Context, client *http.Client, src, what string) ([]byte, error) {
 	if !isURL(src) {
 		data, err := os.ReadFile(src)
 		if err != nil {
-			return nil, fmt.Errorf("read CRIC file %q: %w", src, err)
+			return nil, fmt.Errorf("read %s file %q: %w", what, src, err)
 		}
 		return data, nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build CRIC request: %w", err)
+		return nil, fmt.Errorf("build %s request: %w", what, err)
 	}
 	if client == nil {
 		client = &http.Client{Timeout: cricFetchTimeout}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch CRIC url %q: %w", src, withCAHint(err))
+		return nil, fmt.Errorf("fetch %s url %q: %w", what, src, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch CRIC url %q: unexpected status %s", src, resp.Status)
+		return nil, fmt.Errorf("fetch %s url %q: unexpected status %s", what, src, resp.Status)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // cap at 8 MiB
 	if err != nil {
-		return nil, fmt.Errorf("read CRIC url body %q: %w", src, err)
+		return nil, fmt.Errorf("read %s url body %q: %w", what, src, err)
 	}
 	return data, nil
 }

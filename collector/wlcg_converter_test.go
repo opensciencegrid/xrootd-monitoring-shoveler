@@ -133,7 +133,7 @@ func TestConvertToWLCG(t *testing.T) {
 		HasFileCloseMsg:        1,
 	}
 
-	wlcg, err := ConvertToWLCG(record, testWLCGMetadata())
+	wlcg, err := ConvertToWLCG(record, testWLCGMetadata(), nil)
 	if err != nil {
 		t.Fatalf("ConvertToWLCG() error = %v", err)
 	}
@@ -269,7 +269,7 @@ func TestConvertToWLCG_WriteOperation(t *testing.T) {
 		Write:         5000000,
 	}
 
-	wlcg, err := ConvertToWLCG(record, testWLCGMetadata())
+	wlcg, err := ConvertToWLCG(record, testWLCGMetadata(), nil)
 	if err != nil {
 		t.Fatalf("ConvertToWLCG() error = %v", err)
 	}
@@ -280,6 +280,31 @@ func TestConvertToWLCG_WriteOperation(t *testing.T) {
 
 	if wlcg.WriteBytes != 5000000 {
 		t.Errorf("WriteBytes = %v, expected 5000000", wlcg.WriteBytes)
+	}
+}
+
+// TestConvertToWLCG_ScitagsDefaultExperiment checks that the "default" SciTags
+// experiment keeps its name but gets no scitags_vo.
+func TestConvertToWLCG_ScitagsDefaultExperiment(t *testing.T) {
+	scitags := NewScitagsRegistry(newTestLogger())
+
+	wlcg, err := ConvertToWLCG(&CollectorRecord{ExperimentID: 1, ActivityID: 3}, testWLCGMetadata(), scitags)
+	if err != nil {
+		t.Fatalf("ConvertToWLCG() error = %v", err)
+	}
+	if wlcg.Experiment != "default" || wlcg.Activity != "Cache" {
+		t.Errorf("Experiment/Activity = %q/%q, expected 'default'/'Cache'", wlcg.Experiment, wlcg.Activity)
+	}
+	if wlcg.ScitagsVO != "" {
+		t.Errorf("ScitagsVO = %q, expected empty for the default experiment", wlcg.ScitagsVO)
+	}
+
+	wlcg, err = ConvertToWLCG(&CollectorRecord{ExperimentID: 2}, testWLCGMetadata(), scitags)
+	if err != nil {
+		t.Fatalf("ConvertToWLCG() error = %v", err)
+	}
+	if wlcg.ScitagsVO != "atlas" {
+		t.Errorf("ScitagsVO = %q, expected 'atlas'", wlcg.ScitagsVO)
 	}
 }
 
@@ -298,7 +323,7 @@ func TestConvertToWLCG_UnknownOperation(t *testing.T) {
 		Write:         0,
 	}
 
-	wlcg, err := ConvertToWLCG(record, testWLCGMetadata())
+	wlcg, err := ConvertToWLCG(record, testWLCGMetadata(), nil)
 	if err != nil {
 		t.Fatalf("ConvertToWLCG() error = %v", err)
 	}
@@ -320,8 +345,8 @@ func TestGenerateUUID(t *testing.T) {
 		VO:        "cms",
 	}
 
-	wlcg1, _ := ConvertToWLCG(record, testWLCGMetadata())
-	wlcg2, _ := ConvertToWLCG(record, testWLCGMetadata())
+	wlcg1, _ := ConvertToWLCG(record, testWLCGMetadata(), nil)
+	wlcg2, _ := ConvertToWLCG(record, testWLCGMetadata(), nil)
 
 	// Check basic format (8-4-4-4-12 hex characters)
 	if len(wlcg1.UniqueID) != 36 {
@@ -664,7 +689,7 @@ func TestConvertToWLCG_CustomMetadata(t *testing.T) {
 	}
 
 	meta := WLCGMetadata{Producer: "osg", Type: "transfer"}
-	wlcg, err := ConvertToWLCG(record, meta)
+	wlcg, err := ConvertToWLCG(record, meta, nil)
 	if err != nil {
 		t.Fatalf("ConvertToWLCG() error = %v", err)
 	}

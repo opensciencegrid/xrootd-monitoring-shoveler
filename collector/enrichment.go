@@ -261,7 +261,7 @@ func (c *Correlator) processEnrichmentRequest(req enrichmentRequest) {
 
 func (c *Correlator) buildEnrichedRecord(record *CollectorRecord, wlcgExchange string) (EnrichedRecord, error) {
 	if c.matchesWLCG(record) {
-		wlcgRecord, err := ConvertToWLCG(record, c.wlcgMetadata)
+		wlcgRecord, err := ConvertToWLCG(record, c.wlcgMetadata, c.scitags)
 		if err != nil {
 			return EnrichedRecord{}, err
 		}

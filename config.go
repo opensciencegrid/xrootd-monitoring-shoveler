@@ -90,6 +90,14 @@ type SiteConfig struct {
 	ResolutionOrder []string
 }
 
+// ScitagsConfig configures the SciTags registry used (in collector mode) to
+// resolve the numeric experiment/activity ids on the 'U' monitoring stream to
+// human names. When Source is empty the embedded api.json snapshot is used.
+type ScitagsConfig struct {
+	Source          string // file path or http(s):// URL; empty = embedded snapshot
+	RefreshInterval int    // seconds between re-fetches of a URL source (default 3600; 0 disables)
+}
+
 type FilterConfig struct {
 	DropPathPrefixes []string // records whose path matches any prefix are dropped entirely
 	DropVOs          []string // records whose VO matches (case-insensitive) are dropped entirely
@@ -139,6 +147,7 @@ type Config struct {
 	Output                OutputConfig
 	WLCG                  WLCGConfig
 	Site                  SiteConfig
+	Scitags               ScitagsConfig
 	Mode                  string   // Operating mode: "shoveler" or "collector"
 	MQ                    string   // Which technology to use for the MQ connection
 	AmqpURL               *url.URL // AMQP URL (password comes from the token)
@@ -638,6 +647,14 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.Site.LocalSiteLANClients = viper.GetBool("site.local_site_lan_clients")
 	viper.SetDefault("site.resolution_order", []string{"config", "hostname", "ip", "domain"})
 	c.Site.ResolutionOrder = viper.GetStringSlice("site.resolution_order")
+
+	// SciTags registry configuration (collector mode). By default the embedded
+	// api.json snapshot is used; set scitags.source to a file path or an
+	// http(s):// URL to override it. A URL source is re-fetched every
+	// scitags.refresh_interval seconds (0 disables refreshing).
+	c.Scitags.Source = viper.GetString("scitags.source")
+	viper.SetDefault("scitags.refresh_interval", 3600)
+	c.Scitags.RefreshInterval = viper.GetInt("scitags.refresh_interval")
 
 	viper.SetDefault("queue_directory", "/var/spool/xrootd-monitoring-shoveler/queue")
 	c.QueueDir = viper.GetString("queue_directory")

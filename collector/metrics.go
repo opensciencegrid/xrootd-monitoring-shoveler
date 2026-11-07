@@ -142,4 +142,35 @@ var (
 		Name: "shoveler_site_resolved_by_method",
 		Help: "Total number of transfer endpoints resolved to an RCSite, by role and resolution method",
 	}, []string{"role", "method"})
+
+	// scitagsRegistryExperiments reports how many experiments the currently loaded
+	// SciTags registry knows about. A value of 0 means id->name resolution is off.
+	scitagsRegistryExperiments = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_scitags_registry_experiments",
+		Help: "Number of experiments in the currently loaded SciTags registry",
+	})
+
+	// scitagsRegistryActivities reports how many (experiment, activity) pairs the
+	// currently loaded SciTags registry knows about.
+	scitagsRegistryActivities = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "shoveler_scitags_registry_activities",
+		Help: "Number of (experiment, activity) pairs in the currently loaded SciTags registry",
+	})
+
+	// scitagsRegistryReloadFailures counts failed fetches of a SciTags URL,
+	// including the first one at startup; the current registry is kept. A steady
+	// rise means the URL is down or serving bad data.
+	scitagsRegistryReloadFailures = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_scitags_registry_reload_failures",
+		Help: "Total number of failed SciTags registry URL fetches",
+	})
+
+	// scitagsUnmappedIDs counts U-stream experiment/activity ids that could
+	// not be resolved to a name against the loaded registry, broken down by which
+	// id was missing. A sustained rise usually means the registry snapshot is
+	// stale relative to what the servers are tagging.
+	scitagsUnmappedIDs = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "shoveler_scitags_unmapped_ids",
+		Help: "Total number of SciTags ids that could not be resolved to a name",
+	}, []string{"kind"})
 )

@@ -19,61 +19,65 @@ import (
 
 // CollectorRecord represents a correlated file access record
 type CollectorRecord struct {
-	Timestamp              time.Time `json:"@timestamp"`
-	StartTime              int64     `json:"start_time"`
-	EndTime                int64     `json:"end_time"`
-	OperationTime          int64     `json:"operation_time"`
-	ServerID               string    `json:"serverID"`
-	ServerHostname         string    `json:"server_hostname"`
-	Server                 string    `json:"server"`
-	ServerIP               string    `json:"server_ip"`
-	Site                   string    `json:"site"`
-	User                   string    `json:"user"`
-	UserDN                 string    `json:"user_dn"`
-	UserDomain             string    `json:"user_domain,omitempty"`
-	VO                     string    `json:"vo,omitempty"`
-	Host                   string    `json:"host"`
-	TokenSubject           string    `json:"token_subject,omitempty"`
-	TokenUsername          string    `json:"token_username,omitempty"`
-	TokenOrg               string    `json:"token_org,omitempty"`
-	TokenRole              string    `json:"token_role,omitempty"`
-	TokenGroups            string    `json:"token_groups,omitempty"`
-	Experiment             string    `json:"experiment,omitempty"`
-	Activity               string    `json:"activity,omitempty"`
-	Filename               string    `json:"filename"`
-	Dirname1               string    `json:"dirname1"`
-	Dirname2               string    `json:"dirname2"`
-	LogicalDirname         string    `json:"logical_dirname"`
-	Protocol               string    `json:"protocol"`
-	AppInfo                string    `json:"appinfo"`
-	IPv6                   bool      `json:"ipv6"`
-	Filesize               int64     `json:"filesize"`
-	ReadOperations         int32     `json:"read_operations"`
-	ReadSingleOperations   int32     `json:"read_single_operations"`
-	ReadVectorOperations   int32     `json:"read_vector_operations"`
-	WriteOperations        int32     `json:"write_operations"`
-	Read                   int64     `json:"read"`
-	ReadSingleBytes        int64     `json:"read_single_bytes"`
-	Readv                  int64     `json:"readv"`
-	Write                  int64     `json:"write"`
-	ReadMin                int32     `json:"read_min"`
-	ReadMax                int32     `json:"read_max"`
-	ReadAverage            int64     `json:"read_average"`
-	ReadSingleMin          int32     `json:"read_single_min"`
-	ReadSingleMax          int32     `json:"read_single_max"`
-	ReadSingleAverage      int64     `json:"read_single_average"`
-	ReadVectorMin          int32     `json:"read_vector_min"`
-	ReadVectorMax          int32     `json:"read_vector_max"`
-	ReadVectorAverage      int64     `json:"read_vector_average"`
-	WriteMin               int32     `json:"write_min"`
-	WriteMax               int32     `json:"write_max"`
-	WriteAverage           int64     `json:"write_average"`
-	ReadVectorCountMin     int16     `json:"read_vector_count_min"`
-	ReadVectorCountMax     int16     `json:"read_vector_count_max"`
-	ReadVectorCountAverage float64   `json:"read_vector_count_average"`
-	ReadBytesAtClose       int64     `json:"read_bytes_at_close"`
-	WriteBytesAtClose      int64     `json:"write_bytes_at_close"`
-	HasFileCloseMsg        int       `json:"HasFileCloseMsg"`
+	Timestamp      time.Time `json:"@timestamp"`
+	StartTime      int64     `json:"start_time"`
+	EndTime        int64     `json:"end_time"`
+	OperationTime  int64     `json:"operation_time"`
+	ServerID       string    `json:"serverID"`
+	ServerHostname string    `json:"server_hostname"`
+	Server         string    `json:"server"`
+	ServerIP       string    `json:"server_ip"`
+	Site           string    `json:"site"`
+	User           string    `json:"user"`
+	UserDN         string    `json:"user_dn"`
+	UserDomain     string    `json:"user_domain,omitempty"`
+	VO             string    `json:"vo,omitempty"`
+	Host           string    `json:"host"`
+	TokenSubject   string    `json:"token_subject,omitempty"`
+	TokenUsername  string    `json:"token_username,omitempty"`
+	TokenOrg       string    `json:"token_org,omitempty"`
+	TokenRole      string    `json:"token_role,omitempty"`
+	TokenGroups    string    `json:"token_groups,omitempty"`
+	// ExperimentID and ActivityID are the raw SciTags ids from the 'U' (MAPUEAC)
+	// stream, 0 when unset. An activity id only means something together with
+	// its experiment id. Plain records carry just the ids; ConvertToWLCG also
+	// looks up the names for WLCG records.
+	ExperimentID           int     `json:"experiment_id,omitempty"`
+	ActivityID             int     `json:"activity_id,omitempty"`
+	Filename               string  `json:"filename"`
+	Dirname1               string  `json:"dirname1"`
+	Dirname2               string  `json:"dirname2"`
+	LogicalDirname         string  `json:"logical_dirname"`
+	Protocol               string  `json:"protocol"`
+	AppInfo                string  `json:"appinfo"`
+	IPv6                   bool    `json:"ipv6"`
+	Filesize               int64   `json:"filesize"`
+	ReadOperations         int32   `json:"read_operations"`
+	ReadSingleOperations   int32   `json:"read_single_operations"`
+	ReadVectorOperations   int32   `json:"read_vector_operations"`
+	WriteOperations        int32   `json:"write_operations"`
+	Read                   int64   `json:"read"`
+	ReadSingleBytes        int64   `json:"read_single_bytes"`
+	Readv                  int64   `json:"readv"`
+	Write                  int64   `json:"write"`
+	ReadMin                int32   `json:"read_min"`
+	ReadMax                int32   `json:"read_max"`
+	ReadAverage            int64   `json:"read_average"`
+	ReadSingleMin          int32   `json:"read_single_min"`
+	ReadSingleMax          int32   `json:"read_single_max"`
+	ReadSingleAverage      int64   `json:"read_single_average"`
+	ReadVectorMin          int32   `json:"read_vector_min"`
+	ReadVectorMax          int32   `json:"read_vector_max"`
+	ReadVectorAverage      int64   `json:"read_vector_average"`
+	WriteMin               int32   `json:"write_min"`
+	WriteMax               int32   `json:"write_max"`
+	WriteAverage           int64   `json:"write_average"`
+	ReadVectorCountMin     int16   `json:"read_vector_count_min"`
+	ReadVectorCountMax     int16   `json:"read_vector_count_max"`
+	ReadVectorCountAverage float64 `json:"read_vector_count_average"`
+	ReadBytesAtClose       int64   `json:"read_bytes_at_close"`
+	WriteBytesAtClose      int64   `json:"write_bytes_at_close"`
+	HasFileCloseMsg        int     `json:"HasFileCloseMsg"`
 
 	// Internal fields for DNS enrichment (not serialized to JSON)
 	needsDNSEnrichment bool   `json:"-"` // True if record needs async DNS enrichment for user domain
@@ -133,14 +137,14 @@ type FileState struct {
 
 // UserState tracks user information from user packets
 type UserState struct {
-	UserID         uint32
-	UserInfo       parser.UserInfo
-	AuthInfo       parser.AuthInfo
-	TokenInfo      parser.TokenInfo
-	AppInfo        string
-	ExperimentCode string
-	ActivityCode   string
-	CreatedAt      time.Time
+	UserID       uint32
+	UserInfo     parser.UserInfo
+	AuthInfo     parser.AuthInfo
+	TokenInfo    parser.TokenInfo
+	AppInfo      string
+	ExperimentID int // SciTags experiment id from the 'U' stream (&Ec=), 0 if unset
+	ActivityID   int // SciTags activity id from the 'U' stream (&Ac=), 0 if unset
+	CreatedAt    time.Time
 }
 
 // PathInfo represents path mapping with associated user info
@@ -169,6 +173,7 @@ type Correlator struct {
 	enrichmentWG          sync.WaitGroup
 	enrichmentDropCount   int64 // atomic; counts records dropped due to full queue
 	wlcgMetadata          WLCGMetadata
+	scitags               *ScitagsRegistry // resolves 'U'-stream experiment/activity ids to names
 	ctx                   context.Context
 	cancel                context.CancelFunc
 
@@ -198,6 +203,7 @@ type CorrelatorConfig struct {
 	SiteOverrides       *SiteOverrides    // operator pins consulted before every CRIC lookup; nil disables overriding
 	SiteHostRegistry    *HostSiteRegistry // CRIC SE endpoint resolver backing the "hostname" method; nil drops that method
 	SiteIPRegistry      *IPSiteRegistry   // CRIC netroutes resolver backing the "ip" method; nil drops that method
+	Scitags             *ScitagsRegistry  // SciTags id->name resolver; defaults to the embedded snapshot when nil
 	Logger              *logrus.Logger
 
 	// Site resolution tuning. SiteLocalSite is the RCSite this collector runs at,
@@ -242,6 +248,12 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		config.Logger = logrus.New()
 	}
 
+	// Always have a SciTags resolver; fall back to the embedded snapshot so
+	// id->name resolution works even when the caller supplies none.
+	if config.Scitags == nil {
+		config.Scitags = NewScitagsRegistry(config.Logger)
+	}
+
 	// Set DNS enrichment defaults (treat non-positive values as unset)
 	if config.DNSCacheTTL <= 0 {
 		config.DNSCacheTTL = 1 * time.Hour // Default 1 hour cache
@@ -279,6 +291,7 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		enrichmentWorkerCount: config.EnrichmentWorkers,
 		enrichmentQueueSize:   config.EnrichmentQueueSize,
 		wlcgMetadata:          config.WLCGMetadata,
+		scitags:               config.Scitags,
 		ctx:                   ctx,
 		cancel:                cancel,
 		wlcgVOs:               wlcgVOs,
@@ -564,7 +577,7 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 			eaInfo := string(parts[1])
 
 			// Parse the eainfo fields
-			udid, experimentCode, activityCode := parseEAInfo(eaInfo)
+			udid, experimentID, activityID := parseEAInfo(eaInfo)
 
 			if udid == 0 {
 				c.logger.Debugf("Failed to parse udid from eainfo: %s", eaInfo)
@@ -593,35 +606,40 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 			userStateVal, userExists := c.userMap.Get(userStateKey)
 			if userExists {
 				if existingUserState, ok := userStateVal.(*UserState); ok {
-					existingUserState.ExperimentCode = experimentCode
-					existingUserState.ActivityCode = activityCode
+					existingUserState.ExperimentID = experimentID
+					existingUserState.ActivityID = activityID
 					c.userMap.Set(userStateKey, existingUserState)
-					c.logger.Debugf("Updated user %s (udid=%d) with experiment=%s, activity=%s",
-						userInfo.Username, udid, experimentCode, activityCode)
+					c.logger.Debugf("Updated user %s (udid=%d) with experiment_id=%d, activity_id=%d",
+						userInfo.Username, udid, experimentID, activityID)
 				}
 			} else {
-				// Create new user state with experiment/activity codes
+				// Create new user state with experiment/activity ids
 				userState := &UserState{
-					UserID:         udid,
-					UserInfo:       userInfo,
-					ExperimentCode: experimentCode,
-					ActivityCode:   activityCode,
-					CreatedAt:      time.Now(),
+					UserID:       udid,
+					UserInfo:     userInfo,
+					ExperimentID: experimentID,
+					ActivityID:   activityID,
+					CreatedAt:    time.Now(),
 				}
 				c.userMap.Set(userStateKey, userState)
-				c.logger.Debugf("Created new user state for %s (udid=%d) with experiment=%s, activity=%s",
-					userInfo.Username, udid, experimentCode, activityCode)
+				c.logger.Debugf("Created new user state for %s (udid=%d) with experiment_id=%d, activity_id=%d",
+					userInfo.Username, udid, experimentID, activityID)
 			}
 		}
 	}
 }
 
-// parseEAInfo parses experiment and activity info from eainfo string
-// Format: &Uc=udid&Ec=expc&Ac=actc
-// Returns: (udid, experimentCode, activityCode)
-func parseEAInfo(eaInfo string) (uint32, string, string) {
+// parseEAInfo parses the experiment/activity mapping carried on the 'U'
+// (MAPUEAC) stream.
+// Format: &Uc=udid&Ec=expid&Ac=actid
+// Ec and Ac are the numeric SciTags experiment id and activity id (they are ids,
+// not names). Non-numeric or missing values yield 0, matching the xrootd
+// collector's atoi-based decode (PR #2855). The 0 sentinel is treated as "unset"
+// downstream so it never resolves to a name.
+// Returns: (udid, experimentID, activityID)
+func parseEAInfo(eaInfo string) (uint32, int, int) {
 	var udid uint32
-	var experimentCode, activityCode string
+	var experimentID, activityID int
 
 	// Split by & and parse each key=value pair
 	parts := strings.Split(eaInfo, "&")
@@ -643,13 +661,14 @@ func parseEAInfo(eaInfo string) (uint32, string, string) {
 				udid = uint32(val)
 			}
 		case "Ec":
-			experimentCode = value
+			// atoi-style: ignore errors, leaving 0 for empty/non-numeric values
+			experimentID, _ = strconv.Atoi(value)
 		case "Ac":
-			activityCode = value
+			activityID, _ = strconv.Atoi(value)
 		}
 	}
 
-	return udid, experimentCode, activityCode
+	return udid, experimentID, activityID
 }
 
 // parseUserInfo parses userInfo from bytes
@@ -1328,12 +1347,13 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		}
 	}
 
-	// Extract experiment and activity codes
-	experiment := ""
-	activity := ""
+	// Carry the raw SciTags ids from the 'U' stream. ConvertToWLCG adds the
+	// names for WLCG records.
+	experimentID := 0
+	activityID := 0
 	if userInfo != nil {
-		experiment = userInfo.ExperimentCode
-		activity = userInfo.ActivityCode
+		experimentID = userInfo.ExperimentID
+		activityID = userInfo.ActivityID
 	}
 
 	// Extract directory names from filename
@@ -1392,8 +1412,8 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 		TokenOrg:               tokenOrg,
 		TokenRole:              tokenRole,
 		TokenGroups:            tokenGroups,
-		Experiment:             experiment,
-		Activity:               activity,
+		ExperimentID:           experimentID,
+		ActivityID:             activityID,
 		Filename:               state.Filename,
 		Dirname1:               dirname1,
 		Dirname2:               dirname2,
