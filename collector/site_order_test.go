@@ -149,6 +149,79 @@ func TestSiteLocalSiteLANClients(t *testing.T) {
 	assert.Empty(t, public.dstSite)
 }
 
+func TestSiteLocalSiteLANClientAddresses(t *testing.T) {
+	e := newOrderedEnricher(t, []string{SiteMethodConfig})
+	e.localSite = "SITE-LOCAL"
+	e.localSiteLANClients = true
+
+	for _, tc := range []struct {
+		host  string
+		local bool
+	}{
+		{"10.1.2.3", true},
+		{"172.16.0.1", true},
+		{"192.168.1.1", true},
+		{"[::ffff:10.1.2.3]", true},
+		{"127.0.0.1", true},
+		{"::1", true},
+		{"169.254.1.1", true},
+		{"fe80::1%eth0", true},
+		{"fd00::1", true},
+		{"0.0.0.0", false},
+		{"::", false},
+		{"224.0.0.1", false},
+		{"239.1.2.3", false},
+		{"ff02::1", false},
+		{"ff0e::1", false},
+		{"198.51.100.7", false},
+		{"2001:db8::10.1.2.3", false},
+		{"unknown", false},
+	} {
+		t.Run(tc.host, func(t *testing.T) {
+			rec := &CollectorRecord{Host: tc.host, Read: 1}
+			e.Enrich(context.Background(), rec)
+			if tc.local {
+				assert.Equal(t, "SITE-LOCAL", rec.dstSite)
+				assert.Equal(t, SiteStatusResolvedConfig, rec.dstSiteStatus)
+			} else {
+				assert.Empty(t, rec.dstSite)
+				assert.NotEqual(t, SiteStatusResolvedConfig, rec.dstSiteStatus)
+			}
+		})
+	}
+}
+
+func TestSiteResolutionNoApplicableMethod(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		order []string
+		host  string
+	}{
+		{"config-only named remote client", []string{SiteMethodConfig}, "exact.example.org"},
+		{"config-only address", []string{SiteMethodConfig}, "192.0.2.5"},
+		{"disabled hostname method", []string{SiteMethodHostname}, "exact.example.org"},
+		{"disabled IP method", []string{SiteMethodIP}, "192.0.2.5"},
+		{"IP method without an address", []string{SiteMethodIP}, "exact.example.org"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newOrderedEnricher(t, tc.order)
+			e.localSite = "SITE-LOCAL"
+			if tc.name == "disabled hostname method" {
+				e.hosts = nil
+			}
+			if tc.name == "disabled IP method" {
+				e.ips = nil
+			}
+			rec := &CollectorRecord{Host: tc.host, Read: 1}
+			e.Enrich(context.Background(), rec)
+			wlcg, err := ConvertToWLCG(rec, WLCGMetadata{}, nil)
+			require.NoError(t, err)
+			assert.Empty(t, wlcg.DstSite)
+			assert.Equal(t, "no_applicable_method", wlcg.DstSiteStatus)
+		})
+	}
+}
+
 // TestSiteResolutionFailureReason verifies the reported reason when every method
 // misses: the informative name-side reason wins over the IP one, so no_host keeps
 // meaning "no usable name and no matching range either".

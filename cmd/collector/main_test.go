@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,8 +14,12 @@ import (
 	shoveler "github.com/opensciencegrid/xrootd-monitoring-shoveler"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/collector"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/connectors"
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/input"
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/require"
 )
 
 type mockOutputConnector struct {
@@ -146,6 +151,98 @@ func TestGStreamWorkers_ProcessAndEmit(t *testing.T) {
 	}
 	if len(exchanges) != 1 || exchanges[0] != "cache-exchange" {
 		t.Fatalf("expected exchange cache-exchange, got %#v", exchanges)
+	}
+}
+
+type testPacketSource struct {
+	packets chan input.PacketWithAddr
+}
+
+func (s *testPacketSource) Start() error                                 { return nil }
+func (s *testPacketSource) Stop() error                                  { return nil }
+func (s *testPacketSource) PacketsWithAddr() <-chan input.PacketWithAddr { return s.packets }
+
+func packetsByServer(t *testing.T, serverIP string) map[string]float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	counts := make(map[string]float64)
+	for _, family := range families {
+		if family.GetName() != "shoveler_packets_by_server_total" {
+			continue
+		}
+		for _, metric := range family.Metric {
+			labels := make(map[string]string)
+			for _, label := range metric.Label {
+				labels[label.GetName()] = label.GetValue()
+			}
+			if labels["server_ip"] == serverIP {
+				counts[labels["packet_type"]] = metric.GetCounter().GetValue()
+			}
+		}
+	}
+	return counts
+}
+
+func TestProcessPackets_PerServerMetricsBeforeDispatch(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		enabled bool
+		ip      string
+	}{
+		{name: "enabled", enabled: true, ip: "198.51.100.97"},
+		{name: "disabled", ip: "203.0.113.97"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := logrus.New()
+			logger.SetLevel(logrus.ErrorLevel)
+			cor := collector.NewCorrelatorWithConfig(collector.CorrelatorConfig{
+				TTL: time.Minute, PerServerMetrics: tt.enabled, Logger: logger,
+			})
+			defer cor.Stop()
+
+			gstream := make([]byte, 24)
+			gstream[0] = parser.PacketTypeGStream
+			binary.BigEndian.PutUint16(gstream[2:4], uint16(len(gstream)))
+			gstream[16] = 'T'
+			xfr := []byte{parser.PacketTypeXFR, 0, 0, 8, 0, 0, 0, 1}
+			data := [][]byte{gstream, gstream, xfr, []byte("<statistics/>"), {}}
+			source := &testPacketSource{packets: make(chan input.PacketWithAddr, len(data))}
+			for _, packet := range data {
+				// Verify metrics use the same canonical IP as emitted records.
+				source.packets <- input.PacketWithAddr{Data: packet, RemoteAddr: "[::ffff:" + tt.ip + "]:1094"}
+			}
+			close(source.packets)
+
+			// With no worker draining this queue, one gstream packet must be dropped.
+			queue := make(chan *parser.Packet, 1)
+			var dropped int64
+			before := packetsByServer(t, tt.ip)
+			beforeParsed := testutil.ToFloat64(shoveler.PacketsParsedOK)
+			beforeErrors := testutil.ToFloat64(shoveler.ParseErrors)
+			processPackets(source, cor, queue, &dropped, collector.EnrichmentDestination{}, logger)
+			require.Equal(t, int64(1), dropped)
+			require.Equal(t, beforeParsed+4, testutil.ToFloat64(shoveler.PacketsParsedOK))
+			require.Equal(t, beforeErrors+1, testutil.ToFloat64(shoveler.ParseErrors))
+
+			want := make(map[string]float64)
+			for stream, count := range before {
+				want[stream] = count
+			}
+			if tt.enabled {
+				want["gstream"] += 2
+				want["xfr"]++
+				want["xml"]++
+			}
+			require.Equal(t, want, packetsByServer(t, tt.ip), "count parsed packets before dispatch, including queue drops")
+
+			close(queue)
+			for packet := range queue {
+				_, _, err := cor.ProcessGStreamPacket(packet)
+				require.NoError(t, err)
+			}
+			require.Equal(t, want, packetsByServer(t, tt.ip), "workers must not count packets again")
+		})
 	}
 }
 

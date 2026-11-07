@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v4"
 )
 
 func main() {
@@ -32,23 +32,16 @@ func main() {
 	block, _ := pem.Decode([]byte(pemString))
 	privateKey, _ := x509.ParsePKCS1PrivateKey(block.Bytes)
 
-	type MyCustomClaims struct {
-		Scope string `json:"scope"`
-		jwt.StandardClaims
-	}
-
 	// scopes
 	// "my_rabbit_server.write:xrd-mon/" + *exchangePtr + " my_rabbit_server.read:xrd-mon/" + *exchangePtr + " my_rabbit_server.configure:xrd-mon/" + *exchangePtr,
 
 	// Create the Claims
-	claims := MyCustomClaims{
-		"my_rabbit_server.write:xrd-mon/" + *exchangePtr,
-		jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(time.Hour * time.Duration(*hoursPtr)).Unix(),
-			Issuer:    "test",
-			Audience:  "my_rabbit_server",
-			Subject:   "shoveler",
-		},
+	claims := jwt.MapClaims{
+		"scope": "my_rabbit_server.write:xrd-mon/" + *exchangePtr,
+		"exp":   time.Now().Add(time.Hour * time.Duration(*hoursPtr)).Unix(),
+		"iss":   "test",
+		"aud":   "my_rabbit_server",
+		"sub":   "shoveler",
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
