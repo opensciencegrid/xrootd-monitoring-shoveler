@@ -29,6 +29,7 @@ type WLCGRecord struct {
 	ReadSingleBytes        int64                  `json:"read_single_bytes"`
 	ReadVectorBytes        int64                  `json:"read_vector_bytes"`
 	IPv6                   bool                   `json:"ipv6"`
+	IPVer                  string                 `json:"ipver"`
 	StartTime              int64                  `json:"start_time"`
 	EndTime                int64                  `json:"end_time"`
 	OperationTime          int64                  `json:"operation_time"`
@@ -155,6 +156,37 @@ func deriveOperation(record *CollectorRecord) string {
 	}
 }
 
+// IP version values published as ipver.
+const (
+	ipVer4       = "ipv4"
+	ipVer6       = "ipv6"
+	ipVerUnknown = "unknown"
+)
+
+// resolveIPVer maps the address family xrootd reported onto the FTS schema's
+// string: "ipv4", "ipv6", or "unknown".
+//
+// The only input is &I= on the login record, used as xrootd sent it. The ipv6
+// boolean is built from the same field, so the two never disagree. What ipver
+// adds is a third state: a missing &I= is "unknown", not a default to either
+// family. The boolean cannot make that distinction — ipv6 false covers both
+// "xrootd said 4" and "xrootd said nothing".
+//
+// No other address is used to fill a gap. The client host is ignored even when
+// it is a literal IP, and so is server_ip: that is the source of the monitoring
+// datagram this collector received (see canonicalServerIP), which is the
+// server-to-collector path and says nothing about the transfer.
+func resolveIPVer(record *CollectorRecord) string {
+	switch strings.TrimSpace(record.clientInetVersion) {
+	case "4":
+		return ipVer4
+	case "6":
+		return ipVer6
+	}
+
+	return ipVerUnknown
+}
+
 // ConvertToWLCG converts a CollectorRecord to WLCG format
 // Based on references/wlcg_converter.py
 func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsRegistry) (*WLCGRecord, error) {
@@ -208,6 +240,7 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 		ReadSingleBytes:        record.Read,
 		ReadVectorBytes:        record.Readv,
 		IPv6:                   record.IPv6,
+		IPVer:                  resolveIPVer(record),
 		StartTime:              record.StartTime,
 		EndTime:                record.EndTime,
 		OperationTime:          record.OperationTime,

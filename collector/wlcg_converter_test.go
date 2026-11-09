@@ -734,3 +734,74 @@ func TestConvertGStreamToWLCG_CustomMetadata(t *testing.T) {
 		t.Errorf("tpc Type = %v, expected tpc (structural constant)", tm.Type)
 	}
 }
+
+// TestResolveIPVer pins ipver to &I= alone. What the client host happens to be
+// makes no difference: the host column varies across these cases and never
+// changes the answer.
+func TestResolveIPVer(t *testing.T) {
+	tests := []struct {
+		name        string
+		inetVersion string
+		host        string
+		want        string
+	}{
+		{"inet version 4, host is a name", "4", "client.example.com", ipVer4},
+		{"inet version 6, host is a name", "6", "client.example.com", ipVer6},
+		{"inet version 4, host is an address", "4", "192.168.1.10", ipVer4},
+		{"inet version 6, host is an address", "6", "2001:1458:d00:35::100:d4a", ipVer6},
+		// The address is not consulted, so it cannot correct &I= either. On a
+		// dual-stack listener an IPv4 peer is the mapped ::ffff:a.b.c.d form and
+		// xrootd may report 6 for it; that answer is published as it stands.
+		{"mapped peer does not override inet version", "6", "::ffff:192.168.1.10", ipVer6},
+		{"dotted peer does not override inet version", "6", "192.168.1.10", ipVer6},
+		{"v6 peer does not override inet version", "4", "2001:1458:d00:35::100:d4a", ipVer4},
+		// No &I=, nothing else to fall back on: "unknown", never a default to
+		// either family. This is the state the ipv6 boolean cannot express.
+		{"no inet version, host is a name", "", "client.example.com", ipVerUnknown},
+		{"no inet version, host is a v4 address", "", "192.168.1.10", ipVerUnknown},
+		{"no inet version, host is a v6 address", "", "2001:1458:d00:35::100:d4a", ipVerUnknown},
+		{"no user record at all", "", "", ipVerUnknown},
+		{"unknown host placeholder", "", "unknown", ipVerUnknown},
+		{"whitespace around inet version", " 6 ", "client.example.com", ipVer6},
+		{"unrecognised inet version", "7", "client.example.com", ipVerUnknown},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record := &CollectorRecord{Host: tt.host, clientInetVersion: tt.inetVersion}
+			if got := resolveIPVer(record); got != tt.want {
+				t.Errorf("resolveIPVer(inet=%q, host=%q) = %q, want %q", tt.inetVersion, tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestConvertToWLCGIPVer checks the field actually reaches the emitted record,
+// and that server_ip has no say in it: an IPv6 monitoring path carrying an IPv4
+// client's records must still report "4".
+func TestConvertToWLCGIPVer(t *testing.T) {
+	record := &CollectorRecord{
+		Timestamp:         time.Now(),
+		Host:              "client.example.com",
+		ServerIP:          "2001:1458:d00:35::100:d4a",
+		Filename:          "/store/data/file.root",
+		clientInetVersion: "4",
+	}
+
+	wlcg, err := ConvertToWLCG(record, WLCGMetadata{}, nil)
+	if err != nil {
+		t.Fatalf("ConvertToWLCG returned error: %v", err)
+	}
+
+	if wlcg.IPVer != ipVer4 {
+		t.Errorf("IPVer = %v, expected %v", wlcg.IPVer, ipVer4)
+	}
+
+	jsonBytes, err := wlcg.ToJSON()
+	if err != nil {
+		t.Fatalf("ToJSON returned error: %v", err)
+	}
+	if !strings.Contains(string(jsonBytes), `"ipver":"ipv4"`) {
+		t.Errorf("emitted record is missing ipver: %s", jsonBytes)
+	}
+}
