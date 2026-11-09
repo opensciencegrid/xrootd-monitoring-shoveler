@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
@@ -215,6 +216,83 @@ type UserState struct {
 	// with no userMap entry behind it: the client host and protocol are known,
 	// the authentication, token and app info are not.
 	partial bool
+
+	// serverID is the server incarnation the session belongs to, so the
+	// session's dictid entry can be dropped together with it.
+	serverID string
+
+	// The session's files that are open: opened and not yet closed. A
+	// server closes a session's files before it reports the disconnect, so
+	// whatever is still here when the disconnect grace runs out is an open
+	// whose close was lost, and is swept out of stateMap then (see
+	// dropUserFiles). It also keeps a session with open files from idling
+	// out. Guarded by mu, as are writes of UserID: the janitors and the
+	// eviction read them from other goroutines (see dictID).
+	mu        sync.Mutex
+	openFiles map[uint32]struct{}
+	nOpen     atomic.Int32
+}
+
+// setUserID sets the session's login dictid. Only the packet goroutine
+// writes it, and reads UserID directly; the write is under mu for the
+// readers in other goroutines, which use dictID.
+func (u *UserState) setUserID(id uint32) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.UserID = id
+}
+
+// dictID returns the session's login dictid, for readers outside the packet
+// goroutine (the janitors and the eviction).
+func (u *UserState) dictID() uint32 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.UserID
+}
+
+func (u *UserState) addOpenFile(fileID uint32) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.openFiles == nil {
+		u.openFiles = make(map[uint32]struct{})
+	}
+	if _, ok := u.openFiles[fileID]; !ok {
+		u.openFiles[fileID] = struct{}{}
+		u.nOpen.Add(1)
+	}
+}
+
+func (u *UserState) removeOpenFile(fileID uint32) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if _, ok := u.openFiles[fileID]; ok {
+		delete(u.openFiles, fileID)
+		u.nOpen.Add(-1)
+	}
+}
+
+// takeOpenFiles empties the session's open-file set and returns what was in it.
+func (u *UserState) takeOpenFiles() []uint32 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	ids := make([]uint32, 0, len(u.openFiles))
+	for id := range u.openFiles {
+		ids = append(ids, id)
+	}
+	u.openFiles = nil
+	u.nOpen.Store(0)
+	return ids
+}
+
+func (u *UserState) hasOpenFiles() bool { return u.nOpen.Load() > 0 }
+
+// incarnation is one run of one reporting server: its address plus the start
+// time in every packet header, which is what BuildServerID keys state by.
+type incarnation struct {
+	// sawXfr records that this incarnation sends in-flight XFR records for its
+	// open files ("xfr" on its xrootd.monitor fstat line). There a silent open
+	// file is evidence of a lost close; see CorrelatorConfig.FileTTL.
+	sawXfr atomic.Bool
 }
 
 // PathInfo represents path mapping with associated user info
@@ -229,7 +307,13 @@ type Correlator struct {
 	userMap   *StateMap
 	dictMap   *StateMap // Maps dictid to path/user info
 	serverMap *StateMap // Maps serverID to server identification info
+	servers   *StateMap // Maps serverID to *incarnation; idles out after ServerTTL
 	logger    *logrus.Logger
+
+	// Lifetimes; see the matching CorrelatorConfig fields.
+	userTTL     time.Duration
+	userIdleTTL time.Duration
+	fileTTL     time.Duration
 
 	// DNS enrichment fields
 	enableDNSEnrichment   bool
@@ -260,7 +344,38 @@ type Correlator struct {
 
 // CorrelatorConfig holds configuration for the correlator including DNS enrichment
 type CorrelatorConfig struct {
-	TTL                 time.Duration
+	// TTL is the lifetime of the dictionary records that only matter until
+	// the open that uses them: 'd' paths and 'i' app info (state.entry_ttl).
+	// Sessions, open files and servers each have their own lifetime below,
+	// tied to when that thing ends, as in XRootD's own xrdmoncollect.
+	TTL time.Duration
+
+	// UserTTL is how long a session is kept after its disconnect was reported,
+	// so a close that arrives late can still be matched to it. Until the
+	// disconnect a session does not expire by age (state.user_ttl, 300s). It
+	// cannot be turned off: 0 or less means the default, since without a grace
+	// every close that arrives after its disconnect would lose its client.
+	UserTTL time.Duration
+
+	// UserIdleTTL drops a session that has seen no activity for this long and
+	// has no open files: one whose disconnect record was lost. It is a guess,
+	// since an idle client is legitimate and looks the same, so it is long
+	// (state.user_idle_ttl, 24h; negative disables it).
+	UserIdleTTL time.Duration
+
+	// FileTTL drops an open file not heard of for this long: an open whose
+	// close was lost, and whose session's disconnect, which would have swept
+	// it, was lost too or never comes. A server that sends in-flight XFR
+	// records refreshes its open files every interval, so there it is
+	// silence. Elsewhere nothing refreshes an open and it is the open's age,
+	// so it is long enough not to cut a real transfer: reads open for over
+	// two days are seen (state.file_ttl, 7 days; negative disables it).
+	FileTTL time.Duration
+
+	// ServerTTL drops a server incarnation, with every entry it owns, once it
+	// has sent nothing for this long (state.server_ttl, 48h).
+	ServerTTL time.Duration
+
 	MaxEntries          int
 	EnableDNSEnrichment bool
 	DNSCacheTTL         time.Duration
@@ -310,6 +425,16 @@ type CorrelatorConfig struct {
 	DropVOs          []string
 }
 
+// Default lifetimes. user-ttl matches xrdmoncollect. The idle and server
+// lifetimes are longer than xrdmoncollect's (6h and 24h), so a quiet session
+// or server keeps its state for longer.
+const (
+	DefaultUserTTL     = 300 * time.Second
+	DefaultUserIdleTTL = 24 * time.Hour
+	DefaultServerTTL   = 48 * time.Hour
+	DefaultFileTTL     = 7 * 24 * time.Hour
+)
+
 // NewCorrelator creates a new correlator
 func NewCorrelator(ttl time.Duration, maxEntries int, logger *logrus.Logger) *Correlator {
 	config := CorrelatorConfig{
@@ -347,6 +472,23 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		config.EnrichmentQueueSize = defaultEnrichmentQueueMaxSize
 	}
 
+	if config.UserTTL <= 0 {
+		config.UserTTL = DefaultUserTTL
+	}
+	if config.UserIdleTTL == 0 {
+		config.UserIdleTTL = DefaultUserIdleTTL
+	} else if config.UserIdleTTL < 0 {
+		config.UserIdleTTL = 0
+	}
+	if config.ServerTTL <= 0 {
+		config.ServerTTL = DefaultServerTTL
+	}
+	if config.FileTTL == 0 {
+		config.FileTTL = DefaultFileTTL
+	} else if config.FileTTL < 0 {
+		config.FileTTL = 0
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Preserve nil versus empty: legacy routing uses nil for default lists and
@@ -362,11 +504,24 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		ExcludePathPrefixes: config.WLCGExcludePathPrefixes,
 	}
 
+	// Every map is swept on the dictionary TTL's old cadence. Lookups check
+	// expiry themselves; the sweep frees memory and runs the expiry callbacks.
+	sweep := config.TTL / 10
+	if sweep <= 0 {
+		sweep = 30 * time.Second
+	}
+
 	c := &Correlator{
-		stateMap:              NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
-		userMap:               NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
-		dictMap:               NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
-		serverMap:             NewStateMap(config.TTL, config.MaxEntries, config.TTL/10),
+		// Open files and sessions have no age limit: they end with their close
+		// and their disconnect. Server identities go with their incarnation.
+		stateMap:              NewStateMap(0, config.MaxEntries, sweep),
+		userMap:               NewStateMap(0, config.MaxEntries, sweep),
+		dictMap:               NewStateMap(config.TTL, config.MaxEntries, sweep),
+		serverMap:             NewStateMap(0, config.MaxEntries, sweep),
+		servers:               NewStateMap(0, 0, sweep),
+		userTTL:               config.UserTTL,
+		userIdleTTL:           config.UserIdleTTL,
+		fileTTL:               config.FileTTL,
 		logger:                config.Logger,
 		enableDNSEnrichment:   config.EnableDNSEnrichment,
 		dnsTimeout:            config.DNSTimeout,
@@ -382,6 +537,16 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 		dropVOs:               config.DropVOs,
 		perServerMetrics:      config.PerServerMetrics,
 	}
+
+	c.userMap.SetIdleTTL(config.UserIdleTTL)
+	c.userMap.SetKeepAlive(func(v interface{}) bool {
+		us, ok := v.(*UserState)
+		return ok && us.hasOpenFiles()
+	})
+	c.userMap.SetOnExpire(c.userExpired)
+	c.stateMap.SetOnExpire(c.fileExpired)
+	c.servers.SetIdleTTL(config.ServerTTL)
+	c.servers.SetOnExpire(c.serverExpired)
 
 	if config.EnableDNSEnrichment {
 		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
@@ -482,6 +647,7 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 
 	// Calculate server ID: serverStart#addr#port
 	serverID := c.getServerID(packet)
+	inc := c.noteServer(serverID)
 
 	// Handle server info packets ('=' type)
 	if packet.ServerInfo != nil {
@@ -535,7 +701,11 @@ func (c *Correlator) ProcessPacket(packet *parser.Packet) ([]*CollectorRecord, e
 			// The window was already extracted above; the FileTOD record itself
 			// does not correlate to a file operation.
 			c.countByServer(fileTimeRecordsTotal, serverIP)
+		case parser.FileXFRRecord:
+			fileXFRRecordsTotal.Inc()
+			c.handleFileXFR(r, serverID, inc)
 		case parser.FileDisconnectRecord:
+			fileDisconnectRecordsTotal.Inc()
 			c.handleDisconnect(r, serverID)
 			// Disconnect doesn't generate a record, just cleanup
 		}
@@ -667,6 +837,7 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 					UserInfo:  userInfo,
 					AppInfo:   appInfo,
 					CreatedAt: time.Now(),
+					serverID:  serverID,
 				}
 				c.userMap.Set(userStateKey, userState)
 			}
@@ -689,8 +860,9 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 			existingDictKey := BuildDictIDKey(serverID, udid)
 			val, exists := c.dictMap.Get(existingDictKey)
 			if !exists {
-				// User doesn't exist yet, create mapping from udid to this userInfo
-				c.dictMap.Set(existingDictKey, userInfo)
+				// User doesn't exist yet, create mapping from udid to this userInfo.
+				// Like a login's, it lives as long as the session it names.
+				c.dictMap.SetWithTTL(existingDictKey, userInfo, 0, 0)
 				c.logger.Debugf("Created new dictID mapping %d -> userInfo for eainfo", udid)
 			} else {
 				// Get existing userInfo from udid mapping
@@ -709,6 +881,11 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 				if existingUserState, ok := userStateVal.(*UserState); ok {
 					existingUserState.ExperimentID = experimentID
 					existingUserState.ActivityID = activityID
+					// udid is the login's dictid; a state an 'i' record created
+					// before the login holds the 'i' record's own
+					if existingUserState.UserID != udid {
+						existingUserState.setUserID(udid)
+					}
 					c.userMap.Set(userStateKey, existingUserState)
 					c.logger.Debugf("Updated user %s (udid=%d) with experiment_id=%d, activity_id=%d",
 						userInfo.Username, udid, experimentID, activityID)
@@ -721,6 +898,7 @@ func (c *Correlator) handleDictIDRecord(rec *parser.MapRecord, serverID string, 
 					ExperimentID: experimentID,
 					ActivityID:   activityID,
 					CreatedAt:    time.Now(),
+					serverID:     serverID,
 				}
 				c.userMap.Set(userStateKey, userState)
 				c.logger.Debugf("Created new user state for %s (udid=%d) with experiment_id=%d, activity_id=%d",
@@ -1027,9 +1205,32 @@ func (c *Correlator) handleFileOpen(rec parser.FileOpenRecord, packet *parser.Pa
 
 	// Key is only serverID + fileID (not userId)
 	key := BuildFileKey(serverID, rec.Header.FileId)
-	c.stateMap.Set(key, state)
+	if c.fileTTL > 0 {
+		c.stateMap.SetWithTTL(key, state, 0, c.fileTTL)
+	} else {
+		c.stateMap.Set(key, state)
+	}
+
+	// Register the file with its session, so it is swept with the session,
+	// when the session's disconnect grace runs out, if its close never arrives.
+	if user != nil && !user.partial {
+		user.addOpenFile(rec.Header.FileId)
+	}
 
 	return nil, nil
+}
+
+// handleFileXFR handles an in-flight XFR record: the file is still open and
+// transferring. It marks the incarnation as one that reports live transfers,
+// and restarts the file's idle lifetime, so there the file TTL measures
+// silence rather than age.
+func (c *Correlator) handleFileXFR(rec parser.FileXFRRecord, serverID string, inc *incarnation) {
+	if inc != nil {
+		inc.sawXfr.Store(true)
+	}
+	if c.fileTTL > 0 {
+		c.stateMap.SetIdle(BuildFileKey(serverID, rec.Header.FileId), c.fileTTL)
+	}
 }
 
 // handleFileClose handles a file close event.
@@ -1061,6 +1262,9 @@ func (c *Correlator) handleFileClose(rec parser.FileCloseRecord, packet *parser.
 
 	// Remove from state map
 	c.stateMap.Delete(key)
+	if state.User != nil {
+		state.User.removeOpenFile(state.FileID)
+	}
 
 	return record, nil
 }
@@ -1080,9 +1284,9 @@ func extractFileWindow(fileRecords []interface{}) (windowBeg, windowEnd int64) {
 
 // handleServerInfo stores server identification information
 // Server info packets ('=' type) contain: &site=sname&port=pnum&inst=iname&pgm=prog&ver=vname
-// The StateMap automatically resets TTL on each Set, so server entries persist as long as packets arrive
+// The entry lives as long as the server incarnation does; see serverExpired.
 func (c *Correlator) handleServerInfo(info *parser.ServerInfo, serverID string) {
-	// Store or update the server info - StateMap.Set resets the TTL
+	// Store or update the server info
 	c.serverMap.Set(serverID, info)
 	c.logger.Debugf("Stored server info for %s: site=%s, program=%s, version=%s, instance=%s, port=%s",
 		serverID, info.Site, info.Program, info.Version, info.Instance, info.Port)
@@ -1141,19 +1345,46 @@ func (c *Correlator) handleUserRecord(rec *parser.UserRecord, serverID string) {
 		AuthInfo:  rec.AuthInfo,
 		TokenInfo: rec.TokenInfo,
 		CreatedAt: time.Now(),
+		serverID:  serverID,
 	}
 
-	// Store dictID -> userInfo mapping
+	// Store dictID -> userInfo mapping. It has no age limit: it lives as long
+	// as the session, and goes with the session's userMap entry (userExpired)
+	// or with the server incarnation.
 	dictKey := BuildDictIDKey(serverID, rec.DictId)
-	c.dictMap.Set(dictKey, rec.UserInfo)
+	c.dictMap.SetWithTTL(dictKey, rec.UserInfo, 0, 0)
 
 	// Store userInfo -> userState mapping
 	userInfoKey := BuildUserInfoKey(serverID, rec.UserInfo)
-	c.userMap.Set(userInfoKey, userState)
+	if v, ok := c.userMap.Get(userInfoKey); ok {
+		if prev, ok := v.(*UserState); ok {
+			// The key names one login: XRootD (from 5.6.5) puts a number unique
+			// to each login in the user info. A state already on it is this
+			// session's: the same login sent again, or a state that an 'i' or
+			// 'U' record created first (UDP can deliver them before the login).
+			// Complete it in place, so open files that hold it keep it, and
+			// keep what arrived before the login.
+			if prev.UserID != rec.DictId {
+				prev.setUserID(rec.DictId)
+			}
+			prev.UserInfo = rec.UserInfo
+			prev.AuthInfo = rec.AuthInfo
+			if rec.TokenInfo.Subject != "" {
+				prev.TokenInfo = rec.TokenInfo
+			}
+			c.userMap.Set(userInfoKey, prev)
+			return
+		}
+	}
+	c.userMap.SetWithTTL(userInfoKey, userState, 0, c.userIdleTTL)
 }
 
-// handleDisconnect handles a user disconnect event
-// Cleans up all references to the disconnecting user
+// handleDisconnect handles a user disconnect event.
+//
+// The session is not deleted on the spot. Its closes are reported before its
+// disconnect, but they can travel in other packets and arrive after it, so
+// the session is kept for UserTTL more and then expires. Its files still open
+// then are opens whose close was lost, and are dropped with it.
 func (c *Correlator) handleDisconnect(rec parser.FileDisconnectRecord, serverID string) {
 	// Get the userInfo from dictID mapping
 	dictKey := BuildDictIDKey(serverID, rec.UserID)
@@ -1169,15 +1400,86 @@ func (c *Correlator) handleDisconnect(rec parser.FileDisconnectRecord, serverID 
 		return
 	}
 
-	// Delete the dictID -> userInfo mapping
-	c.dictMap.Delete(dictKey)
+	// Start the grace period on the session's entries
+	c.dictMap.ExpireIn(dictKey, c.userTTL)
+	c.userMap.ExpireIn(BuildUserInfoKey(serverID, userInfo), c.userTTL)
+}
 
-	// Delete the userInfo -> userState mapping
-	userInfoKey := BuildUserInfoKey(serverID, userInfo)
-	c.userMap.Delete(userInfoKey)
+// dropUserFiles removes an ended session's files that are still open: their
+// close records were lost.
+func (c *Correlator) dropUserFiles(us *UserState) {
+	for _, fileID := range us.takeOpenFiles() {
+		if c.stateMap.Delete(BuildFileKey(us.serverID, fileID)) {
+			staleOpensTotal.WithLabelValues("disconnect").Inc()
+		}
+	}
+}
 
-	// Note: We don't delete file states here because disconnect doesn't imply
-	// all files are closed. File states will expire via TTL or be removed on close.
+// userExpired runs when a session's userMap entry expires: after its
+// disconnect grace, or after UserIdleTTL with no activity and no open files.
+// The session's dictid entry has no lifetime of its own and goes with it, and
+// so do its files still open, whose closes did not come even in the grace.
+func (c *Correlator) userExpired(key string, value interface{}, ended bool) {
+	us, ok := value.(*UserState)
+	if !ok {
+		return
+	}
+	// A record that arrived just after the expiry, before the sweep, can
+	// already have put a new state on the key (see StateMap.set). When that
+	// one is the same login, the dictid entry is its.
+	id := us.dictID()
+	if v, ok := c.userMap.Get(key); ok {
+		if cur, ok := v.(*UserState); ok && cur.dictID() == id {
+			id = 0
+		}
+	}
+	if us.serverID != "" && id != 0 {
+		c.dictMap.Delete(BuildDictIDKey(us.serverID, id))
+	}
+	c.dropUserFiles(us)
+	if ended {
+		expiredUsersTotal.WithLabelValues("disconnected").Inc()
+	} else {
+		expiredUsersTotal.WithLabelValues("idle").Inc()
+	}
+}
+
+// fileExpired runs when an open file expires on FileTTL: its close was lost.
+func (c *Correlator) fileExpired(_ string, value interface{}, _ bool) {
+	fs, ok := value.(*FileState)
+	if !ok {
+		return
+	}
+	if fs.User != nil {
+		fs.User.removeOpenFile(fs.FileID)
+	}
+	staleOpensTotal.WithLabelValues("file_ttl").Inc()
+}
+
+// noteServer records that serverID has just sent a packet, keeping its
+// incarnation alive, and returns it.
+func (c *Correlator) noteServer(serverID string) *incarnation {
+	if v, ok := c.servers.Get(serverID); ok {
+		c.servers.Touch(serverID)
+		inc, _ := v.(*incarnation)
+		return inc
+	}
+	inc := &incarnation{}
+	c.servers.Set(serverID, inc)
+	return inc
+}
+
+// serverExpired runs when a server incarnation has been silent for ServerTTL:
+// the server restarted (a new incarnation) or went away. Everything it owned
+// goes with it, including the sessions whose disconnects it never sent.
+func (c *Correlator) serverExpired(serverID string, _ interface{}, _ bool) {
+	prefix := serverID + "-"
+	n := c.stateMap.DeletePrefix(prefix)
+	n += c.dictMap.DeletePrefix(prefix)
+	n += c.userMap.DeletePrefix(prefix)
+	c.serverMap.Delete(serverID)
+	reapedServersTotal.Inc()
+	c.logger.Debugf("Reaped server incarnation %s and %d entries it owned", serverID, n)
 }
 
 // getUserInfo retrieves user information for a given userID and serverID
@@ -1228,8 +1530,8 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 	val, exists := c.userMap.Get(userInfoKey)
 	if !exists {
 		c.logger.Debugf("Full user state not found (no 'u' packet), using basic userInfo from 'd' packet: username=%s", userInfo.Username)
-		// UserState not found (no 'u' packet received yet), but we have userInfo from 'd' packet
-		// Create a minimal UserState with just the userInfo
+		// UserState not found (no 'u' packet received yet), but we have
+		// userInfo: create a minimal UserState with just the userInfo
 		return &UserState{
 			UserInfo: userInfo,
 			// AuthInfo will be empty - no 'u' packet received
@@ -1242,6 +1544,8 @@ func (c *Correlator) getUserInfo(userID uint32, fileID uint32, serverID string) 
 		c.logger.Debugf("User state value exists but wrong type for key: %s", userInfoKey)
 		return nil
 	}
+	// The session is in use: restart its idle lifetime
+	c.userMap.Touch(userInfoKey)
 
 	c.logger.Debugf("Found full user state: username=%s, DN=%s, VO=%s", userState.UserInfo.Username, userState.AuthInfo.DN, userState.AuthInfo.Org)
 	return userState
@@ -1654,8 +1958,14 @@ func (c *Correlator) Stop() {
 	if c.userMap != nil {
 		c.userMap.Stop()
 	}
+	if c.dictMap != nil {
+		c.dictMap.Stop()
+	}
 	if c.serverMap != nil {
 		c.serverMap.Stop()
+	}
+	if c.servers != nil {
+		c.servers.Stop()
 	}
 	if c.dnsCache != nil {
 		c.dnsCache.Stop()

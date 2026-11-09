@@ -172,6 +172,15 @@ type FileOpenRecord struct {
 	Lfn      []byte // Logical file name
 }
 
+// FileXFRRecord is an in-flight transfer snapshot for a file that is still
+// open: its cumulative byte counts so far. The server sends one per open file
+// every reporting interval only when "xfr" is on its xrootd.monitor line, so
+// receiving any says that server reports its live transfers.
+type FileXFRRecord struct {
+	Header FileHeader
+	Xfr    StatXFR
+}
+
 // FileDisconnectRecord represents a user disconnect event
 type FileDisconnectRecord struct {
 	Header FileHeader
@@ -947,6 +956,30 @@ parseLoop:
 				break parseLoop
 			}
 			records = append(records, openRec)
+
+		case commonHeader.RecType == RecTypeXFR:
+			// Same layout as the fixed part of a close: header, then the
+			// cumulative read/readv/write byte counts.
+			var xfrRec binaryFileCloseRecordHeader
+			if err := binary.Read(reader, binary.BigEndian, &xfrRec); err != nil {
+				break parseLoop
+			}
+			if _, err := reader.Seek(pos+int64(xfrRec.RecSize), io.SeekStart); err != nil {
+				break parseLoop
+			}
+			records = append(records, FileXFRRecord{
+				Header: FileHeader{
+					RecType: xfrRec.RecType,
+					RecFlag: xfrRec.RecFlag,
+					RecSize: xfrRec.RecSize,
+					FileId:  xfrRec.FileId,
+				},
+				Xfr: StatXFR{
+					Read:  int64(xfrRec.Read),
+					Readv: int64(xfrRec.Readv),
+					Write: int64(xfrRec.Write),
+				},
+			})
 
 		case commonHeader.RecType == RecTypeDisc:
 			// Disconnect record - userID field contains the dictid of disconnecting user

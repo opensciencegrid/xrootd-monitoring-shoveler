@@ -191,3 +191,49 @@ var (
 		Help: "Total number of SciTags ids that could not be resolved to a name",
 	}, []string{"kind"})
 )
+
+// Correlation state lifecycle. These say how entries leave the state other
+// than by being used: the session and open-file lifetimes and the server
+// reaping that replaced the single entry TTL.
+var (
+	// expiredUsersTotal counts sessions removed from the state, by reason:
+	// "disconnected" is the grace period after a reported disconnect running
+	// out (the mechanism working); "idle" is a session with no disconnect
+	// that went quiet for state.user_idle_ttl. A climbing "idle" with live
+	// sessions behind it means user_idle_ttl is too short.
+	expiredUsersTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "shoveler_expired_users_total",
+		Help: "Total number of client sessions removed from the correlation state, by reason (disconnected, idle)",
+	}, []string{"reason"})
+
+	// staleOpensTotal counts open files dropped without their close, by how
+	// that was found out: "disconnect" (still open when the session ended) or
+	// "file_ttl" (not heard of for state.file_ttl: silent, on a server that
+	// sends XFR; that old, elsewhere).
+	staleOpensTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "shoveler_stale_opens_total",
+		Help: "Total number of open files dropped from the correlation state without a close, by reason (disconnect, file_ttl)",
+	}, []string{"reason"})
+
+	// reapedServersTotal counts server incarnations dropped after
+	// state.server_ttl of silence, with everything they owned.
+	reapedServersTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_reaped_servers_total",
+		Help: "Total number of server incarnations dropped from the correlation state after state.server_ttl without a packet",
+	})
+
+	// fileXFRRecordsTotal counts in-flight XFR records. Zero means no server
+	// reporting here has "xfr" on its xrootd.monitor line, and state.file_ttl
+	// then counts from each open.
+	fileXFRRecordsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_file_xfr_records_total",
+		Help: "Total number of in-flight XFR records received in f-stream packets",
+	})
+
+	// fileDisconnectRecordsTotal counts session disconnect records, which start
+	// a session's grace period.
+	fileDisconnectRecordsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "shoveler_file_disconnect_records_total",
+		Help: "Total number of session disconnect records received in f-stream packets",
+	})
+)

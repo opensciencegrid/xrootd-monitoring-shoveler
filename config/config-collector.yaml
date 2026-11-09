@@ -22,10 +22,24 @@ input:
 
 # State management (collector mode only)
 state:
-  # Time-to-live for state entries in seconds (5 minutes default)
+  # Lifetime of the 'd' (path) and 'i' (app info) dictionary records, in
+  # seconds. They are only needed until the file open that uses them.
   entry_ttl: 300
-  # Maximum number of state entries (0 for unlimited)
-  max_entries: 10000
+  # The rest of the state ends with what it describes, not on a timer from
+  # when it was written
+  # user_ttl: 300        # keep a session this long after its disconnect, for late (out of order) closes
+  #                      # (cannot be turned off: 0 or negative means the default: 300)
+  # user_idle_ttl: 86400 # drop a session with no disconnect, no activity and no open files (<0: never) - 1 day
+  # file_ttl: 604800     # drop an open file not heard of this long (its close was lost): - 7 days
+  #                      # silence on servers that send XFR records ("xfr" on
+  #                      # xrootd.monitor), else the open's age. <0 = off
+  # server_ttl: 172800   # drop a server incarnation, and all it owns, after this long silent - 2 days
+  # Maximum number of entries in each state map (0: no limit). Leave this at 0.
+  # A full map refuses new entries instead of evicting old ones, and since
+  # sessions and open files now live until their disconnect or close (or the
+  # TTLs above), a map can stay full for days. Meanwhile new logins and opens
+  # are dropped, and their records come out with host "unknown".
+  max_entries: 0
   # DNS enrichment settings (replaces reverse DNS lookup)
   # enable_dns_enrichment: false
   # dns_cache_ttl: 3600       # Time-to-live for DNS cache entries in seconds

@@ -483,6 +483,10 @@ func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger 
 
 	correlatorConfig := collector.CorrelatorConfig{
 		TTL:                 ttl,
+		UserTTL:             time.Duration(config.State.UserTTL) * time.Second,
+		UserIdleTTL:         time.Duration(config.State.UserIdleTTL) * time.Second,
+		FileTTL:             time.Duration(config.State.FileTTL) * time.Second,
+		ServerTTL:           time.Duration(config.State.ServerTTL) * time.Second,
 		MaxEntries:          config.State.MaxEntries,
 		EnableDNSEnrichment: config.State.EnableDNSEnrichment,
 		DNSCacheTTL:         time.Duration(config.State.DNSCacheTTL) * time.Second,

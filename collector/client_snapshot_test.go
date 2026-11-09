@@ -177,8 +177,9 @@ func TestClientSnapshot_PartialAtOpenUpgradedAtClose(t *testing.T) {
 }
 
 // An 'i' (app info) record made a userMap entry for the session before its
-// login, so the open captured a client with no authentication. The login
-// writes a new UserState for the same session; the close takes that one.
+// login (UDP can deliver it first), so the open captured a client with no
+// authentication. The 'i' record has its own dictid, as every XRootD map
+// record does. The login completes that entry in place, and the close has it.
 func TestClientSnapshot_LoginAfterAppInfoIsUsed(t *testing.T) {
 	c := NewCorrelator(5*time.Second, 0, nil)
 	defer c.Stop()
@@ -188,37 +189,19 @@ func TestClientSnapshot_LoginAfterAppInfoIsUsed(t *testing.T) {
 		PacketType: parser.PacketTypeInfo,
 		RemoteAddr: snapAddr,
 		MapRecord: &parser.MapRecord{
-			DictId: snapLoginDic,
+			DictId: 50,
 			Info:   []byte("xroot/alice.4021:11@" + snapHost + "\nmyapp"),
 		},
 	})
-	snapRun(t, c, snapOpen(true))
+	snapRun(t, c, snapDict())
+	snapRun(t, c, snapOpen(false)) // resolves the 'i' entry through the 'd' record
 	snapRun(t, c, snapLogin())
 
 	recs := snapRun(t, c, snapClose())
 	require.Len(t, recs, 1)
 	assert.Equal(t, "/CN=alice", recs[0].UserDN)
 	assert.Equal(t, "alice", recs[0].VO)
-}
-
-// A new session takes over the user.pid:sid@host key (a reused socket) while
-// a file of the old one is open. The close keeps the client captured at open
-// rather than the new session's.
-func TestClientSnapshot_KeyTakenByNewSessionKeepsOpenClient(t *testing.T) {
-	c := NewCorrelator(5*time.Second, 0, nil)
-	defer c.Stop()
-
-	snapRun(t, c, snapLogin())
-	snapRun(t, c, snapOpen(true))
-	relogin := snapLogin()
-	relogin.UserRecord.DictId = snapLoginDic + 1
-	relogin.UserRecord.AuthInfo = parser.AuthInfo{DN: "/CN=bob", Org: "atlas"}
-	snapRun(t, c, relogin)
-
-	recs := snapRun(t, c, snapClose())
-	require.Len(t, recs, 1)
-	assert.Equal(t, "/CN=alice", recs[0].UserDN)
-	assert.Equal(t, "alice", recs[0].VO)
+	assert.Equal(t, "myapp", recs[0].AppInfo, "the app info is kept")
 }
 
 // A 'd' record whose user part does not parse is kept as the raw
@@ -259,21 +242,4 @@ func TestClientSnapshot_TokenAfterOpenIsKept(t *testing.T) {
 	recs := snapRun(t, c, snapClose())
 	require.Len(t, recs, 1)
 	assert.Equal(t, "sub-1", recs[0].TokenSubject)
-}
-
-// The limit: no 'd' record for the file and a login already expired at open.
-// Nothing names the client at open either, so the record stays "unknown".
-func TestClientSnapshot_NothingToCaptureAtOpen(t *testing.T) {
-	c := NewCorrelator(snapTTL, 0, nil)
-	defer c.Stop()
-
-	snapRun(t, c, snapLogin())
-	time.Sleep(snapTTL + 100*time.Millisecond)
-
-	snapRun(t, c, snapOpen(true)) // inline LFN, no 'd'
-
-	recs := snapRun(t, c, snapClose())
-	require.Len(t, recs, 1)
-	assert.Equal(t, "unknown", recs[0].Host)
-	assert.Equal(t, snapPath, recs[0].Filename)
 }

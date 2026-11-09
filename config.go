@@ -156,8 +156,14 @@ type InputConfig struct {
 }
 
 type StateConfig struct {
-	EntryTTL   int // TTL in seconds for state entries
+	EntryTTL   int // TTL in seconds for 'd'/'i' dictionary records (paths, app info)
 	MaxEntries int // Max entries in state map (0 for unlimited)
+
+	// Lifetimes of the rest of the correlation state, in seconds. Each starts
+	UserTTL     int // keep a session this long after its disconnect (default 300; <=0 means the default)
+	UserIdleTTL int // drop an idle session with no open files after this long (default 86400, <0 disables)
+	FileTTL     int // drop an open file not heard of this long: silent with XFR, else its age (default 604800; <0 disables)
+	ServerTTL   int // drop a server incarnation silent this long (default 172800)
 
 	// DNS Enrichment configuration
 	EnableDNSEnrichment bool // Enable DNS enrichment with caching and worker pool
@@ -350,6 +356,14 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.State.EntryTTL = viper.GetInt("state.entry_ttl")
 	viper.SetDefault("state.max_entries", 0) // unlimited by default
 	c.State.MaxEntries = viper.GetInt("state.max_entries")
+	viper.SetDefault("state.user_ttl", 300) // 5 minutes after the disconnect
+	c.State.UserTTL = viper.GetInt("state.user_ttl")
+	viper.SetDefault("state.user_idle_ttl", 86400) // 1 day
+	c.State.UserIdleTTL = viper.GetInt("state.user_idle_ttl")
+	viper.SetDefault("state.file_ttl", 0) // 0: the correlator's default, 7 days
+	c.State.FileTTL = viper.GetInt("state.file_ttl")
+	viper.SetDefault("state.server_ttl", 172800) // 2 days
+	c.State.ServerTTL = viper.GetInt("state.server_ttl")
 
 	// DNS Enrichment configuration
 	viper.SetDefault("state.enable_dns_enrichment", false) // disabled by default
