@@ -379,6 +379,25 @@ func siteInternalFromScope(scope string) *bool {
 	}
 }
 
+// remoteAccessFromScope derives remote_access from the scope: the negative of
+// site_internal_traffic, WAN being remote and LAN local, and nil when the
+// topology did not resolve so the field is left off rather than published as a
+// false.
+//
+// XRootD-internal traffic is not subtracted here.
+func remoteAccessFromScope(scope string) *bool {
+	remote := true
+	local := false
+	switch scope {
+	case TrafficScopeWAN:
+		return &remote
+	case TrafficScopeLAN:
+		return &local
+	default:
+		return nil
+	}
+}
+
 // trafficRecordEnricher stamps the scope and the XRootD-internal verdict on a
 // record. It must run AFTER siteRecordEnricher, whose src/dst resolution the
 // scope is read from.

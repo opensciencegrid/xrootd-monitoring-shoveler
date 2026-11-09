@@ -96,6 +96,7 @@ func TestTrafficScopeFromResolvedSites(t *testing.T) {
 			scope := classifyTrafficScope(c.src, c.srcSt, c.dst, c.dstSt)
 			assert.Equal(t, c.wantScope, scope)
 			assert.Equal(t, c.wantInternal, siteInternalFromScope(scope))
+			assert.Equal(t, negate(c.wantInternal), remoteAccessFromScope(scope))
 		})
 	}
 }
@@ -598,4 +599,49 @@ func TestTrafficEnricherRegistration(t *testing.T) {
 		})
 		assert.Equal(t, []string{"site", "traffic"}, enricherNames(c))
 	})
+}
+
+// negate mirrors a site_internal_traffic expectation into the remote_access one
+// the same scope must produce: the inverse where there is an answer, and still
+// no answer where there is none.
+func negate(internal *bool) *bool {
+	if internal == nil {
+		return nil
+	}
+	remote := !*internal
+	return &remote
+}
+
+// TestRemoteAccessIgnoresXRootDInternal pins that remote_access reports the
+// site boundary alone.
+func TestRemoteAccessIgnoresXRootDInternal(t *testing.T) {
+	cases := []struct {
+		name           string
+		scope          string
+		xrootdInternal bool
+		want           *bool
+	}{
+		{"WAN, user traffic", TrafficScopeWAN, false, boolValue(true)},
+		{"WAN, xrootd internal", TrafficScopeWAN, true, boolValue(true)},
+		{"LAN, user traffic", TrafficScopeLAN, false, boolValue(false)},
+		{"LAN, xrootd internal", TrafficScopeLAN, true, boolValue(false)},
+		{"UNKNOWN, user traffic", TrafficScopeUnknown, false, nil},
+		{"UNKNOWN, xrootd internal", TrafficScopeUnknown, true, nil},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			record := &CollectorRecord{
+				Timestamp:      time.Now(),
+				Filename:       "/store/data/file.root",
+				trafficScope:   c.scope,
+				xrootdInternal: c.xrootdInternal,
+			}
+
+			wlcg, err := ConvertToWLCG(record, WLCGMetadata{}, nil)
+			assert.NoError(t, err)
+			assert.Equal(t, c.want, wlcg.RemoteAccess)
+			assert.Equal(t, negate(wlcg.SiteInternalTraffic), wlcg.RemoteAccess)
+		})
+	}
 }

@@ -95,7 +95,13 @@ type WLCGRecord struct {
 	// operation itself (replication, a system or job-agent account) rather than
 	// an end user. It is a pointer only so the field is absent, rather than a
 	// meaningless false, on records nothing classified.
+	//
+	// RemoteAccess is the inverse of SiteInternalTraffic: true for WAN, false
+	// for LAN, absent when nothing resolved, and is kept for consistency with
+	// the FTS schema, which names the same question that way. XRootD-internal
+	// traffic is not subtracted from it.
 	SiteInternalTraffic   *bool  `json:"site_internal_traffic,omitempty"`
+	RemoteAccess          *bool  `json:"remote_access,omitempty"`
 	TrafficScope          string `json:"traffic_scope,omitempty"`
 	XRootDInternalTraffic *bool  `json:"xrootd_internal_traffic,omitempty"`
 }
@@ -305,6 +311,7 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 	if record.trafficScope != "" {
 		wlcg.TrafficScope = record.trafficScope
 		wlcg.SiteInternalTraffic = siteInternalFromScope(record.trafficScope)
+		wlcg.RemoteAccess = remoteAccessFromScope(record.trafficScope)
 		xrootdInternal := record.xrootdInternal
 		wlcg.XRootDInternalTraffic = &xrootdInternal
 	}
