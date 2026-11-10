@@ -679,7 +679,7 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	// inferring it, which is both certain and free; it also covers LAN clients
 	// unless site.local_site_lan_clients is false. site.resolution_order sets
 	// which methods are tried and in what order (first hit wins).
-	c.Site.LocalSite = viper.GetString("site.local_site")
+	c.Site.LocalSite = strings.TrimSpace(viper.GetString("site.local_site"))
 	viper.SetDefault("site.local_site_lan_clients", true)
 	c.Site.LocalSiteLANClients = viper.GetBool("site.local_site_lan_clients")
 	viper.SetDefault("site.resolution_order", []string{"config", "hostname", "ip", "domain"})
@@ -750,11 +750,10 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 
 	// Traffic classification (collector mode, WLCG mode only). On by default once
 	// wlcg.enabled is set, since the three fields are what a WLCG site wants from
-	// the src/dst sites it already resolves. The rules below have defaults taken
-	// from the MonALISA xrootd collector - verified by the XRootD team, only need changing at a site whose
-	// system accounts or replication paths are named differently, and carry no
-	// viper defaults: an unset rule is turned into its default inside the
-	// collector package, the same arrangement as wlcg.vo_order.
+	// the src/dst sites it already resolves. The rules follow the MonALISA xrootd
+	// collector, as the XRootD team suggested, and only need setting at a site
+	// that names its system accounts or replication paths differently. Their
+	// defaults live in the collector package, as with wlcg.vo_order.
 	viper.SetDefault("wlcg.traffic_enabled", true)
 	c.WLCG.TrafficEnabled = viper.GetBool("wlcg.traffic_enabled")
 	c.WLCG.TrafficInternalUsers = viper.GetStringSlice("wlcg.traffic_internal_users")

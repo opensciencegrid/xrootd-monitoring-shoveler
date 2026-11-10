@@ -57,6 +57,12 @@ func TestTrafficScopeFromResolvedSites(t *testing.T) {
 			wantScope: TrafficScopeLAN, wantInternal: boolValue(true),
 		},
 		{
+			// local_site as the operator typed it against CRIC's name.
+			name: "site names differing only in case are LAN", src: "cern-prod ", dst: "CERN-PROD",
+			srcSt: SiteStatusResolvedConfig, dstSt: SiteStatusResolvedIP,
+			wantScope: TrafficScopeLAN, wantInternal: boolValue(true),
+		},
+		{
 			name: "different sites are WAN", src: "CERN-PROD", dst: "IN2P3-CC",
 			srcSt: SiteStatusResolvedHostname, dstSt: SiteStatusResolvedIP,
 			wantScope: TrafficScopeWAN, wantInternal: boolValue(false),
@@ -326,7 +332,9 @@ func TestTrafficConfigRules(t *testing.T) {
 		cfg := TrafficConfig{Enabled: true}.withDefaults()
 		assert.Equal(t, []string{"root"}, cfg.InternalUsers)
 		assert.Equal(t, []string{"replicate"}, cfg.ReplicationPrefixes)
-		assert.Equal(t, "1-8", cfg.JobAgents)
+		first, last, err := cfg.jobAgentRange()
+		assert.NoError(t, err)
+		assert.Equal(t, []int{1, 8}, []int{first, last})
 	})
 
 	t.Run("custom accounts and prefixes", func(t *testing.T) {
@@ -391,10 +399,12 @@ func TestJobAgentRange(t *testing.T) {
 		{value: "3", first: 3, last: 3},
 		{value: "none", first: 1, last: 0},
 		{value: "None", first: 1, last: 0},
-		{value: "8-1", first: 1, last: 8, wantErr: true},
-		{value: "-5", first: 1, last: 8, wantErr: true},
-		{value: "1-", first: 1, last: 8, wantErr: true},
-		{value: "abc", first: 1, last: 8, wantErr: true},
+		// A value that does not parse turns the rule off.
+		{value: "8-1", first: 1, last: 0, wantErr: true},
+		{value: "-5", first: 1, last: 0, wantErr: true},
+		{value: "1-", first: 1, last: 0, wantErr: true},
+		{value: "off", first: 1, last: 0, wantErr: true},
+		{value: "false", first: 1, last: 0, wantErr: true},
 	} {
 		t.Run(tc.value, func(t *testing.T) {
 			first, last, err := TrafficConfig{JobAgents: tc.value}.jobAgentRange()

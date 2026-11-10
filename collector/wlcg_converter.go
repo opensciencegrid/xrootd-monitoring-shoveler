@@ -86,9 +86,9 @@ type WLCGRecord struct {
 	//
 	// SiteInternalTraffic is true when both ends resolved to the same RCSite and
 	// false when they resolved to different ones. It is a pointer because an
-	// unresolved topology is neither: the field is then left off the record
-	// entirely rather than published as a false, which would claim the two ends
-	// were resolved and found apart. Read TrafficScope == "UNKNOWN" for that case.
+	// unresolved topology is neither: the field is then left off the record, as a
+	// false would claim the two ends were resolved and found apart. Read
+	// TrafficScope == "UNKNOWN" for that case.
 	//
 	// XRootDInternalTraffic is an independent axis: whether XRootD generated the
 	// operation itself (replication, a system or job-agent account) rather than

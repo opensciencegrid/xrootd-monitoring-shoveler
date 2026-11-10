@@ -83,8 +83,8 @@ type TrafficConfig struct {
 	CaseSensitive bool
 }
 
-// withDefaults fills in the rules the operator said nothing about: a nil list
-// and an empty job-agent range.
+// withDefaults fills in the lists the operator said nothing about. The
+// job-agent range has its default in jobAgentRange.
 func (c TrafficConfig) withDefaults() TrafficConfig {
 	if c.InternalUsers == nil {
 		c.InternalUsers = DefaultTrafficInternalUsers
@@ -92,15 +92,13 @@ func (c TrafficConfig) withDefaults() TrafficConfig {
 	if c.ReplicationPrefixes == nil {
 		c.ReplicationPrefixes = DefaultTrafficReplicationPrefixes
 	}
-	if strings.TrimSpace(c.JobAgents) == "" {
-		c.JobAgents = DefaultTrafficJobAgents
-	}
 	return c
 }
 
-// jobAgentRange returns the job-agent range in force. Empty is the default, and
-// a value that does not parse falls back to DefaultTrafficJobAgents with err
-// saying why. The rule is off when last < first.
+// jobAgentRange returns the job-agent range in force. Empty is
+// DefaultTrafficJobAgents. A value that does not parse, such as "off" or
+// "false", turns the rule off and err says why: flagging a user's transfer as
+// internal is the worse mistake. The rule is off when last < first.
 func (c TrafficConfig) jobAgentRange() (first, last int, err error) {
 	value := c.JobAgents
 	if strings.TrimSpace(value) == "" {
@@ -108,9 +106,9 @@ func (c TrafficConfig) jobAgentRange() (first, last int, err error) {
 	}
 	first, last, err = parseJobAgentRange(value)
 	if err != nil {
-		first, last, _ = parseJobAgentRange(DefaultTrafficJobAgents)
+		return 1, 0, err
 	}
-	return first, last, err
+	return first, last, nil
 }
 
 // parseJobAgentRange reads "N", "N-M" or "none" into the bounds of the range.
@@ -189,9 +187,9 @@ func (t *trafficClassifier) fold(value string) string {
 //  3. the protocol, appinfo or path names a replication operation ("replicate")
 //
 // Nothing else counts. A record whose account never reached the collector, or
-// that carries none of these markers, is reported as not internal (false)
-// rather than unknown: the schema has no unknown state for it, and calling an
-// ordinary user's transfer infrastructure traffic is the worse mistake.
+// that carries none of these markers, is reported as false: the schema has no
+// unknown state for it, and calling an ordinary user's transfer infrastructure
+// traffic is the worse mistake.
 func (t *trafficClassifier) ClassifyXRootDInternal(record *CollectorRecord) (internal bool, signal string) {
 	if record == nil {
 		return false, ""
@@ -346,7 +344,9 @@ func classifyTrafficScope(srcSite, srcStatus, dstSite, dstStatus string) string 
 	if srcSite == "" || dstSite == "" {
 		return TrafficScopeUnknown
 	}
-	if srcSite == dstSite {
+	// local_site and site.overrides are typed by the operator and the other
+	// methods name sites from CRIC, so "cern-prod" and "CERN-PROD" are one site.
+	if strings.EqualFold(strings.TrimSpace(srcSite), strings.TrimSpace(dstSite)) {
 		return TrafficScopeLAN
 	}
 	return TrafficScopeWAN
@@ -355,7 +355,7 @@ func classifyTrafficScope(srcSite, srcStatus, dstSite, dstStatus string) string 
 // siteInternalFromScope derives site_internal_traffic from the scope, which is
 // the only place the two are related: LAN is internal, WAN is not, and an
 // unresolved topology has no answer at all (nil, so the field is left off the
-// record rather than published as a false).
+// record).
 func siteInternalFromScope(scope string) *bool {
 	internal := true
 	external := false
@@ -419,7 +419,7 @@ func logTrafficRules(logger *logrus.Logger, cfg TrafficConfig) {
 	cfg = cfg.withDefaults()
 	first, last, err := cfg.jobAgentRange()
 	if err != nil {
-		logger.Warnf("traffic: ignoring wlcg.traffic_job_agents: %v; using %s", err, DefaultTrafficJobAgents)
+		logger.Warnf("traffic: wlcg.traffic_job_agents: %v; the job-agent rule is off", err)
 	}
 	jobAgents := fmt.Sprintf("%d-%d", first, last)
 	if last < first {

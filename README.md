@@ -934,7 +934,8 @@ first hit wins:
 
 1. an account is one of `wlcg.traffic_internal_users` (default `root`)
 2. an account is an all-digit job-agent id within
-   `wlcg.traffic_job_agents` (default `1-8`; `none` turns the rule off)
+   `wlcg.traffic_job_agents` (default `1-8`; `none` turns the rule off, and so
+   does a value that does not parse, with a warning at startup)
 3. the protocol is one of `wlcg.traffic_replication_prefixes` (default
    `replicate`), or the appinfo or the path has a `/`-separated segment starting
    with one of them and a colon, as in XrootD's `/replicate:` paths. A user
