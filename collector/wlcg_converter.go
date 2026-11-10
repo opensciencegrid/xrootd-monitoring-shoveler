@@ -78,6 +78,25 @@ type WLCGRecord struct {
 	CRABRetry              string                 `json:"CRAB_Retry,omitempty"`
 	CRABWorkflow           string                 `json:"CRAB_Workflow,omitempty"`
 	Metadata               map[string]interface{} `json:"metadata"`
+
+	// The two traffic classifications, both read from the src/dst sites above and
+	// from the record's account, protocol and path. They are written only while
+	// WLCG mode and wlcg.traffic_enabled are on, so a collector without them
+	// emits exactly what it emitted before.
+	//
+	// SiteInternalTraffic is true when both ends resolved to the same RCSite and
+	// false when they resolved to different ones. It is a pointer because an
+	// unresolved topology is neither: the field is then left off the record, as a
+	// false would claim the two ends were resolved and found apart. Read
+	// TrafficScope == "UNKNOWN" for that case.
+	//
+	// XRootDInternalTraffic is an independent axis: whether XRootD generated the
+	// operation itself (replication, a system or job-agent account) rather than
+	// an end user. It is a pointer only so the field is absent, rather than a
+	// meaningless false, on records nothing classified.
+	SiteInternalTraffic   *bool  `json:"site_internal_traffic,omitempty"`
+	TrafficScope          string `json:"traffic_scope,omitempty"`
+	XRootDInternalTraffic *bool  `json:"xrootd_internal_traffic,omitempty"`
 }
 
 // IsWLCGPacket determines if a record should be converted to WLCG format
@@ -240,6 +259,21 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 		wlcg.RecordVO = record.recordVO()
 		wlcg.VO = record.resolvedVO
 		wlcg.VOSource = record.voSource
+	}
+
+	// Traffic classification. trafficRecordEnricher worked both answers out after
+	// the sites were resolved; here they are only published. An empty scope means
+	// nothing classified this record (WLCG mode or wlcg.traffic_enabled is off),
+	// and then none of the three fields is written.
+	//
+	// site_internal_traffic is derived from the scope here rather than carried
+	// separately, so "LAN implies internal, WAN implies not, UNKNOWN implies no
+	// answer" holds by construction. "user" keeps the value the record reported.
+	if record.trafficScope != "" {
+		wlcg.TrafficScope = record.trafficScope
+		wlcg.SiteInternalTraffic = siteInternalFromScope(record.trafficScope)
+		xrootdInternal := record.xrootdInternal
+		wlcg.XRootDInternalTraffic = &xrootdInternal
 	}
 
 	// Parse appinfo for CRAB information if present
