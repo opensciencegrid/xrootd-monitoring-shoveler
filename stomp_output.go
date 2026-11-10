@@ -18,16 +18,16 @@ type stompOutput struct {
 	stopOnce sync.Once
 	fed      chan struct{} // closed when the feeder has returned
 
-	mu       sync.Mutex
-	held     *MessageStruct // taken by the feeder, not yet handed to a connection
-	inflight map[*StompSession]sending
-	taken    uint64 // counts messages handed out, to keep their order on a save
-}
-
-// sending is a message a connection is sending, waiting for its receipt.
-type sending struct {
-	msg   *MessageStruct
-	order uint64
+	mu sync.Mutex
+	// unconfirmed holds every message taken from the queue and not yet
+	// confirmed by a broker, by the order it was taken: from the feeder taking
+	// it, through the handoff, until the receipt arrives.
+	unconfirmed map[*MessageStruct]uint64
+	taken       uint64
+	// parked are unconfirmed messages nothing is sending any more: the one the
+	// feeder still had when it stopped, or one a connection stopped retrying.
+	parked map[*MessageStruct]bool
+	saved  bool // saveAndStop has saved the unconfirmed messages
 }
 
 func newStompOutput(queue *ConfirmationQueue) *stompOutput {
@@ -36,7 +36,9 @@ func newStompOutput(queue *ConfirmationQueue) *stompOutput {
 		messages: make(chan *MessageStruct),
 		stop:     make(chan struct{}),
 		fed:      make(chan struct{}),
-		inflight: map[*StompSession]sending{},
+
+		unconfirmed: map[*MessageStruct]uint64{},
+		parked:      map[*MessageStruct]bool{},
 	}
 }
 
@@ -91,13 +93,14 @@ func (o *stompOutput) feed() {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
+		if !o.take(msg) {
+			return
+		}
 		select {
 		case o.messages <- msg:
 		case <-o.stop:
 			// Shutting down: saveAndStop saves it after the ones being sent.
-			o.mu.Lock()
-			o.held = msg
-			o.mu.Unlock()
+			o.park(msg)
 			return
 		}
 	}
@@ -108,40 +111,62 @@ func (o *stompOutput) halt() {
 	o.stopOnce.Do(func() { close(o.stop) })
 }
 
-// track records the message a connection is about to send.
-func (o *stompOutput) track(session *StompSession, msg *MessageStruct) {
+// take records a message taken from the queue. Once a shutdown has saved the
+// unconfirmed messages, it puts the message straight back and returns false.
+func (o *stompOutput) take(msg *MessageStruct) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if o.saved {
+		o.queue.SaveInFlight([]*MessageStruct{msg})
+		return false
+	}
 	o.taken++
-	o.inflight[session] = sending{msg: msg, order: o.taken}
+	o.unconfirmed[msg] = o.taken
+	return true
 }
 
-// untrack records that the broker confirmed the connection's message.
-func (o *stompOutput) untrack(session *StompSession) {
+// confirm records that a broker confirmed the message.
+func (o *stompOutput) confirm(msg *MessageStruct) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	delete(o.inflight, session)
+	delete(o.unconfirmed, msg)
+}
+
+// park records an unconfirmed message nothing is sending any more, so a
+// shutdown saves it without waiting for it.
+func (o *stompOutput) park(msg *MessageStruct) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.parked[msg] = true
 }
 
 // requeue puts a message whose send failed back at the front of the queue,
-// for any connection to send next.
-func (o *stompOutput) requeue(session *StompSession, msg *MessageStruct) {
-	o.untrack(session)
+// for any connection to send next. After a shutdown saved it, the message is
+// already in the queue. The lock is held through the write, so a shutdown
+// either waits for it or saves the message itself.
+func (o *stompOutput) requeue(msg *MessageStruct) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.saved {
+		return
+	}
 	o.queue.SaveInFlight([]*MessageStruct{msg})
+	delete(o.unconfirmed, msg)
 	StompRequeued.Inc()
 }
 
-// sendsInProgress counts the messages being sent.
+// sendsInProgress counts the unconfirmed messages a connection is sending.
 func (o *stompOutput) sendsInProgress() int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return len(o.inflight)
+	return len(o.unconfirmed) - len(o.parked)
 }
 
-// saveAndStop stops publishing, waits up to timeout for the sends in progress
-// to be confirmed, and saves the rest, in the order they were taken, followed
-// by the one the feeder held. A message saved here whose receipt arrives later
-// is sent again after the restart.
+// saveAndStop stops publishing and waits up to timeout for the sends in
+// progress. Then it saves the unconfirmed messages, parked ones included, in
+// the order they were taken. They go ahead of messages requeued earlier.
+// A message saved here whose receipt arrives later is sent again after the
+// restart.
 func (o *stompOutput) saveAndStop(timeout time.Duration) {
 	o.halt()
 	o.queue.Wake() // a feeder waiting on an empty queue returns
@@ -160,23 +185,17 @@ func (o *stompOutput) saveAndStop(timeout time.Duration) {
 	}
 
 	o.mu.Lock()
-	pending := make([]sending, 0, len(o.inflight))
-	for _, s := range o.inflight {
-		pending = append(pending, s)
+	saved := make([]*MessageStruct, 0, len(o.unconfirmed))
+	for msg := range o.unconfirmed {
+		saved = append(saved, msg)
 	}
-	o.inflight = map[*StompSession]sending{}
-	held := o.held
-	o.held = nil
+	order := o.unconfirmed
+	sort.Slice(saved, func(i, j int) bool { return order[saved[i]] < order[saved[j]] })
+	o.unconfirmed = map[*MessageStruct]uint64{}
+	o.parked = map[*MessageStruct]bool{}
+	o.saved = true
 	o.mu.Unlock()
 
-	sort.Slice(pending, func(i, j int) bool { return pending[i].order < pending[j].order })
-	saved := make([]*MessageStruct, 0, len(pending)+1)
-	for _, s := range pending {
-		saved = append(saved, s.msg)
-	}
-	if held != nil {
-		saved = append(saved, held)
-	}
 	if len(saved) > 0 {
 		log.Infoln("Saving", len(saved), "unconfirmed STOMP messages to the queue")
 		o.queue.SaveInFlight(saved)
@@ -203,9 +222,11 @@ func (o *stompOutput) runSingle(session *StompSession) {
 		case msg := <-o.messages:
 			// STOMP sends to one destination per session, so the Exchange
 			// field is unused here.
-			o.track(session, msg)
-			session.publish(msg.Message)
-			o.untrack(session)
+			if !session.publish(msg.Message, o.stop) {
+				o.park(msg)
+				return
+			}
+			o.confirm(msg)
 		}
 	}
 }

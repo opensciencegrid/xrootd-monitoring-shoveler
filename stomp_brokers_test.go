@@ -2,13 +2,21 @@ package shoveler
 
 import (
 	"bufio"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"net/url"
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -81,15 +89,24 @@ func (b *testBroker) received() []string {
 // first message arrives, without a receipt: a broker that fails mid-send. A
 // DISCONNECT gets its receipt, so closing a sender that sent nothing is quick.
 func startDroppingBroker(t *testing.T) string {
+	addr, _ := startCountingDroppingBroker(t)
+	return addr
+}
+
+// startCountingDroppingBroker is startDroppingBroker, also counting the
+// connections it accepts.
+func startCountingDroppingBroker(t *testing.T) (string, *atomic.Int32) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = l.Close() })
+	accepted := &atomic.Int32{}
 	go func() {
 		for {
 			c, err := l.Accept()
 			if err != nil {
 				return
 			}
+			accepted.Add(1)
 			go func(c net.Conn) {
 				defer func() { _ = c.Close() }()
 				r := bufio.NewReader(c)
@@ -114,7 +131,7 @@ func startDroppingBroker(t *testing.T) string {
 			}(c)
 		}
 	}()
-	return l.Addr().String()
+	return l.Addr().String(), accepted
 }
 
 func newTestQueue(t *testing.T) *ConfirmationQueue {
@@ -145,18 +162,38 @@ func useBrokerFamilies(t *testing.T, addrs func() (v4 []string, v6 []string, err
 // newTestBrokers starts the feeder; refresh starts the senders for the brokers
 // resolveBrokers returns.
 func newTestBrokers(t *testing.T, queue *ConfirmationQueue) *stompBrokers {
+	return newTestBrokersWith(t, queue, StompSession{topic: testTopic})
+}
+
+// newTestBrokersWith is newTestBrokers with the senders copying template.
+func newTestBrokersWith(t *testing.T, queue *ConfirmationQueue, template StompSession) *stompBrokers {
 	out := newStompOutput(queue)
 	go out.feed()
 	alias, err := url.Parse("broker.test:61613")
 	require.NoError(t, err)
-	b := newStompBrokers(StompSession{stompUrl: *alias, topic: testTopic}, out)
+	template.stompUrl = *alias
+	b := newStompBrokers(template, out)
 	t.Cleanup(func() {
 		out.halt()
+		queue.Wake() // a feeder waiting on an empty queue returns
+		<-out.fed
 		for _, s := range b.senders {
+			<-s.done
+		}
+		for _, s := range b.retired {
 			<-s.done
 		}
 	})
 	return b
+}
+
+// waitStopped waits for a sender to exit.
+func waitStopped(t *testing.T, s *stompSender) {
+	select {
+	case <-s.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sender is still running")
+	}
 }
 
 // waitDelivered waits until the brokers together received every message, and
@@ -228,11 +265,7 @@ func TestStompBrokersRefresh(t *testing.T) {
 	b.refresh()
 	assert.Len(t, b.senders, 2)
 	assert.NotContains(t, b.senders, brokers[2].addr)
-	select {
-	case <-removed.done:
-	default:
-		t.Fatal("the removed broker's sender is still running")
-	}
+	waitStopped(t, removed)
 
 	// The alias does not resolve: the senders running are kept
 	mu.Lock()
@@ -292,23 +325,28 @@ func TestStompBrokersFailureRefreshesAlias(t *testing.T) {
 	mu.Lock()
 	addrs = []string{good.addr}
 	mu.Unlock()
-	queue.Enqueue([]byte("msg-0"))
-	queue.Enqueue([]byte("msg-1"))
-	select {
-	case <-b.failed: // what run waits on
-	case <-time.After(10 * time.Second):
-		t.Fatal("the failed connection did not ask for the alias to be looked up again")
+	// Either sender can take a message, so keep sending until the restarting
+	// broker's sender has taken one and failed.
+	sent := 0
+	deadline := time.After(10 * time.Second)
+waitFailure:
+	for {
+		queue.Enqueue([]byte(fmt.Sprintf("msg-%d", sent)))
+		sent++
+		select {
+		case <-b.failed: // what run waits on
+			break waitFailure
+		case <-deadline:
+			t.Fatal("the failed connection did not ask for the alias to be looked up again")
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
 	b.refresh()
 
 	assert.Len(t, b.senders, 1)
 	assert.Contains(t, b.senders, good.addr)
-	select {
-	case <-gone.done:
-	default:
-		t.Fatal("the restarting broker's sender is still running")
-	}
-	waitDelivered(t, []*testBroker{good}, 2)
+	waitStopped(t, gone)
+	waitDelivered(t, []*testBroker{good}, sent)
 }
 
 // With brokers under IPv4 and IPv6, the senders use the family the alias is
@@ -415,10 +453,9 @@ func TestStompRequeueGoesFirst(t *testing.T) {
 	queue.Enqueue([]byte("backlog-0"))
 	queue.Enqueue([]byte("backlog-1"))
 
-	session := &StompSession{}
 	failed := &MessageStruct{Message: []byte("failed")}
-	out.track(session, failed)
-	out.requeue(session, failed)
+	out.take(failed)
+	out.requeue(failed)
 	assert.Zero(t, out.sendsInProgress())
 
 	for _, want := range []string{"failed", "backlog-0", "backlog-1"} {
@@ -485,8 +522,8 @@ func TestStompSaveAndStop(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		queue.Enqueue([]byte(fmt.Sprintf("msg-%d", i)))
 	}
-	// msg-0 is waiting for its receipt, msg-1 is held by the feeder
-	require.Eventually(t, func() bool { return b.out.sendsInProgress() == 1 && queue.Size() == 1 },
+	// msg-0 is waiting for its receipt, msg-1 is waiting in the feeder
+	require.Eventually(t, func() bool { return b.out.sendsInProgress() == 2 && queue.Size() == 1 },
 		5*time.Second, 10*time.Millisecond)
 
 	b.out.saveAndStop(200 * time.Millisecond)
@@ -544,11 +581,13 @@ func startClosingBroker(t *testing.T) string {
 }
 
 // A connection that dies while idle is noticed without a send: the sender
-// counts as failing and has the alias looked up again.
+// counts as failing, has the alias looked up again, and stops counting the
+// connection as open.
 func TestStompSenderNoticesIdleLoss(t *testing.T) {
 	closing := startClosingBroker(t)
 	useBrokers(t, func() ([]string, error) { return []string{closing}, nil })
 	b := newTestBrokers(t, newTestQueue(t))
+	open := testutil.ToFloat64(StompConnections)
 	b.refresh()
 
 	select {
@@ -557,4 +596,339 @@ func TestStompSenderNoticesIdleLoss(t *testing.T) {
 		t.Fatal("the lost connection did not ask for the alias to be looked up again")
 	}
 	assert.True(t, b.allFailing())
+	require.Eventually(t, func() bool { return testutil.ToFloat64(StompConnections) == open },
+		time.Second, 10*time.Millisecond, "the lost connection is no longer counted, ahead of the reconnect")
+}
+
+// A message the feeder handed over and no broker confirmed yet is saved on
+// shutdown, from the moment of the handoff.
+func TestStompSaveAndStopKeepsHandedMessage(t *testing.T) {
+	queue := newTestQueue(t)
+	out := newStompOutput(queue)
+	go out.feed()
+	queue.Enqueue([]byte("handed"))
+
+	select {
+	case <-out.messages: // a sender took it and has not sent it yet
+	case <-time.After(5 * time.Second):
+		t.Fatal("the feeder did not hand the message over")
+	}
+	out.saveAndStop(100 * time.Millisecond)
+
+	msg, err := queue.Dequeue()
+	require.NoError(t, err)
+	assert.Equal(t, "handed", string(msg.Message))
+}
+
+// A send that fails after shutdown saved its message leaves the queue alone:
+// the message is in it once.
+func TestStompRequeueAfterSave(t *testing.T) {
+	queue := newTestQueue(t)
+	out := newStompOutput(queue)
+	msg := &MessageStruct{Message: []byte("late")}
+	out.take(msg)
+	out.saveAndStop(0)
+	out.requeue(msg)
+
+	assert.Equal(t, 1, queue.Size())
+}
+
+// A sender that cannot connect has the alias looked up again on its first
+// failure, so a broken IP family is noticed before the 10-minute lookup.
+func TestStompConnectFailureRefreshesAlias(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	unreachable := l.Addr().String()
+	require.NoError(t, l.Close())
+	useBrokers(t, func() ([]string, error) { return []string{unreachable}, nil })
+	b := newTestBrokers(t, newTestQueue(t))
+	b.refresh()
+
+	select {
+	case <-b.failed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the failed connect did not ask for the alias to be looked up again")
+	}
+	assert.True(t, b.allFailing())
+}
+
+// A broker leaving the alias while its sender waits for a receipt does not hold
+// up refresh: the sender is told to stop and exits by itself.
+func TestStompRefreshDoesNotWaitForSenders(t *testing.T) {
+	good := startTestBroker(t)
+	queue := newTestQueue(t)
+	b := newTestBrokers(t, queue)
+	silent := startSilentBroker(t) // after the senders, so it closes first
+	var mu sync.Mutex
+	addrs := []string{silent}
+	useBrokers(t, func() ([]string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return addrs, nil
+	})
+	b.refresh()
+	queue.Enqueue([]byte("stuck"))
+	require.Eventually(t, func() bool { return b.out.sendsInProgress() == 1 },
+		5*time.Second, 10*time.Millisecond, "the silent broker's sender is waiting for a receipt")
+
+	mu.Lock()
+	addrs = []string{good.addr}
+	mu.Unlock()
+	refreshed := make(chan struct{})
+	go func() {
+		b.refresh()
+		close(refreshed)
+	}()
+	select {
+	case <-refreshed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("refresh waited for the sender stuck on a receipt")
+	}
+	assert.Equal(t, []string{good.addr}, senderAddrs(b))
+}
+
+// In single-connection mode, a shutdown while every send fails stops the
+// retries and saves the message without waiting out the timeout.
+func TestStompSingleStopsRetrying(t *testing.T) {
+	queue := newTestQueue(t)
+	out := newStompOutput(queue)
+	go out.feed()
+	dropping := startDroppingBroker(t)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		out.runSingle(&StompSession{addr: dropping, topic: testTopic})
+	}()
+	queue.Enqueue([]byte("retried"))
+	require.Eventually(t, func() bool { return out.sendsInProgress() == 1 },
+		5*time.Second, 10*time.Millisecond)
+
+	start := time.Now()
+	out.saveAndStop(5 * time.Second)
+	assert.Less(t, time.Since(start), 2*time.Second, "the retries stopped with the shutdown")
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the single connection is still running")
+	}
+
+	msg, err := queue.Dequeue()
+	require.NoError(t, err)
+	assert.Equal(t, "retried", string(msg.Message))
+}
+
+// testCert is a self-signed certificate for 127.0.0.1 and the pool that trusts
+// it, used as both the broker's and the client's certificate.
+func testCert(t *testing.T) (tls.Certificate, *x509.CertPool) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "broker.test"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	require.NoError(t, err)
+	parsed, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	pool := x509.NewCertPool()
+	pool.AddCert(parsed)
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, pool
+}
+
+// startClosingTLSBroker accepts STOMP over TLS and closes each connection
+// cleanly shortly after CONNECTED, with no message sent: a broker restarted
+// while the connection is idle.
+func startClosingTLSBroker(t *testing.T, cert tls.Certificate) string {
+	l, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{cert}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer func() { _ = c.Close() }()                            // sends the TLS close_notify
+				if _, err := bufio.NewReader(c).ReadString(0); err != nil { // CONNECT
+					return
+				}
+				_, _ = c.Write([]byte("CONNECTED\nversion:1.2\nheart-beat:0,0\n\n\x00"))
+				time.Sleep(100 * time.Millisecond)
+			}(c)
+		}
+	}()
+	return l.Addr().String()
+}
+
+// Over TLS, a broker that closes an idle connection cleanly is noticed without
+// a send, as over plain TCP.
+func TestStompSenderNoticesIdleLossOverTLS(t *testing.T) {
+	cert, pool := testCert(t)
+	orig := stompTLSRootCAs
+	stompTLSRootCAs = pool
+	t.Cleanup(func() { stompTLSRootCAs = orig })
+	broker := startClosingTLSBroker(t, cert)
+	useBrokers(t, func() ([]string, error) { return []string{broker}, nil })
+	b := newTestBrokersWith(t, newTestQueue(t), StompSession{topic: testTopic, cert: []tls.Certificate{cert}})
+	open := testutil.ToFloat64(StompConnections)
+	b.refresh()
+
+	select {
+	case <-b.failed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lost TLS connection did not ask for the alias to be looked up again")
+	}
+	assert.True(t, b.allFailing())
+	require.Eventually(t, func() bool { return testutil.ToFloat64(StompConnections) == open },
+		time.Second, 10*time.Millisecond)
+}
+
+// In single-connection mode, a failed send waits reconnectDelay before the
+// next connection, as the senders do.
+func TestStompSingleWaitsBeforeReconnecting(t *testing.T) {
+	queue := newTestQueue(t)
+	out := newStompOutput(queue)
+	go out.feed()
+	dropping, accepted := startCountingDroppingBroker(t)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		out.runSingle(&StompSession{addr: dropping, topic: testTopic})
+	}()
+	queue.Enqueue([]byte("refused"))
+
+	time.Sleep(time.Second)
+	assert.LessOrEqual(t, accepted.Load(), int32(2), "a failing broker is not reconnected to in a loop")
+	out.saveAndStop(time.Second)
+	<-stopped
+}
+
+// A message the feeder takes after a shutdown saved the rest goes straight
+// back to the queue.
+func TestStompTakeAfterSave(t *testing.T) {
+	queue := newTestQueue(t)
+	out := newStompOutput(queue)
+	queue.Enqueue([]byte("late"))
+	msg, err := queue.Dequeue()
+	require.NoError(t, err)
+
+	out.saveAndStop(0)
+	assert.False(t, out.take(msg))
+	assert.Equal(t, 1, queue.Size())
+}
+
+// A shutdown that has begun stops run before any refresh, even with a
+// connection failure waiting.
+func TestStompBrokersRunStopsBeforeRefresh(t *testing.T) {
+	var lookups atomic.Int32
+	useBrokers(t, func() ([]string, error) {
+		lookups.Add(1)
+		return nil, errors.New("no such host")
+	})
+	b := newTestBrokers(t, newTestQueue(t))
+	b.connectionFailed()
+	b.out.halt()
+
+	done := make(chan struct{})
+	go func() {
+		b.run()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("run is still running after the shutdown")
+	}
+	assert.Zero(t, lookups.Load(), "no alias lookup after the shutdown")
+}
+
+// startRestartedBroker drops its first connection on the first SEND, as a
+// broker restart does, then answers every frame that asks for a receipt.
+func startRestartedBroker(t *testing.T) (string, *atomic.Int32) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
+	accepted := &atomic.Int32{}
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			first := accepted.Add(1) == 1
+			go func(c net.Conn) {
+				defer func() { _ = c.Close() }()
+				r := bufio.NewReader(c)
+				if _, err := r.ReadString(0); err != nil { // CONNECT
+					return
+				}
+				if _, err := c.Write([]byte("CONNECTED\nversion:1.2\nheart-beat:0,0\n\n\x00")); err != nil {
+					return
+				}
+				for {
+					frame, err := r.ReadString(0)
+					if err != nil || first {
+						return
+					}
+					for _, line := range strings.Split(frame, "\n") {
+						if id, ok := strings.CutPrefix(line, "receipt:"); ok {
+							_, _ = c.Write([]byte("RECEIPT\nreceipt-id:" + id + "\n\n\x00"))
+						}
+					}
+				}
+			}(c)
+		}
+	}()
+	return l.Addr().String(), accepted
+}
+
+// In single-connection mode, a send that fails once, as on a broker restart,
+// reconnects and resends at once.
+func TestStompSingleReconnectsAtOnce(t *testing.T) {
+	broker, accepted := startRestartedBroker(t)
+	session := &StompSession{addr: broker, topic: testTopic}
+	require.True(t, session.reconnect(nil))
+	t.Cleanup(session.disconnect)
+
+	start := time.Now()
+	assert.True(t, session.publish([]byte("after-restart"), make(chan struct{})))
+	assert.Less(t, time.Since(start), 2*time.Second, "no reconnectDelay after a single failure")
+	assert.Equal(t, int32(2), accepted.Load())
+}
+
+// A sender stopped before it starts opens no connection.
+func TestStompStoppedSenderDoesNotConnect(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
+	var dials atomic.Int32
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			dials.Add(1)
+			_ = c.Close()
+		}
+	}()
+
+	s := &stompSender{
+		session: &StompSession{addr: l.Addr().String(), topic: testTopic},
+		failed:  func() {},
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+	s.halt()
+	s.run(newStompOutput(newTestQueue(t)))
+	time.Sleep(50 * time.Millisecond)
+	assert.Zero(t, dials.Load())
 }

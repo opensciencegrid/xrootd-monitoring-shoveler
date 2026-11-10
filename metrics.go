@@ -46,7 +46,7 @@ var (
 	})
 
 	StompRequeued = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "shoveler_stomp_requeued_total",
+		Name: "shoveler_stomp_requeued",
 		Help: "Messages put back in the queue after a failed send, for another broker to send (stomp.all_brokers)",
 	})
 

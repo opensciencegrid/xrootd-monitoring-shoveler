@@ -2,6 +2,7 @@ package shoveler
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/url"
@@ -154,6 +155,18 @@ func (w *watchedConn) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// drop closes a connection that has already failed, with no DISCONNECT
+// handshake: disconnect would wait up to 30s for a receipt from a broker that
+// is gone.
+func (session *StompSession) drop() {
+	if session.conn == nil {
+		return
+	}
+	_ = session.conn.MustDisconnect()
+	session.conn = nil
+	StompConnections.Dec()
+}
+
 // disconnect closes the current session, if there is one
 func (session *StompSession) disconnect() {
 	if session.conn == nil {
@@ -173,58 +186,86 @@ func (session *StompSession) disconnect() {
 // var so tests can shorten it.
 var connectTimeout = 30 * time.Second
 
+// stompTLSRootCAs are the CAs a broker's certificate is checked against; nil
+// is the system's. A var so tests can trust a test broker.
+var stompTLSRootCAs *x509.CertPool
+
 func GetStompConnection(session *StompSession) (*stomp.Conn, error) {
 	dialer := net.Dialer{Timeout: connectTimeout}
 	dialed, err := dialer.Dial("tcp", session.dialAddr())
 	if err != nil {
 		return nil, err
 	}
-	netConn := &watchedConn{Conn: dialed, lost: make(chan struct{})}
-	_ = netConn.SetDeadline(time.Now().Add(connectTimeout))
+	_ = dialed.SetDeadline(time.Now().Add(connectTimeout))
 
-	var conn net.Conn = netConn
+	conn := dialed
 	var opts []func(*stomp.Conn) error
 	if session.cert != nil {
 		serverName := session.serverName
 		if serverName == "" {
 			serverName, _, _ = net.SplitHostPort(session.dialAddr())
 		}
-		tlsConn := tls.Client(netConn, &tls.Config{Certificates: session.cert, ServerName: serverName})
+		tlsConn := tls.Client(dialed, &tls.Config{Certificates: session.cert, ServerName: serverName, RootCAs: stompTLSRootCAs})
 		if err := tlsConn.Handshake(); err != nil {
-			_ = netConn.Close()
+			_ = dialed.Close()
 			return nil, fmt.Errorf("failed to connect using TLS: %w", err)
 		}
 		conn = tlsConn
 	} else {
 		// As stomp.Dial does: the host header is the broker's address
-		host, _, _ := net.SplitHostPort(netConn.RemoteAddr().String())
+		host, _, _ := net.SplitHostPort(dialed.RemoteAddr().String())
 		opts = append(opts, stomp.ConnOpt.Host(host), stomp.ConnOpt.Login(session.username, session.password))
 	}
 
-	stompConn, err := stomp.Connect(conn, opts...)
+	// Watch the connection go-stomp reads from. Over TLS a broker that closes
+	// cleanly ends the TLS stream while the read underneath succeeds.
+	watched := &watchedConn{Conn: conn, lost: make(chan struct{})}
+	stompConn, err := stomp.Connect(watched, opts...)
 	if err != nil {
-		_ = conn.Close() // stomp.Connect leaves it open on failure
+		_ = watched.Close() // stomp.Connect leaves it open on failure
 		return nil, err
 	}
-	_ = netConn.SetDeadline(time.Time{})
-	session.lost = netConn.lost
+	_ = dialed.SetDeadline(time.Time{})
+	session.lost = watched.lost
 	return stompConn, nil
 }
 
-// publish will send the message to the stomp message bus
-// It will also handle any error in sending by calling handleReconnect
-func (session *StompSession) publish(msg []byte) {
-sendMessageLoop:
+// publish sends the message to the stomp message bus, reconnecting after each
+// failed send until the broker confirms it. It returns false, with the message
+// unconfirmed, once stop is closed.
+func (session *StompSession) publish(msg []byte, stop <-chan struct{}) bool {
+	fresh := false // the connection was opened for this retry
 	for {
 		err := session.send(msg)
-
-		if err != nil {
-			log.Errorln("Failed to publish message:", err)
-			session.handleReconnect()
-		} else {
+		if err == nil {
 			MessagesPublished.Inc()
-			break sendMessageLoop
+			return true
 		}
+		log.Errorln("Failed to publish message:", err)
+		session.drop()
+		// A broker restart breaks a connection once, so the first failure
+		// reconnects at once. A send that fails again on a new connection waits
+		// reconnectDelay, so a broker that takes connections but fails every
+		// send is not retried in a loop.
+		wait := time.Duration(0)
+		if fresh {
+			wait = reconnectDelay
+		}
+		select {
+		case <-stop:
+			return false
+		case <-time.After(wait):
+		}
+		if !session.reconnect(stop) {
+			return false
+		}
+		// A shutdown may have saved the message while this reconnected.
+		select {
+		case <-stop:
+			return false
+		default:
+		}
+		fresh = true
 	}
 }
 

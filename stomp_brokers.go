@@ -9,12 +9,11 @@ import (
 	"time"
 )
 
-// With stomp.all_brokers, the shoveler keeps one connection to every broker
-// behind the stomp.url alias, instead of to the one DNS picks. Each connection
-// still waits for the broker's receipt before its next message, so nothing is
-// lost, but there is one message in flight per broker instead of one in total.
-// This fixes the issue of the queue backing up when the brokers are far away
-// from the site the collector is running and is using only one broker.
+// With stomp.all_brokers, the shoveler keeps one connection to each broker
+// behind the stomp.url alias. Each connection waits for its broker's receipt
+// before its next message, so every message is confirmed, and each broker has
+// one message in flight. With 6 brokers, 6 messages travel at once, which keeps
+// the queue moving at a site far from the brokers.
 //
 // The brokers behind the alias change: a broker being restarted is taken out of
 // it and put back afterwards. So the alias is looked up again whenever a
@@ -82,6 +81,7 @@ type stompBrokers struct {
 	template StompSession // credentials, topic and alias every sender copies
 	out      *stompOutput
 	senders  map[string]*stompSender // by dial address
+	retired  []*stompSender          // stopped by refresh, possibly still finishing a send
 	failed   chan struct{}           // a sender's connection failed: look the alias up again
 	// An alias usually lists each broker under an IPv4 and an IPv6 address, and
 	// DNS does not say which pairs belong together, so the senders use one
@@ -104,17 +104,23 @@ func newStompBrokers(template StompSession, out *stompOutput) *stompBrokers {
 // run starts the senders, and looks the alias up again when a connection fails
 // and every brokerRefreshInterval, until publishing stops.
 func (b *stompBrokers) run() {
-	b.refresh()
 	ticker := time.NewTicker(brokerRefreshInterval)
 	defer ticker.Stop()
 	for {
+		// Checked before every refresh: select picks at random among ready
+		// cases, and a shutdown must not start new connections.
+		select {
+		case <-b.out.stop:
+			return
+		default:
+		}
+		b.refresh()
 		select {
 		case <-b.out.stop:
 			return
 		case <-ticker.C:
 		case <-b.failed:
 		}
-		b.refresh()
 	}
 }
 
@@ -176,14 +182,20 @@ func (b *stompBrokers) refresh() {
 			delete(b.senders, addr)
 		}
 	}
-	// Stop them all first, then wait: each finishes its current send or connect
-	// attempt, and they do it together.
+	// Each finishes its current send or connect attempt and exits by itself, so
+	// a slow broker leaving the alias holds up nothing here.
 	for _, s := range gone {
 		s.halt()
 	}
-	for _, s := range gone {
-		<-s.done
+	running := gone
+	for _, s := range b.retired {
+		select {
+		case <-s.done:
+		default:
+			running = append(running, s)
+		}
 	}
+	b.retired = running
 	log.Infoln("Sending to", len(b.senders), "STOMP brokers behind", alias)
 }
 
@@ -236,27 +248,37 @@ type stompSender struct {
 	failing atomic.Bool
 }
 
-// run connects, then sends messages until stopped, and reconnects whenever the
-// connection fails. A message that fails to send goes back to the front of the
-// queue, for any sender to take, while this one reconnects: a broker that is
-// down must not hold a message that another broker can send. The failure also
-// has the alias looked up again, which stops this sender if its broker was
-// taken out of it.
-// That can reorder messages, and a message whose receipt was lost after the
-// broker took it can be sent twice, as it is when publish retries.
+// run connects and sends messages until stopped. When the connection fails,
+// the message goes back to the front of the queue for another sender, and this
+// one reconnects. The failure also has the alias looked up again, which stops
+// this sender if its broker left the alias.
+// Messages can then arrive out of order. A message whose receipt was lost
+// after the broker took it is sent twice, as with publish.
 func (s *stompSender) run(out *stompOutput) {
 	defer close(s.done)
 	defer s.session.disconnect()
 
+	// A sender started while a shutdown begins connects to nothing.
+	select {
+	case <-s.stop:
+		return
+	default:
+	}
+
 	for {
 		if err := s.session.connect(); err != nil {
-			s.failing.Store(true)
 			log.Errorln("Failed to connect to", s.session.dialAddr()+", retrying:", err)
+			// The first failure has the alias looked up again; the retries that
+			// follow wait for the next lookup.
+			if !s.failing.Swap(true) {
+				s.failed()
+			}
 		} else {
 			s.failing.Store(false)
 			if !s.sendUntilFailure(out) {
 				return
 			}
+			s.session.drop() // so shoveler_stomp_connections drops now
 			s.failing.Store(true)
 			s.failed()
 		}
@@ -274,22 +296,37 @@ func (s *stompSender) run(out *stompOutput) {
 // when the sender is stopped, and true when the connection failed.
 func (s *stompSender) sendUntilFailure(out *stompOutput) bool {
 	for {
+		// Checked before taking a message: select picks at random among ready
+		// cases, and a stopped sender or a lost connection takes no more.
+		if ended, stopped := s.ended(); ended {
+			return !stopped
+		}
 		select {
 		case <-s.stop:
-			return false
 		case <-s.session.lost:
-			log.Warningln("Lost the connection to STOMP broker", s.session.dialAddr())
-			return true
 		case msg := <-out.messages:
-			out.track(s.session, msg)
 			if err := s.session.send(msg.Message); err != nil {
 				log.Errorln("Failed to publish message to", s.session.dialAddr()+", requeueing it:", err)
-				out.requeue(s.session, msg)
+				out.requeue(msg)
 				return true
 			}
-			out.untrack(s.session)
+			out.confirm(msg)
 			MessagesPublished.Inc()
 		}
+	}
+}
+
+// ended reports whether the sender has to stop taking messages: it was
+// stopped, or its connection was lost.
+func (s *stompSender) ended() (ended, stopped bool) {
+	select {
+	case <-s.stop:
+		return true, true
+	case <-s.session.lost:
+		log.Warningln("Lost the connection to STOMP broker", s.session.dialAddr())
+		return true, false
+	default:
+		return false, false
 	}
 }
 
