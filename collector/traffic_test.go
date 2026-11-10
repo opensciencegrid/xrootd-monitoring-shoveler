@@ -275,6 +275,22 @@ func TestXRootDInternalSignals(t *testing.T) {
 			filename:     "/store/user/cms/my-replicate-notes/file.root",
 			wantInternal: false,
 		},
+		{
+			// A user directory that starts with the prefix is still user traffic.
+			name: "a user directory starting with replicate", user: "jdoe", userInfoKnown: true,
+			filename:     "/eos/user/j/jdoe/replicated_runs/f.root",
+			wantInternal: false,
+		},
+		{
+			name: "a test directory starting with replicate", user: "cmsuser", userInfoKnown: true,
+			filename:     "/store/replicate_test/x.root",
+			wantInternal: false,
+		},
+		{
+			name: "a protocol that only starts with replicate", user: "cmsuser", userInfoKnown: true,
+			protocol: "replicated", filename: "/store/data/file.root",
+			wantInternal: false,
+		},
 	}
 
 	classifier := newTrafficClassifier(TrafficConfig{Enabled: true})

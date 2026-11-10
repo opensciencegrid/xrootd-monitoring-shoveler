@@ -40,9 +40,9 @@ var (
 	DefaultTrafficInternalUsers = []string{"root"}
 
 	// DefaultTrafficReplicationPrefixes match a replication operation. MonALISA
-	// looks for "/replicate:" in the path; the prefix is matched against each
-	// "/"-separated segment, so it covers that form and a bare "replicate"
-	// protocol too.
+	// looks for "/replicate:" in the path; matching each "/"-separated segment
+	// against "replicate" and "replicate:..." covers that form and a bare
+	// "replicate" protocol too.
 	DefaultTrafficReplicationPrefixes = []string{"replicate"}
 )
 
@@ -74,9 +74,10 @@ type TrafficConfig struct {
 	JobAgentMin int
 	JobAgentMax int
 
-	// ReplicationPrefixes mark a replication operation, matched against the start
-	// of each "/"-separated segment of the protocol, the appinfo and the path.
-	// Empty means DefaultTrafficReplicationPrefixes.
+	// ReplicationPrefixes mark a replication operation. A "/"-separated segment of
+	// the protocol, the appinfo or the path matches when it is the prefix or
+	// starts with the prefix and a colon. Empty means
+	// DefaultTrafficReplicationPrefixes.
 	ReplicationPrefixes []string
 
 	// CaseSensitive matches accounts and replication prefixes exactly as written.
@@ -294,9 +295,9 @@ func (t *trafficClassifier) isJobAgentID(user string) bool {
 }
 
 // isReplicationOperation reports whether a value names a replication operation:
-// any of its "/"-separated segments starts with a configured prefix. Splitting
-// on "/" is what makes "/replicate:xyz" inside a path match while an ordinary
-// path that merely contains the letters does not.
+// one of its "/"-separated segments is a configured prefix ("replicate", as a
+// protocol) or starts with it plus a colon ("/replicate:xyz" in a path). User
+// directories like "replicated_runs" stay user traffic.
 func (t *trafficClassifier) isReplicationOperation(value string) bool {
 	if len(t.replicationPrefixes) == 0 {
 		return false
@@ -311,7 +312,7 @@ func (t *trafficClassifier) isReplicationOperation(value string) bool {
 			continue
 		}
 		for _, prefix := range t.replicationPrefixes {
-			if strings.HasPrefix(segment, prefix) {
+			if segment == prefix || strings.HasPrefix(segment, prefix+":") {
 				return true
 			}
 		}

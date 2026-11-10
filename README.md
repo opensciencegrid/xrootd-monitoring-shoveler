@@ -934,9 +934,10 @@ first hit wins:
 1. an account is one of `wlcg.traffic_internal_users` (default `root`)
 2. an account is an all-digit job-agent id within
    `wlcg.traffic_job_agent_min`-`wlcg.traffic_job_agent_max` (default 1-8)
-3. the protocol, the appinfo or the path has a `/`-separated segment starting with
-   one of `wlcg.traffic_replication_prefixes` (default `replicate`, which covers
-   XrootD's `/replicate:` paths)
+3. the protocol, the appinfo or the path has a `/`-separated segment that is one
+   of `wlcg.traffic_replication_prefixes` (default `replicate`) or starts with it
+   and a colon, as in XrootD's `/replicate:` paths. A user directory such as
+   `/replicated_runs/` stays user traffic.
 
 Nothing else counts, and a record matching none of them is `false` rather than
 unknown: calling an ordinary user's transfer infrastructure traffic is the worse
