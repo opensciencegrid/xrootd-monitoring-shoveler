@@ -70,10 +70,9 @@ state:
 # accounts or replication paths differently.
 #
 #   traffic_enabled: true                        # emit the three fields (default true)
-#   traffic_internal_users: ["root"]             # accounts XRootD uses for its own work
-#   traffic_job_agent_min: 1                     # numeric job-agent accounts...
-#   traffic_job_agent_max: 8                     # ...set max below min to turn the rule off
-#   traffic_replication_prefixes: ["replicate"]  # replication markers in the protocol, appinfo or path
+#   traffic_internal_users: ["root"]             # accounts XRootD uses for its own work ([] = off)
+#   traffic_job_agents: "1-8"                    # numeric job-agent accounts, "N" or "N-M" ("none" = off)
+#   traffic_replication_prefixes: ["replicate"]  # replication markers in the protocol, appinfo or path ([] = off)
 #   traffic_case_sensitive: false                # match accounts and markers exactly as written
 
 # Record drop filter (collector mode only)

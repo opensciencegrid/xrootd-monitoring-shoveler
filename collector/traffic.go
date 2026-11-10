@@ -2,6 +2,8 @@ package collector
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -11,10 +13,10 @@ import (
 // record. It is the canonical topology answer: "site_internal_traffic" is
 // derived from it (see siteInternalFromScope), so the two can never disagree.
 //
-// UNKNOWN is a real answer, not a missing one: it says the collector could not
-// settle both ends, which is different from having settled them and found them
-// apart. Uppercase because these are network terms, not resolution outcomes;
-// the per-endpoint statuses in sitemap.go keep their own lowercase vocabulary.
+// UNKNOWN is an answer of its own: the collector could not settle both ends,
+// which differs from settling them and finding them apart. The values are
+// uppercase network terms; the per-endpoint statuses in sitemap.go keep their
+// own lowercase vocabulary.
 const (
 	TrafficScopeLAN     = "LAN"     // both ends resolved to the same RCSite
 	TrafficScopeWAN     = "WAN"     // both ends resolved, to different RCSites
@@ -25,10 +27,9 @@ const (
 // by an end user. They are the "signal" label on shoveler_traffic_xrootd_internal
 // and are a fixed set, so the label stays bounded.
 const (
-	TrafficSignalInternalUser = "internal_user"      // the account is a system account (wlcg.traffic_internal_users)
-	TrafficSignalJobAgent     = "job_agent"          // the account is a numeric job-agent id in the configured range
-	TrafficSignalReplication  = "replication"        // protocol, appinfo or path names a replication operation
-	TrafficSignalStorage      = "storage_to_storage" // both ends are known storage servers (off by default, see storageEndpointSet)
+	TrafficSignalInternalUser = "internal_user" // the account is a system account (wlcg.traffic_internal_users)
+	TrafficSignalJobAgent     = "job_agent"     // the account is a numeric job-agent id in the configured range
+	TrafficSignalReplication  = "replication"   // protocol, appinfo or path names a replication operation
 )
 
 // Defaults for the XRootD-internal rules, from the MonALISA xrootd collector's
@@ -47,11 +48,10 @@ var (
 )
 
 // The XRootD job-agent/system accounts are reported as a bare number. MonALISA
-// accepts a single digit 1-8; the range is configurable here (min > max turns
-// the rule off).
+// accepts a single digit 1-8; the range is configurable here.
 const (
-	DefaultTrafficJobAgentMin = 1
-	DefaultTrafficJobAgentMax = 8
+	DefaultTrafficJobAgents = "1-8"
+	TrafficJobAgentsNone    = "none" // turns the job-agent rule off
 )
 
 // TrafficConfig holds the deployment-specific parts of the classification, so
@@ -64,20 +64,19 @@ type TrafficConfig struct {
 	Enabled bool
 
 	// InternalUsers are accounts whose operations are XRootD's own work, matched
-	// exactly against the account the 'u' stream reported. Empty means
-	// DefaultTrafficInternalUsers.
+	// exactly against the account the 'u' stream reported. nil means
+	// DefaultTrafficInternalUsers; an empty list turns the rule off.
 	InternalUsers []string
 
-	// JobAgentMin/JobAgentMax bound the numeric job-agent accounts, matched when
-	// the account is all digits. Both unset means 1-8; a max below the min turns
-	// the rule off.
-	JobAgentMin int
-	JobAgentMax int
+	// JobAgents is the range of numeric job-agent accounts, "N" or "N-M",
+	// matched when the account is all digits. Empty means
+	// DefaultTrafficJobAgents, and "none" turns the rule off.
+	JobAgents string
 
 	// ReplicationPrefixes mark a replication operation. A "/"-separated segment of
 	// the protocol, the appinfo or the path matches when it is the prefix or
-	// starts with the prefix and a colon. Empty means
-	// DefaultTrafficReplicationPrefixes.
+	// starts with the prefix and a colon. nil means
+	// DefaultTrafficReplicationPrefixes; an empty list turns the rule off.
 	ReplicationPrefixes []string
 
 	// CaseSensitive matches accounts and replication prefixes exactly as written.
@@ -86,36 +85,50 @@ type TrafficConfig struct {
 	CaseSensitive bool
 }
 
-// storageEndpointSet reports whether one end of a transfer is a storage server
-// belonging to the monitored infrastructure, which would make a transfer
-// between two of them XRootD's own work regardless of the account.
-//
-// Nothing implements it in production and the classifier's field is nil, so the
-// signal is off: learning storage addresses from observed writes needs state
-// that survives restarts, expires stale addresses, stays bounded, and is not
-// confused by several collectors each seeing a different slice of the traffic.
-// None of that exists here yet, so the check is defined as a seam rather than
-// guessed at. The account and replication rules do not depend on it.
-type storageEndpointSet interface {
-	// IsStorageEndpoint reports whether host (a name or an address literal) is a
-	// known storage server. It must be safe for concurrent use.
-	IsStorageEndpoint(host string) bool
-}
-
-// withDefaults fills in the rules the operator said nothing about. A job-agent
-// range is "said nothing about" only when neither end is set: an explicit min
-// with a lower max is how the numeric rule is turned off.
+// withDefaults fills in the rules the operator said nothing about: a nil list
+// and an empty job-agent range.
 func (c TrafficConfig) withDefaults() TrafficConfig {
-	if len(c.InternalUsers) == 0 {
+	if c.InternalUsers == nil {
 		c.InternalUsers = DefaultTrafficInternalUsers
 	}
-	if len(c.ReplicationPrefixes) == 0 {
+	if c.ReplicationPrefixes == nil {
 		c.ReplicationPrefixes = DefaultTrafficReplicationPrefixes
 	}
-	if c.JobAgentMin <= 0 && c.JobAgentMax <= 0 {
-		c.JobAgentMin, c.JobAgentMax = DefaultTrafficJobAgentMin, DefaultTrafficJobAgentMax
+	if strings.TrimSpace(c.JobAgents) == "" {
+		c.JobAgents = DefaultTrafficJobAgents
 	}
 	return c
+}
+
+// jobAgentRange returns the job-agent range in force. A value that does not
+// parse falls back to DefaultTrafficJobAgents, and err says why. The rule is
+// off when last < first.
+func (c TrafficConfig) jobAgentRange() (first, last int, err error) {
+	first, last, err = parseJobAgentRange(c.withDefaults().JobAgents)
+	if err != nil {
+		first, last, _ = parseJobAgentRange(DefaultTrafficJobAgents)
+	}
+	return first, last, err
+}
+
+// parseJobAgentRange reads "N", "N-M" or "none" into the bounds of the range.
+// "none" returns last < first, which turns the rule off.
+func parseJobAgentRange(value string) (first, last int, err error) {
+	v := strings.TrimSpace(value)
+	if strings.EqualFold(v, TrafficJobAgentsNone) {
+		return 1, 0, nil
+	}
+	lo, hi, isRange := strings.Cut(v, "-")
+	if first, err = strconv.Atoi(strings.TrimSpace(lo)); err != nil || first < 0 {
+		return 0, 0, fmt.Errorf("job-agent range %q: want N, N-M or %q", value, TrafficJobAgentsNone)
+	}
+	last = first
+	if isRange {
+		if last, err = strconv.Atoi(strings.TrimSpace(hi)); err != nil || last < first {
+			return 0, 0, fmt.Errorf("job-agent range %q: want N-M with M >= N", value)
+		}
+	}
+	return first, last, nil
 }
 
 // trafficClassifier answers the one question "was this XRootD's own work?" from
@@ -126,9 +139,6 @@ type trafficClassifier struct {
 	jobAgentMax         int
 	replicationPrefixes []string
 	caseSensitive       bool
-
-	// storage is the deferred storage-to-storage check; nil disables it.
-	storage storageEndpointSet
 }
 
 // newTrafficClassifier compiles a TrafficConfig into a classifier, applying the
@@ -138,11 +148,8 @@ type trafficClassifier struct {
 func newTrafficClassifier(cfg TrafficConfig) *trafficClassifier {
 	cfg = cfg.withDefaults()
 
-	c := &trafficClassifier{
-		jobAgentMin:   cfg.JobAgentMin,
-		jobAgentMax:   cfg.JobAgentMax,
-		caseSensitive: cfg.CaseSensitive,
-	}
+	c := &trafficClassifier{caseSensitive: cfg.CaseSensitive}
+	c.jobAgentMin, c.jobAgentMax, _ = cfg.jobAgentRange()
 
 	c.internalUsers = make(map[string]struct{}, len(cfg.InternalUsers))
 	for _, user := range cfg.InternalUsers {
@@ -178,7 +185,6 @@ func (t *trafficClassifier) fold(value string) string {
 //  1. the account is a configured system account ("root")
 //  2. the account is a numeric job-agent id in the configured range (1-8)
 //  3. the protocol, appinfo or path names a replication operation ("replicate")
-//  4. both ends are known storage servers (off; see storageEndpointSet)
 //
 // Nothing else counts. A record whose account never reached the collector, or
 // that carries none of these markers, is reported as not internal (false)
@@ -211,10 +217,6 @@ func (t *trafficClassifier) ClassifyXRootDInternal(record *CollectorRecord) (int
 		t.isReplicationOperation(record.AppInfo) ||
 		t.isReplicationOperation(record.Filename) {
 		return true, TrafficSignalReplication
-	}
-
-	if t.isStorageToStorage(record) {
-		return true, TrafficSignalStorage
 	}
 
 	return false, ""
@@ -320,20 +322,6 @@ func (t *trafficClassifier) isReplicationOperation(value string) bool {
 	return false
 }
 
-// isStorageToStorage reports whether both ends of the transfer are known
-// storage servers. It is always false unless a storageEndpointSet is wired in,
-// which nothing does yet.
-func (t *trafficClassifier) isStorageToStorage(record *CollectorRecord) bool {
-	if t.storage == nil {
-		return false
-	}
-	server, client := record.ServerHostname, record.clientHost()
-	if server == "" || client == "" {
-		return false
-	}
-	return t.storage.IsStorageEndpoint(server) && t.storage.IsStorageEndpoint(client)
-}
-
 // classifyTrafficScope turns the two per-endpoint site resolutions into the
 // record's scope. Both ends must have resolved for the scope to be anything but
 // UNKNOWN: an ambiguous match names a site but is explicitly a guess (see
@@ -427,9 +415,17 @@ func logTrafficRules(logger *logrus.Logger, cfg TrafficConfig) {
 	if logger == nil {
 		return
 	}
-	// The rules as they are actually applied, not as they were configured: an
-	// unset one is the default, and that is what an operator needs to see.
+	// The rules as they are actually applied: an unset one is the default, and
+	// that is what an operator needs to see.
 	cfg = cfg.withDefaults()
-	logger.Infof("traffic: xrootd-internal rules: users %v, job-agent ids %d-%d, replication prefixes %v (case-sensitive %t)",
-		cfg.InternalUsers, cfg.JobAgentMin, cfg.JobAgentMax, cfg.ReplicationPrefixes, cfg.CaseSensitive)
+	first, last, err := cfg.jobAgentRange()
+	if err != nil {
+		logger.Warnf("traffic: ignoring wlcg.traffic_job_agents: %v; using %s", err, DefaultTrafficJobAgents)
+	}
+	jobAgents := fmt.Sprintf("%d-%d", first, last)
+	if last < first {
+		jobAgents = TrafficJobAgentsNone
+	}
+	logger.Infof("traffic: xrootd-internal rules: users %v, job-agent ids %s, replication prefixes %v (case-sensitive %t)",
+		cfg.InternalUsers, jobAgents, cfg.ReplicationPrefixes, cfg.CaseSensitive)
 }

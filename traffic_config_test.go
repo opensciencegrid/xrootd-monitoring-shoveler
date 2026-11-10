@@ -35,14 +35,14 @@ func TestTrafficConfigDefaults(t *testing.T) {
 	if !config.WLCG.TrafficEnabled {
 		t.Error("TrafficEnabled = false, expected the classification on by default")
 	}
-	if len(config.WLCG.TrafficInternalUsers) != 0 {
+	if config.WLCG.TrafficInternalUsers != nil {
 		t.Errorf("TrafficInternalUsers = %v, expected unset (the collector applies the default)", config.WLCG.TrafficInternalUsers)
 	}
-	if len(config.WLCG.TrafficReplicationPrefixes) != 0 {
+	if config.WLCG.TrafficReplicationPrefixes != nil {
 		t.Errorf("TrafficReplicationPrefixes = %v, expected unset", config.WLCG.TrafficReplicationPrefixes)
 	}
-	if config.WLCG.TrafficJobAgentMin != 0 || config.WLCG.TrafficJobAgentMax != 0 {
-		t.Errorf("job-agent range = %d-%d, expected unset", config.WLCG.TrafficJobAgentMin, config.WLCG.TrafficJobAgentMax)
+	if config.WLCG.TrafficJobAgents != "" {
+		t.Errorf("TrafficJobAgents = %q, expected unset", config.WLCG.TrafficJobAgents)
 	}
 	if config.WLCG.TrafficCaseSensitive {
 		t.Error("TrafficCaseSensitive = true, expected case-insensitive matching by default")
@@ -56,8 +56,7 @@ func TestTrafficConfigOverrides(t *testing.T) {
   enabled: true
   traffic_enabled: false
   traffic_internal_users: ["root", "xrootd"]
-  traffic_job_agent_min: 1
-  traffic_job_agent_max: 16
+  traffic_job_agents: "1-16"
   traffic_replication_prefixes: ["replicate", "xfer"]
   traffic_case_sensitive: true
 `)
@@ -68,8 +67,8 @@ func TestTrafficConfigOverrides(t *testing.T) {
 	if got := config.WLCG.TrafficInternalUsers; len(got) != 2 || got[0] != "root" || got[1] != "xrootd" {
 		t.Errorf("TrafficInternalUsers = %v, expected [root xrootd]", got)
 	}
-	if config.WLCG.TrafficJobAgentMin != 1 || config.WLCG.TrafficJobAgentMax != 16 {
-		t.Errorf("job-agent range = %d-%d, expected 1-16", config.WLCG.TrafficJobAgentMin, config.WLCG.TrafficJobAgentMax)
+	if config.WLCG.TrafficJobAgents != "1-16" {
+		t.Errorf("TrafficJobAgents = %q, expected 1-16", config.WLCG.TrafficJobAgents)
 	}
 	if got := config.WLCG.TrafficReplicationPrefixes; len(got) != 2 || got[1] != "xfer" {
 		t.Errorf("TrafficReplicationPrefixes = %v, expected [replicate xfer]", got)
@@ -83,14 +82,35 @@ func TestTrafficConfigOverrides(t *testing.T) {
 // which is how a container deployment sets these.
 func TestTrafficConfigFromEnvironment(t *testing.T) {
 	t.Setenv("COLLECTOR_WLCG_TRAFFIC_ENABLED", "false")
-	t.Setenv("COLLECTOR_WLCG_TRAFFIC_JOB_AGENT_MAX", "4")
+	t.Setenv("COLLECTOR_WLCG_TRAFFIC_JOB_AGENTS", "4")
 
 	config := readTrafficConfig(t, "wlcg:\n  enabled: true\n")
 
 	if config.WLCG.TrafficEnabled {
 		t.Error("TrafficEnabled = true, expected COLLECTOR_WLCG_TRAFFIC_ENABLED to switch it off")
 	}
-	if config.WLCG.TrafficJobAgentMax != 4 {
-		t.Errorf("TrafficJobAgentMax = %d, expected 4 from the environment", config.WLCG.TrafficJobAgentMax)
+	if config.WLCG.TrafficJobAgents != "4" {
+		t.Errorf("TrafficJobAgents = %q, expected 4 from the environment", config.WLCG.TrafficJobAgents)
+	}
+}
+
+// TestTrafficConfigEmptyLists covers an explicit [], which turns a rule off and
+// so has to reach the collector as an empty list instead of nil.
+func TestTrafficConfigEmptyLists(t *testing.T) {
+	config := readTrafficConfig(t, `wlcg:
+  enabled: true
+  traffic_internal_users: []
+  traffic_replication_prefixes: []
+  traffic_job_agents: none
+`)
+
+	if got := config.WLCG.TrafficInternalUsers; got == nil || len(got) != 0 {
+		t.Errorf("TrafficInternalUsers = %#v, expected an empty list", got)
+	}
+	if got := config.WLCG.TrafficReplicationPrefixes; got == nil || len(got) != 0 {
+		t.Errorf("TrafficReplicationPrefixes = %#v, expected an empty list", got)
+	}
+	if config.WLCG.TrafficJobAgents != "none" {
+		t.Errorf("TrafficJobAgents = %q, expected none", config.WLCG.TrafficJobAgents)
 	}
 }

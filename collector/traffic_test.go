@@ -314,37 +314,6 @@ func TestXRootDInternalSignals(t *testing.T) {
 	}
 }
 
-// fakeStorageEndpoints is a stand-in for the deferred storage-server discovery,
-// so the seam the classifier leaves for it is exercised.
-type fakeStorageEndpoints map[string]bool
-
-func (f fakeStorageEndpoints) IsStorageEndpoint(host string) bool { return f[host] }
-
-// TestStorageToStorageIsOffUnlessWired covers the deferred fourth signal: it
-// contributes nothing while no storage-endpoint set is configured, which is the
-// production case, and is a plain internal signal once one is.
-func TestStorageToStorageIsOffUnlessWired(t *testing.T) {
-	record := trafficRecord("CERN-PROD", "CERN-PROD")
-	record.User = "cmsuser"
-	record.ServerHostname = "se01.cern.ch"
-	record.clientHostname = "se02.cern.ch"
-
-	offByDefault := newTrafficClassifier(TrafficConfig{Enabled: true})
-	internal, _ := offByDefault.ClassifyXRootDInternal(record)
-	assert.False(t, internal, "no storage endpoint set is wired in production")
-
-	wired := newTrafficClassifier(TrafficConfig{Enabled: true})
-	wired.storage = fakeStorageEndpoints{"se01.cern.ch": true, "se02.cern.ch": true}
-	internal, signal := wired.ClassifyXRootDInternal(record)
-	assert.True(t, internal)
-	assert.Equal(t, TrafficSignalStorage, signal)
-
-	// One end unknown to the set is not storage-to-storage.
-	wired.storage = fakeStorageEndpoints{"se01.cern.ch": true}
-	internal, _ = wired.ClassifyXRootDInternal(record)
-	assert.False(t, internal)
-}
-
 // TestTrafficConfigRules covers the configurable rules: custom values are
 // honoured and the production defaults stay where they are.
 func TestTrafficConfigRules(t *testing.T) {
@@ -352,16 +321,14 @@ func TestTrafficConfigRules(t *testing.T) {
 		cfg := TrafficConfig{Enabled: true}.withDefaults()
 		assert.Equal(t, []string{"root"}, cfg.InternalUsers)
 		assert.Equal(t, []string{"replicate"}, cfg.ReplicationPrefixes)
-		assert.Equal(t, 1, cfg.JobAgentMin)
-		assert.Equal(t, 8, cfg.JobAgentMax)
+		assert.Equal(t, "1-8", cfg.JobAgents)
 	})
 
 	t.Run("custom accounts and prefixes", func(t *testing.T) {
 		classifier := newTrafficClassifier(TrafficConfig{
 			Enabled:             true,
 			InternalUsers:       []string{"xrootd", "storage"},
-			JobAgentMin:         100,
-			JobAgentMax:         102,
+			JobAgents:           "100-102",
 			ReplicationPrefixes: []string{"xfer"},
 		})
 
@@ -395,14 +362,66 @@ func TestTrafficConfigRules(t *testing.T) {
 		assert.False(t, internal)
 	})
 
-	t.Run("a max below the min turns the job-agent rule off", func(t *testing.T) {
-		classifier := newTrafficClassifier(TrafficConfig{Enabled: true, JobAgentMin: 1, JobAgentMax: 0})
+	t.Run("none turns the job-agent rule off", func(t *testing.T) {
+		classifier := newTrafficClassifier(TrafficConfig{Enabled: true, JobAgents: "none"})
 
 		internal, _ := classifier.ClassifyXRootDInternal(&CollectorRecord{User: "3", userInfoKnown: true})
 		assert.False(t, internal)
 		internal, _ = classifier.ClassifyXRootDInternal(&CollectorRecord{User: "root", userInfoKnown: true})
 		assert.True(t, internal, "the account rule is unaffected")
 	})
+}
+
+// TestJobAgentRange covers the forms traffic_job_agents takes, and the default
+// used for a value that does not parse.
+func TestJobAgentRange(t *testing.T) {
+	for _, tc := range []struct {
+		value       string
+		first, last int
+		wantErr     bool
+	}{
+		{value: "", first: 1, last: 8},
+		{value: "1-8", first: 1, last: 8},
+		{value: " 2 - 16 ", first: 2, last: 16},
+		{value: "3", first: 3, last: 3},
+		{value: "none", first: 1, last: 0},
+		{value: "None", first: 1, last: 0},
+		{value: "8-1", first: 1, last: 8, wantErr: true},
+		{value: "-5", first: 1, last: 8, wantErr: true},
+		{value: "1-", first: 1, last: 8, wantErr: true},
+		{value: "abc", first: 1, last: 8, wantErr: true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			first, last, err := TrafficConfig{JobAgents: tc.value}.jobAgentRange()
+			assert.Equal(t, tc.wantErr, err != nil, "err = %v", err)
+			assert.Equal(t, tc.first, first)
+			assert.Equal(t, tc.last, last)
+		})
+	}
+
+	t.Run("a single id", func(t *testing.T) {
+		classifier := newTrafficClassifier(TrafficConfig{Enabled: true, JobAgents: "4"})
+		internal, _ := classifier.ClassifyXRootDInternal(&CollectorRecord{User: "4", userInfoKnown: true})
+		assert.True(t, internal)
+		internal, _ = classifier.ClassifyXRootDInternal(&CollectorRecord{User: "3", userInfoKnown: true})
+		assert.False(t, internal)
+	})
+}
+
+// TestTrafficEmptyListsTurnRulesOff covers the lists: an empty list turns its
+// rule off, and nil keeps the default.
+func TestTrafficEmptyListsTurnRulesOff(t *testing.T) {
+	classifier := newTrafficClassifier(TrafficConfig{
+		Enabled:             true,
+		InternalUsers:       []string{},
+		ReplicationPrefixes: []string{},
+	})
+	internal, _ := classifier.ClassifyXRootDInternal(&CollectorRecord{User: "root", userInfoKnown: true})
+	assert.False(t, internal)
+	internal, _ = classifier.ClassifyXRootDInternal(&CollectorRecord{Filename: "/store/replicate:1/f.root"})
+	assert.False(t, internal)
+	internal, _ = classifier.ClassifyXRootDInternal(&CollectorRecord{User: "3", userInfoKnown: true})
+	assert.True(t, internal, "the job-agent rule keeps its default")
 }
 
 // TestTrafficEnricherOnlyTouchesWLCGRecords verifies the WLCG gate: a record
@@ -457,7 +476,6 @@ func TestTrafficSerialization(t *testing.T) {
 
 		// The helper classifications stay inside the classifier.
 		assert.NotContains(t, doc, "user_generated")
-		assert.NotContains(t, doc, "storage_to_storage")
 	})
 
 	t.Run("a cross-site user transfer", func(t *testing.T) {

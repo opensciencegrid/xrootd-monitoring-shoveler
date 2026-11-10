@@ -52,10 +52,9 @@ type WLCGConfig struct {
 	// the operator says nothing and the collector package supplies the default,
 	// so each default lives in one place.
 	TrafficEnabled             bool
-	TrafficInternalUsers       []string // system accounts, exact match (default ["root"])
-	TrafficJobAgentMin         int      // first numeric job-agent account (default 1)
-	TrafficJobAgentMax         int      // last numeric job-agent account (default 8; set below min to disable)
-	TrafficReplicationPrefixes []string // replication markers (default ["replicate"])
+	TrafficInternalUsers       []string // system accounts, exact match (default ["root"]; [] turns the rule off)
+	TrafficJobAgents           string   // numeric job-agent accounts, "N" or "N-M" (default "1-8"; "none" turns the rule off)
+	TrafficReplicationPrefixes []string // replication markers (default ["replicate"]; [] turns the rule off)
 	TrafficCaseSensitive       bool     // match accounts and prefixes case-sensitively (default false)
 
 	// Metadata: producer/type values written into WLCG-formatted records.
@@ -759,9 +758,16 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	viper.SetDefault("wlcg.traffic_enabled", true)
 	c.WLCG.TrafficEnabled = viper.GetBool("wlcg.traffic_enabled")
 	c.WLCG.TrafficInternalUsers = viper.GetStringSlice("wlcg.traffic_internal_users")
-	c.WLCG.TrafficJobAgentMin = viper.GetInt("wlcg.traffic_job_agent_min")
-	c.WLCG.TrafficJobAgentMax = viper.GetInt("wlcg.traffic_job_agent_max")
+	c.WLCG.TrafficJobAgents = viper.GetString("wlcg.traffic_job_agents")
 	c.WLCG.TrafficReplicationPrefixes = viper.GetStringSlice("wlcg.traffic_replication_prefixes")
+	// Viper returns nil for YAML [] too. Keep an explicit [] as an empty list so
+	// it turns the rule off; nil takes the default.
+	if c.WLCG.TrafficInternalUsers == nil && viper.IsSet("wlcg.traffic_internal_users") {
+		c.WLCG.TrafficInternalUsers = []string{}
+	}
+	if c.WLCG.TrafficReplicationPrefixes == nil && viper.IsSet("wlcg.traffic_replication_prefixes") {
+		c.WLCG.TrafficReplicationPrefixes = []string{}
+	}
 	viper.SetDefault("wlcg.traffic_case_sensitive", false)
 	c.WLCG.TrafficCaseSensitive = viper.GetBool("wlcg.traffic_case_sensitive")
 

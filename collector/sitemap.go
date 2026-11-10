@@ -484,9 +484,7 @@ func (s *siteRecordEnricher) Enrich(ctx context.Context, record *CollectorRecord
 		return
 	}
 
-	// The server IP is always known (from the packet source address). A client
-	// IP is only available when the client was reported as an IP literal; when it
-	// was a name we have no address to fall back on, so IP resolution is skipped.
+	// The server IP is always known (from the packet source address).
 	// The client address: the literal it was reported as, or the one the DNS
 	// enricher resolved for a name-reported client. Without the second, a client
 	// XRootD named rather than numbered has nothing for the "ip" method to match.

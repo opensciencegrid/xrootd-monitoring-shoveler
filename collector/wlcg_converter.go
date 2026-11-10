@@ -268,7 +268,7 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 	//
 	// site_internal_traffic is derived from the scope here rather than carried
 	// separately, so "LAN implies internal, WAN implies not, UNKNOWN implies no
-	// answer" holds by construction. "user" is untouched by any of this.
+	// answer" holds by construction. "user" keeps the value the record reported.
 	if record.trafficScope != "" {
 		wlcg.TrafficScope = record.trafficScope
 		wlcg.SiteInternalTraffic = siteInternalFromScope(record.trafficScope)

@@ -933,7 +933,7 @@ first hit wins:
 
 1. an account is one of `wlcg.traffic_internal_users` (default `root`)
 2. an account is an all-digit job-agent id within
-   `wlcg.traffic_job_agent_min`-`wlcg.traffic_job_agent_max` (default 1-8)
+   `wlcg.traffic_job_agents` (default `1-8`; `none` turns the rule off)
 3. the protocol, the appinfo or the path has a `/`-separated segment that is one
    of `wlcg.traffic_replication_prefixes` (default `replicate`) or starts with it
    and a colon, as in XrootD's `/replicate:` paths. A user directory such as
@@ -968,10 +968,9 @@ not rule it out.
 wlcg:
   enabled: true
   traffic_enabled: true                        # emit the three fields (default true)
-  traffic_internal_users: ["root"]             # system accounts
-  traffic_job_agent_min: 1                     # numeric job-agent accounts...
-  traffic_job_agent_max: 8                     # ...set max below min to turn the rule off
-  traffic_replication_prefixes: ["replicate"]  # replication markers
+  traffic_internal_users: ["root"]             # system accounts ([] = off)
+  traffic_job_agents: "1-8"                    # numeric job-agent accounts ("none" = off)
+  traffic_replication_prefixes: ["replicate"]  # replication markers ([] = off)
   traffic_case_sensitive: false                # match accounts and markers exactly as written
 ```
 
@@ -1336,7 +1335,7 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_scitags_registry_reload_failures` - Failed fetches of a SciTags URL, including the first one at startup (the current registry is kept)
 - `shoveler_scitags_unmapped_ids{kind}` - SciTags ids on WLCG records that the registry has no name for, by `kind` (`experiment` or `activity`). A steady rise usually means the registry is out of date
 - `shoveler_traffic_scope{scope}` - WLCG records classified by network scope (`LAN`, `WAN`, `UNKNOWN`); the `UNKNOWN` count is the whole-record topology failure rate
-- `shoveler_traffic_xrootd_internal{signal}` - WLCG records classified as XRootD-internal, by the signal that matched (`internal_user`, `job_agent`, `replication`, `storage_to_storage`)
+- `shoveler_traffic_xrootd_internal{signal}` - WLCG records classified as XRootD-internal, by the signal that matched (`internal_user`, `job_agent`, `replication`)
 - `shoveler_parse_time_ms` - Packet parsing time histogram
 - `shoveler_request_latency_ms` - Request latency histogram
 

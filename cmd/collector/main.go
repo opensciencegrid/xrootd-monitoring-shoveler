@@ -511,8 +511,7 @@ func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger 
 		Traffic: collector.TrafficConfig{
 			Enabled:             config.WLCG.TrafficEnabled,
 			InternalUsers:       config.WLCG.TrafficInternalUsers,
-			JobAgentMin:         config.WLCG.TrafficJobAgentMin,
-			JobAgentMax:         config.WLCG.TrafficJobAgentMax,
+			JobAgents:           config.WLCG.TrafficJobAgents,
 			ReplicationPrefixes: config.WLCG.TrafficReplicationPrefixes,
 			CaseSensitive:       config.WLCG.TrafficCaseSensitive,
 		},

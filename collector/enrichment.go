@@ -13,8 +13,8 @@ type DNSResolver interface {
 	LookupAddr(ctx context.Context, addr string) ([]string, error)
 	// LookupHost resolves a host name to addresses. It is the forward direction,
 	// used to give an unqualified client name an address the site resolver can
-	// work with. The name is passed through untouched: expanding a bare
-	// "b9p04p7188" is the system resolver's job, via the search list in
+	// work with. The name goes to the resolver as reported, and the system
+	// resolver expands a bare "b9p04p7188" through the search list in
 	// resolv.conf, exactly as `host b9p04p7188` would.
 	LookupHost(ctx context.Context, host string) ([]string, error)
 }
