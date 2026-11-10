@@ -691,31 +691,30 @@ private address, so `site.local_site` cannot claim it either. It lands on
 comes out `UNKNOWN` however well the server end resolved.
 
 With `state.enable_dns_enrichment` on, such a name is resolved forward during
-enrichment: the name is handed to the system resolver as-is, exactly as
+enrichment. The name goes to the system resolver as reported, exactly as
 `host b9p04p7188` would, and the resolver expands it through the `search` list in
-the collector VM's own `/etc/resolv.conf`. **No domain is configured or appended
-anywhere in the collector** — a name with no dots gets search expansion by the
-default `ndots:1`, so each deployment simply inherits its own site's list. The
-address
-that comes back feeds the `ip` method, and reverse-resolving it yields the FQDN
-the `hostname` and `domain` methods need. A CERN worker node reading from CERN
-EOS then resolves through the CRIC netroute that owns its range and the record
-becomes `LAN` / `site_internal_traffic: true` instead of `UNKNOWN`.
+the collector's own `/etc/resolv.conf`. A WLCG collector runs at the site it
+monitors, so that is the same search list that gave the server the short name,
+and nothing is configured in the collector. The address that comes back feeds
+the `ip` method, and its PTR name feeds the `domain` method. A CERN worker node
+reading from CERN EOS then resolves through the CRIC netroute that owns its
+range and the record becomes `LAN` / `site_internal_traffic: true` instead of
+`UNKNOWN`.
 
-Answers are cached for `state.dns_cache_ttl`, including a name DNS says does
-not exist: a busy worker node that DNS cannot place is looked up once per cache
-lifetime. A timeout is retried on the next record. Only
-unqualified names trigger it — a client reported as an address or as an FQDN
-already carries what the resolver needs.
+The lookup runs only for records that site resolution places (WLCG records, with
+`site.enabled` on). The whole answer is cached for `state.dns_cache_ttl`,
+including a name DNS says does not exist and an address with no PTR record, so a
+busy worker node costs one lookup per cache lifetime. A timeout is retried on
+the next record. Only unqualified names trigger it — a client reported as an
+address or as an FQDN already carries what the resolver needs.
 
-> **Beware of short names from other sites.** The search list is the collector
-> VM's own, so an unqualified name from a remote site is looked up in the
-> collector's domain, not in the site that reported it. Usually it simply does
-> not resolve and the endpoint stays `no_host`, which is the right answer — a
-> bare name is only meaningful inside the DNS that issued it, so no collector can
-> place one from elsewhere. The risk is a collision: a client called `wn001` at
-> another site, when a `wn001` also exists in the collector's own domain, would be
-> placed at the wrong site.
+> **The collector's search list decides.** This relies on the collector running
+> at the site, with the site's search domains. A collector receiving from several
+> sites looks a remote site's short name up in its own domains, where it usually
+> does not resolve (the endpoint stays `no_host`) and can, rarely, match an
+> unrelated host of the same name. In Kubernetes the cluster's search domains
+> (`ndots:5`) come first, so a Service named like a worker node would match
+> before the site's domain.
 
 ### SciTags Experiment and Activity
 

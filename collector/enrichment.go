@@ -374,6 +374,10 @@ func (c *Correlator) performDNSLookup(ctx context.Context, ipStr string) string 
 
 type dnsRecordEnricher struct {
 	correlator *Correlator
+
+	// clientNames picks the records whose unqualified client name is looked up:
+	// those the site resolver will place. nil looks up none.
+	clientNames func(*CollectorRecord) bool
 }
 
 func (d *dnsRecordEnricher) Name() string {
@@ -404,17 +408,18 @@ func (d *dnsRecordEnricher) Enrich(ctx context.Context, record *CollectorRecord)
 		record.serverEnrichmentIP = ""
 	}
 
-	// An unqualified client name carries no domain to match and no address to
-	// place, so every site method misses it and the endpoint lands on no_host.
-	// Resolving the name gives the rest of the chain something to work with: the
-	// address feeds the "ip" method (CRIC netroutes), and reverse-resolving that
-	// address yields the FQDN the "hostname" and "domain" methods need.
+	// An unqualified client name ("b9p04p7188") is one the reporting server got
+	// from the site's DNS search list. The collector runs at the same site, so
+	// the name is looked up the same way. The address feeds the "ip" method and
+	// its PTR name feeds the "domain" method.
 	if record.needsClientNameLookup {
-		if addr := d.correlator.lookupClientAddress(ctx, record.clientLookupName); addr != "" {
-			record.clientIP = addr
-			if hostname := d.correlator.lookupDNSHostname(ctx, addr); hostname != "" {
-				record.clientHostname = hostname
-				record.UserDomain = extractDomainFromHostname(hostname)
+		if d.clientNames != nil && d.clientNames(record) {
+			if client := d.correlator.lookupClient(ctx, record.clientLookupName); client.addr != "" {
+				record.clientIP = client.addr
+				if client.hostname != "" {
+					record.clientHostname = client.hostname
+					record.UserDomain = extractDomainFromHostname(client.hostname)
+				}
 			}
 		}
 		record.needsClientNameLookup = false
@@ -427,21 +432,29 @@ func (d *dnsRecordEnricher) Enrich(ctx context.Context, record *CollectorRecord)
 // collide with a reverse entry.
 func clientNameCacheKey(host string) string { return "name:" + host }
 
-// lookupClientAddress resolves a client host name to a single address, through
-// the same cache and timeout as the reverse lookups. A name DNS says does not
-// exist is cached as an empty answer, so a busy worker node DNS cannot place is
-// looked up once per cache lifetime. A timeout or other temporary error is
-// retried on the next record, so a slow resolver at startup costs a few
-// lookups instead of an hour of unplaced records.
-func (c *Correlator) lookupClientAddress(parentCtx context.Context, host string) string {
-	if !c.enableDNSEnrichment || host == "" {
-		return ""
+// clientLookup is what an unqualified client name resolved to: its address and
+// the name its PTR record gives. Either may be empty.
+type clientLookup struct {
+	addr     string
+	hostname string
+}
+
+// lookupClient resolves an unqualified client name to an address and the full
+// name behind it, through the same cache and timeout as the reverse lookups.
+// The whole answer is cached under the name, including a name DNS says does
+// not exist and an address with no PTR record, so a busy worker node costs one
+// lookup per cache lifetime. A timeout or other temporary error is retried on
+// the next record, so a slow resolver at startup costs a few lookups instead
+// of an hour of unplaced records.
+func (c *Correlator) lookupClient(parentCtx context.Context, name string) clientLookup {
+	if !c.enableDNSEnrichment || name == "" {
+		return clientLookup{}
 	}
 
-	key := clientNameCacheKey(host)
+	key := clientNameCacheKey(name)
 	if val, exists := c.dnsCache.Get(key); exists {
-		addr, _ := val.(string)
-		return addr
+		client, _ := val.(clientLookup)
+		return client
 	}
 
 	lookupCtx := parentCtx
@@ -451,22 +464,36 @@ func (c *Correlator) lookupClientAddress(parentCtx context.Context, host string)
 	lookupCtx, cancel := context.WithTimeout(lookupCtx, c.dnsTimeout)
 	defer cancel()
 
-	addrs, err := c.dnsResolver.LookupHost(lookupCtx, host)
+	addrs, err := c.dnsResolver.LookupHost(lookupCtx, name)
 	if err != nil || len(addrs) == 0 {
-		c.logger.Debugf("client name lookup failed for %s: %v", host, err)
+		c.logger.Debugf("client name lookup failed for %s: %v", name, err)
 		if err == nil || isNameNotFound(err) {
-			c.dnsCache.Set(key, "")
+			c.dnsCache.Set(key, clientLookup{})
 		}
-		return ""
+		return clientLookup{}
 	}
 
 	// First answer wins. A worker node with several addresses sits at one site,
 	// so any of them places it; taking the first keeps the result stable for the
 	// cache lifetime.
-	addr := addrs[0]
-	c.logger.Debugf("client name lookup success: %s -> %s", host, addr)
-	c.dnsCache.Set(key, addr)
-	return addr
+	client := clientLookup{addr: addrs[0]}
+
+	ptrCtx, ptrCancel := context.WithTimeout(lookupCtx, c.dnsTimeout)
+	defer ptrCancel()
+	names, err := c.dnsResolver.LookupAddr(ptrCtx, client.addr)
+	switch {
+	case err == nil && len(names) > 0:
+		client.hostname = strings.TrimSuffix(names[0], ".")
+	case err != nil && !isNameNotFound(err):
+		// The address is known but the PTR lookup failed for now: use the
+		// address, and ask again on the next record.
+		c.logger.Debugf("client PTR lookup failed for %s (%s): %v", name, client.addr, err)
+		return client
+	}
+
+	c.logger.Debugf("client name lookup success: %s -> %s (%s)", name, client.addr, client.hostname)
+	c.dnsCache.Set(key, client)
+	return client
 }
 
 // isNameNotFound reports whether DNS answered that the name does not exist

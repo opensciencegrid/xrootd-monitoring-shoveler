@@ -92,9 +92,8 @@ type CollectorRecord struct {
 	// ("b9p04p7188"): no domain for the suffix match, no address for the route
 	// match, so every site method misses and the endpoint lands on no_host.
 	// needsClientNameLookup asks the DNS enricher to resolve clientLookupName
-	// forward, handing the bare name to the system resolver exactly as `host`
-	// would and letting resolv.conf's search list expand it; clientIP keeps the
-	// answer for the site resolver.
+	// forward through the site's search list, exactly as `host` would; clientIP
+	// keeps the answer for the site resolver.
 	needsClientNameLookup bool   `json:"-"`
 	clientLookupName      string `json:"-"`
 	clientIP              string `json:"-"` // address resolved for a name-reported client; "" when it was reported as one or could not be resolved
@@ -373,7 +372,13 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 
 	if config.EnableDNSEnrichment {
 		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
-		c.registerEnricher(&dnsRecordEnricher{correlator: c})
+		dns := &dnsRecordEnricher{correlator: c}
+		if config.SiteRegistry != nil {
+			// A bare client name is only looked up for the site resolver, which
+			// works on WLCG records alone.
+			dns.clientNames = c.matchesWLCG
+		}
+		c.registerEnricher(dns)
 	}
 
 	if config.SiteRegistry != nil {
