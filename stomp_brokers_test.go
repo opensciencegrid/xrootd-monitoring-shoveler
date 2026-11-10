@@ -123,26 +123,37 @@ func newTestQueue(t *testing.T) *ConfirmationQueue {
 	return q
 }
 
-// useBrokers points resolveBrokers at the given addresses for the test
+// useBrokers points resolveBrokers at the given IPv4 addresses for the test
 func useBrokers(t *testing.T, addrs func() ([]string, error)) {
+	useBrokerFamilies(t, func() ([]string, []string, error) {
+		a, err := addrs()
+		return a, nil, err
+	})
+}
+
+// useBrokerFamilies points resolveBrokers at the given IPv4 and IPv6 addresses
+// for the test
+func useBrokerFamilies(t *testing.T, addrs func() (v4 []string, v6 []string, err error)) {
 	orig := resolveBrokers
 	resolveBrokers = func(string) ([]string, []string, string, error) {
-		a, err := addrs()
-		return a, nil, "", err
+		v4, v6, err := addrs()
+		return v4, v6, "", err
 	}
 	t.Cleanup(func() { resolveBrokers = orig })
 }
 
-// newTestBrokers starts the senders for the brokers resolveBrokers returns
+// newTestBrokers starts the feeder; refresh starts the senders for the brokers
+// resolveBrokers returns.
 func newTestBrokers(t *testing.T, queue *ConfirmationQueue) *stompBrokers {
-	messages := make(chan *MessageStruct)
-	go readMsgStomp(messages, queue)
+	out := newStompOutput(queue)
+	go out.feed()
 	alias, err := url.Parse("broker.test:61613")
 	require.NoError(t, err)
-	b := newStompBrokers(StompSession{stompUrl: *alias, topic: testTopic}, messages, queue)
+	b := newStompBrokers(StompSession{stompUrl: *alias, topic: testTopic}, out)
 	t.Cleanup(func() {
+		out.halt()
 		for _, s := range b.senders {
-			s.close()
+			<-s.done
 		}
 	})
 	return b
@@ -181,6 +192,7 @@ func TestStompBrokersSendToEveryBroker(t *testing.T) {
 	b := newTestBrokers(t, queue)
 	b.refresh()
 	assert.Len(t, b.senders, 3)
+	published := testutil.ToFloat64(MessagesPublished)
 
 	const n = 300
 	for i := 0; i < n; i++ {
@@ -190,6 +202,8 @@ func TestStompBrokersSendToEveryBroker(t *testing.T) {
 	for i, c := range counts {
 		assert.Positive(t, c, "broker %d received no messages", i)
 	}
+	require.Eventually(t, func() bool { return testutil.ToFloat64(MessagesPublished) == published+n },
+		5*time.Second, 10*time.Millisecond, "every confirmed message is counted as published")
 }
 
 func TestStompBrokersRefresh(t *testing.T) {
@@ -298,24 +312,24 @@ func TestStompBrokersFailureRefreshesAlias(t *testing.T) {
 }
 
 // With brokers under IPv4 and IPv6, the senders use the family the alias is
-// reached over. It is chosen again only while no sender is connected.
+// reached over. It is checked the first time, and again once every sender has
+// failed.
 func TestStompBrokersIPFamily(t *testing.T) {
 	overV4 := startTestBroker(t)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	overV6 := l.Addr().String()
 	require.NoError(t, l.Close()) // nothing listens: this host cannot reach the brokers over IPv6
-	orig := resolveBrokers
-	resolveBrokers = func(string) ([]string, []string, string, error) {
-		return []string{overV4.addr}, []string{overV6}, "", nil
-	}
-	t.Cleanup(func() { resolveBrokers = orig })
+	useBrokerFamilies(t, func() ([]string, []string, error) {
+		return []string{overV4.addr}, []string{overV6}, nil
+	})
 	var mu sync.Mutex
-	ipv6, probeErr := true, error(nil)
+	ipv6, probeErr, probes := true, error(nil), 0
 	origProbe := reachedOverIPv6
 	reachedOverIPv6 = func(string) (bool, error) {
 		mu.Lock()
 		defer mu.Unlock()
+		probes++
 		return ipv6, probeErr
 	}
 	t.Cleanup(func() { reachedOverIPv6 = origProbe })
@@ -324,26 +338,37 @@ func TestStompBrokersIPFamily(t *testing.T) {
 		defer mu.Unlock()
 		ipv6, probeErr = v6, err
 	}
+	probeCount := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return probes
+	}
 
-	b := newTestBrokers(t, newTestQueue(t))
+	queue := newTestQueue(t)
+	b := newTestBrokers(t, queue)
 	b.refresh()
 	assert.Equal(t, []string{overV6}, senderAddrs(b))
+	require.Eventually(t, b.allFailing, 5*time.Second, 10*time.Millisecond, "the IPv6 sender cannot connect")
 
-	// No sender connected and the alias cannot be reached to check: kept
+	// Every sender failed and the alias cannot be reached to check: kept
 	setProbe(false, errors.New("connection refused"))
 	b.refresh()
 	assert.Equal(t, []string{overV6}, senderAddrs(b))
 
-	// No sender connected: the family is chosen again
+	// Every sender failed: the family is checked again
 	setProbe(false, nil)
 	b.refresh()
 	assert.Equal(t, []string{overV4.addr}, senderAddrs(b))
-	require.Eventually(t, b.anyConnected, 5*time.Second, 10*time.Millisecond)
 
-	// A sender connected: the family is kept, whatever the check says
+	// The IPv4 sender is connecting or connected: no check
+	checked := probeCount()
+	b.refresh()
+	queue.Enqueue([]byte("msg-0"))
+	waitDelivered(t, []*testBroker{overV4}, 1)
 	setProbe(true, nil)
 	b.refresh()
 	assert.Equal(t, []string{overV4.addr}, senderAddrs(b))
+	assert.Equal(t, checked, probeCount(), "no TCP check while a sender works")
 }
 
 func senderAddrs(b *stompBrokers) []string {
@@ -381,4 +406,155 @@ func TestGetStompConnectionTimeout(t *testing.T) {
 	_, err = GetStompConnection(session)
 	assert.Error(t, err)
 	assert.Less(t, time.Since(start), 5*time.Second)
+}
+
+// A failed send goes back to the front of the queue, ahead of the backlog.
+func TestStompRequeueGoesFirst(t *testing.T) {
+	queue := newTestQueue(t)
+	out := newStompOutput(queue)
+	queue.Enqueue([]byte("backlog-0"))
+	queue.Enqueue([]byte("backlog-1"))
+
+	session := &StompSession{}
+	failed := &MessageStruct{Message: []byte("failed")}
+	out.track(session, failed)
+	out.requeue(session, failed)
+	assert.Zero(t, out.sendsInProgress())
+
+	for _, want := range []string{"failed", "backlog-0", "backlog-1"} {
+		msg, err := queue.Dequeue()
+		require.NoError(t, err)
+		assert.Equal(t, want, string(msg.Message))
+	}
+}
+
+// startSilentBroker accepts STOMP connections, answers CONNECT, then reads
+// every frame and answers none: a send waits for its receipt forever.
+func startSilentBroker(t *testing.T) string {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	var mu sync.Mutex
+	var conns []net.Conn
+	t.Cleanup(func() {
+		_ = l.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range conns {
+			_ = c.Close()
+		}
+	})
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns = append(conns, c)
+			mu.Unlock()
+			go func(c net.Conn) {
+				r := bufio.NewReader(c)
+				if _, err := r.ReadString(0); err != nil { // CONNECT
+					return
+				}
+				if _, err := c.Write([]byte("CONNECTED\nversion:1.2\nheart-beat:0,0\n\n\x00")); err != nil {
+					return
+				}
+				for {
+					if _, err := r.ReadString(0); err != nil {
+						return
+					}
+				}
+			}(c)
+		}
+	}()
+	return l.Addr().String()
+}
+
+// On shutdown the message waiting for a receipt and the one the feeder holds
+// go back to the front of the queue, in the order they were taken.
+func TestStompSaveAndStop(t *testing.T) {
+	queue := newTestQueue(t)
+	b := newTestBrokers(t, queue)
+	// Started after the senders, so its connections close before the senders'
+	// cleanup waits for them.
+	silent := startSilentBroker(t)
+	useBrokers(t, func() ([]string, error) { return []string{silent}, nil })
+	b.refresh()
+
+	for i := 0; i < 3; i++ {
+		queue.Enqueue([]byte(fmt.Sprintf("msg-%d", i)))
+	}
+	// msg-0 is waiting for its receipt, msg-1 is held by the feeder
+	require.Eventually(t, func() bool { return b.out.sendsInProgress() == 1 && queue.Size() == 1 },
+		5*time.Second, 10*time.Millisecond)
+
+	b.out.saveAndStop(200 * time.Millisecond)
+	for _, want := range []string{"msg-0", "msg-1", "msg-2"} {
+		msg, err := queue.Dequeue()
+		require.NoError(t, err)
+		assert.Equal(t, want, string(msg.Message))
+	}
+}
+
+// StopSTOMP stops the registered publisher, and a publisher starting after it
+// does not register.
+func TestStopSTOMP(t *testing.T) {
+	t.Cleanup(func() {
+		stompRunning.Lock()
+		stompRunning.out, stompRunning.stopping = nil, false
+		stompRunning.Unlock()
+	})
+	out := newStompOutput(newTestQueue(t))
+	go out.feed()
+	require.True(t, registerStomp(out))
+
+	StopSTOMP(time.Second)
+	select {
+	case <-out.fed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the feeder is still running")
+	}
+	assert.False(t, registerStomp(newStompOutput(newTestQueue(t))))
+}
+
+// startClosingBroker accepts STOMP connections and closes each one shortly
+// after CONNECTED, with no message sent: a broker lost while idle.
+func startClosingBroker(t *testing.T) string {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer func() { _ = c.Close() }()
+				if _, err := bufio.NewReader(c).ReadString(0); err != nil { // CONNECT
+					return
+				}
+				_, _ = c.Write([]byte("CONNECTED\nversion:1.2\nheart-beat:0,0\n\n\x00"))
+				time.Sleep(100 * time.Millisecond)
+			}(c)
+		}
+	}()
+	return l.Addr().String()
+}
+
+// A connection that dies while idle is noticed without a send: the sender
+// counts as failing and has the alias looked up again.
+func TestStompSenderNoticesIdleLoss(t *testing.T) {
+	closing := startClosingBroker(t)
+	useBrokers(t, func() ([]string, error) { return []string{closing}, nil })
+	b := newTestBrokers(t, newTestQueue(t))
+	b.refresh()
+
+	select {
+	case <-b.failed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the lost connection did not ask for the alias to be looked up again")
+	}
+	assert.True(t, b.allFailing())
 }

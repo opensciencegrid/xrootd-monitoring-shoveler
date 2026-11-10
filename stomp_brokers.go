@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -79,37 +80,37 @@ func brokerAddrs(ips []net.IPAddr, port string) (v4 []string, v6 []string) {
 // the alias.
 type stompBrokers struct {
 	template StompSession // credentials, topic and alias every sender copies
-	messages <-chan *MessageStruct
-	queue    *ConfirmationQueue
+	out      *stompOutput
 	senders  map[string]*stompSender // by dial address
 	failed   chan struct{}           // a sender's connection failed: look the alias up again
 	// An alias usually lists each broker under an IPv4 and an IPv6 address, and
 	// DNS does not say which pairs belong together, so the senders use one
-	// family. It is chosen when the alias has both, and chosen again only while
-	// no sender is connected: a broker failing while others still send over the
-	// same family says nothing about the family.
+	// family. It is chosen when the alias has both, and chosen again once every
+	// sender has failed: a broker failing while others still send over the same
+	// family says nothing about the family.
 	familyKnown bool
 	useIPv6     bool
 }
 
-func newStompBrokers(template StompSession, messages <-chan *MessageStruct, queue *ConfirmationQueue) *stompBrokers {
+func newStompBrokers(template StompSession, out *stompOutput) *stompBrokers {
 	return &stompBrokers{
 		template: template,
-		messages: messages,
-		queue:    queue,
+		out:      out,
 		senders:  map[string]*stompSender{},
 		failed:   make(chan struct{}, 1),
 	}
 }
 
 // run starts the senders, and looks the alias up again when a connection fails
-// and every brokerRefreshInterval. It does not return.
+// and every brokerRefreshInterval, until publishing stops.
 func (b *stompBrokers) run() {
 	b.refresh()
 	ticker := time.NewTicker(brokerRefreshInterval)
 	defer ticker.Stop()
 	for {
 		select {
+		case <-b.out.stop:
+			return
 		case <-ticker.C:
 		case <-b.failed:
 		}
@@ -135,7 +136,10 @@ func (b *stompBrokers) refresh() {
 	v4, v6, host, err := resolveBrokers(alias)
 	addrs := v4
 	if len(v4) > 0 && len(v6) > 0 {
-		if !b.familyKnown || !b.anyConnected() {
+		// The family is checked the first time, and again once every sender has
+		// failed, when the family itself may be what broke. Senders still on
+		// their first attempt have not failed yet, so starting up costs no check.
+		if !b.familyKnown || b.allFailing() {
 			if useIPv6, err := reachedOverIPv6(alias); err == nil {
 				b.familyKnown, b.useIPv6 = true, useIPv6
 			} else {
@@ -164,29 +168,43 @@ func (b *stompBrokers) refresh() {
 			b.senders[addr] = b.startSender(addr, host)
 		}
 	}
+	var gone []*stompSender
 	for addr, s := range b.senders {
 		if !want[addr] {
 			log.Infoln("STOMP broker", s.session.dialAddr(), "is no longer behind", alias+", closing its connection")
-			s.close()
+			gone = append(gone, s)
 			delete(b.senders, addr)
 		}
+	}
+	// Stop them all first, then wait: each finishes its current send or connect
+	// attempt, and they do it together.
+	for _, s := range gone {
+		s.halt()
+	}
+	for _, s := range gone {
+		<-s.done
 	}
 	log.Infoln("Sending to", len(b.senders), "STOMP brokers behind", alias)
 }
 
-// anyConnected reports whether any sender has a working connection
-func (b *stompBrokers) anyConnected() bool {
+// allFailing reports whether every sender has failed to connect or lost its
+// connection.
+func (b *stompBrokers) allFailing() bool {
+	if len(b.senders) == 0 {
+		return false
+	}
 	for _, s := range b.senders {
-		if s.connected.Load() {
-			return true
+		if !s.failing.Load() {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func (b *stompBrokers) startSender(addr string, host string) *stompSender {
 	session := b.template
 	session.conn = nil
+	session.lost = nil
 	session.addr = addr
 	session.serverName = host
 	s := &stompSender{
@@ -195,64 +213,88 @@ func (b *stompBrokers) startSender(addr string, host string) *stompSender {
 		stop:    make(chan struct{}),
 		done:    make(chan struct{}),
 	}
-	go s.run(b.messages, b.queue)
+	go func() {
+		select {
+		case <-b.out.stop:
+			s.halt()
+		case <-s.done:
+		}
+	}()
+	go s.run(b.out)
 	return s
 }
 
 // stompSender sends messages to one broker over its own connection.
 type stompSender struct {
-	session *StompSession
-	failed  func()        // called when the connection fails
-	stop    chan struct{} // closed to stop the sender
-	done    chan struct{} // closed when the sender has stopped
-	// connected is set while the connection works: from connecting until a send fails
-	connected atomic.Bool
+	session  *StompSession
+	failed   func()        // called when the connection fails
+	stop     chan struct{} // closed to stop the sender
+	stopOnce sync.Once
+	done     chan struct{} // closed when the sender has stopped
+	// failing is set when a connect attempt fails or the connection breaks, and
+	// cleared once connected.
+	failing atomic.Bool
 }
 
-// run connects, then sends messages until stopped. A message that fails to send
-// goes back in the queue, for any sender to take, while this one reconnects: a
-// broker that is down must not hold a message that another broker can send. The
-// failure also has the alias looked up again, which stops this sender if its
-// broker was taken out of it.
+// run connects, then sends messages until stopped, and reconnects whenever the
+// connection fails. A message that fails to send goes back to the front of the
+// queue, for any sender to take, while this one reconnects: a broker that is
+// down must not hold a message that another broker can send. The failure also
+// has the alias looked up again, which stops this sender if its broker was
+// taken out of it.
 // That can reorder messages, and a message whose receipt was lost after the
 // broker took it can be sent twice, as it is when publish retries.
-func (s *stompSender) run(messages <-chan *MessageStruct, queue *ConfirmationQueue) {
+func (s *stompSender) run(out *stompOutput) {
 	defer close(s.done)
 	defer s.session.disconnect()
 
-	if !s.session.reconnect(s.stop) {
-		return
-	}
-	s.connected.Store(true)
 	for {
+		if err := s.session.connect(); err != nil {
+			s.failing.Store(true)
+			log.Errorln("Failed to connect to", s.session.dialAddr()+", retrying:", err)
+		} else {
+			s.failing.Store(false)
+			if !s.sendUntilFailure(out) {
+				return
+			}
+			s.failing.Store(true)
+			s.failed()
+		}
+		// Wait before reconnecting, so a broker that takes connections but fails
+		// every send is not retried in a loop; the others carry on.
 		select {
 		case <-s.stop:
 			return
-		case msg := <-messages:
-			if err := s.session.send(msg.Message); err != nil {
-				s.connected.Store(false)
-				log.Errorln("Failed to publish message to", s.session.dialAddr()+", requeueing it:", err)
-				queue.EnqueueToExchange(msg.Message, msg.Exchange)
-				StompRequeued.Inc()
-				s.failed()
-				// Wait before reconnecting, so a broker that takes connections but
-				// fails every send is not retried in a loop; the others carry on.
-				select {
-				case <-s.stop:
-					return
-				case <-time.After(reconnectDelay):
-				}
-				if !s.session.reconnect(s.stop) {
-					return
-				}
-				s.connected.Store(true)
-			}
+		case <-time.After(reconnectDelay):
 		}
 	}
 }
 
-// close stops the sender after the message it is sending, if any, and waits for it
-func (s *stompSender) close() {
-	close(s.stop)
-	<-s.done
+// sendUntilFailure sends messages over the open connection. It returns false
+// when the sender is stopped, and true when the connection failed.
+func (s *stompSender) sendUntilFailure(out *stompOutput) bool {
+	for {
+		select {
+		case <-s.stop:
+			return false
+		case <-s.session.lost:
+			log.Warningln("Lost the connection to STOMP broker", s.session.dialAddr())
+			return true
+		case msg := <-out.messages:
+			out.track(s.session, msg)
+			if err := s.session.send(msg.Message); err != nil {
+				log.Errorln("Failed to publish message to", s.session.dialAddr()+", requeueing it:", err)
+				out.requeue(s.session, msg)
+				return true
+			}
+			out.untrack(s.session)
+			MessagesPublished.Inc()
+		}
+	}
+}
+
+// halt stops the sender after the message it is sending, if any. It is safe
+// to call twice.
+func (s *stompSender) halt() {
+	s.stopOnce.Do(func() { close(s.stop) })
 }

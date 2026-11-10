@@ -195,7 +195,7 @@ type Config struct {
 	ProfilePort           int
 	StompCert             string
 	StompCertKey          string
-	StompAllBrokers       bool // One connection to every broker behind the stomp.url alias, not to one of them
+	StompAllBrokers       bool // One connection to each broker behind the stomp.url alias (default on in collector mode)
 	QueueDir              string
 	QueueMaxMessages      int // queue_max_messages: drop the oldest beyond this (0 = no limit)
 	IpMapAll              string
@@ -570,8 +570,10 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 		c.StompCertKey = viper.GetString("stomp.certkey")
 		log.Debugln("STOMP CERTKEY:", c.StompCertKey)
 
-		// Connect to every broker behind the stomp.url alias instead of one of them
-		viper.SetDefault("stomp.all_brokers", true)
+		// Connect to every broker behind the stomp.url alias. On by default in
+		// collector mode. A shoveler keeps one connection, which sends packets in
+		// the order they arrived, as its AMQP output does with one worker.
+		viper.SetDefault("stomp.all_brokers", c.Mode == "collector")
 		c.StompAllBrokers = viper.GetBool("stomp.all_brokers")
 		log.Debugln("STOMP all brokers:", c.StompAllBrokers)
 	default:

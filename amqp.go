@@ -148,9 +148,9 @@ func StopAMQP(timeout time.Duration) {
 	}
 }
 
-// ShutdownOnSignal waits for SIGTERM or SIGINT, then stops AMQP publishing,
-// saves in-flight messages to the queue, closes the queue and exits, so a
-// restart loses nothing that was queued.
+// ShutdownOnSignal waits for SIGTERM or SIGINT, then stops AMQP and STOMP
+// publishing, saves in-flight messages to the queue, closes the queue and
+// exits, so a restart loses nothing that was queued.
 func ShutdownOnSignal(queue *ConfirmationQueue) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, os.Interrupt)
@@ -158,6 +158,7 @@ func ShutdownOnSignal(queue *ConfirmationQueue) {
 		sig := <-signals
 		log.Warningln("Received", sig.String()+"; saving queued messages and exiting")
 		StopAMQP(10 * time.Second)
+		StopSTOMP(10 * time.Second)
 		if queue != nil {
 			if err := queue.Close(); err != nil {
 				log.Errorln("Failed to close the queue:", err)
