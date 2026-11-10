@@ -423,6 +423,34 @@ func TestJobAgentRange(t *testing.T) {
 	})
 }
 
+// TestJobAgentIDLongNumbers covers account ids longer than the range can hold:
+// with the widest range, a 20-digit account is out of range instead of wrapping
+// around into it.
+func TestJobAgentIDLongNumbers(t *testing.T) {
+	classifier := newTrafficClassifier(TrafficConfig{Enabled: true, JobAgents: "1-9223372036854775807"})
+
+	internal, _ := classifier.ClassifyXRootDInternal(&CollectorRecord{User: "9223372036854775807", userInfoKnown: true})
+	assert.True(t, internal, "the largest id is in range")
+	for _, user := range []string{"9223372036854775808", "99999999999999999999", "18446744073709551617"} {
+		internal, _ = classifier.ClassifyXRootDInternal(&CollectorRecord{User: user, userInfoKnown: true})
+		assert.False(t, internal, "%s is past the range", user)
+	}
+}
+
+// TestClassifyAllocatesNothing checks the hot path: classifying a record with
+// lowercase values, matched or not, makes no allocations.
+func TestClassifyAllocatesNothing(t *testing.T) {
+	classifier := newTrafficClassifier(TrafficConfig{Enabled: true})
+	records := []*CollectorRecord{
+		{User: "cmsuser", userInfoKnown: true, Protocol: "xroot", AppInfo: "xrdcp/5.6", Filename: "/store/data/run1/f.root"},
+		{User: "cmsuser", userInfoKnown: true, Protocol: "xroot", Filename: "/store/replicate:1234/f.root"},
+	}
+	for _, record := range records {
+		allocs := testing.AllocsPerRun(100, func() { classifier.ClassifyXRootDInternal(record) })
+		assert.Zero(t, allocs, "classifying %s", record.Filename)
+	}
+}
+
 // TestTrafficEmptyListsTurnRulesOff covers the lists: an empty list turns its
 // rule off, and nil keeps the default.
 func TestTrafficEmptyListsTurnRulesOff(t *testing.T) {

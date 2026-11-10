@@ -1384,10 +1384,13 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 				}
 			} else if !strings.Contains(host, ".") && host != "unknown" {
 				// An unqualified name: nothing to suffix-match and no address to
-				// place, so it is resolved forward during enrichment instead.
+				// place, so it is resolved forward during enrichment instead,
+				// when DNS enrichment is on.
 				clientHostname = host
-				needsClientNameLookup = true
-				clientLookupName = host
+				if c.enableDNSEnrichment {
+					needsClientNameLookup = true
+					clientLookupName = host
+				}
 			} else {
 				// Host is already a hostname - extract domain directly
 				userDomain = extractDomainFromHostname(host)

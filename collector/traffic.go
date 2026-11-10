@@ -139,6 +139,11 @@ type trafficClassifier struct {
 	jobAgentMax         int
 	replicationPrefixes []string
 	caseSensitive       bool
+
+	// The path forms of each prefix, built once so matching a record allocates
+	// nothing: "replicate:" at the start of a value and "/replicate:" inside it.
+	replicationStarts   []string
+	replicationSegments []string
 }
 
 // newTrafficClassifier compiles a TrafficConfig into a classifier, applying the
@@ -162,6 +167,8 @@ func newTrafficClassifier(cfg TrafficConfig) *trafficClassifier {
 	for _, prefix := range cfg.ReplicationPrefixes {
 		if p := c.fold(prefix); p != "" {
 			c.replicationPrefixes = append(c.replicationPrefixes, p)
+			c.replicationStarts = append(c.replicationStarts, p+":")
+			c.replicationSegments = append(c.replicationSegments, "/"+p+":")
 		}
 	}
 
@@ -283,9 +290,14 @@ func (t *trafficClassifier) isJobAgentID(user string) bool {
 		if r < '0' || r > '9' {
 			return false
 		}
-		id = id*10 + int(r-'0')
+		digit := int(r - '0')
+		// Checked before the multiply, so a long digit string stops here
+		// instead of wrapping around.
+		if id > (t.jobAgentMax-digit)/10 {
+			return false
+		}
+		id = id*10 + digit
 		if id > t.jobAgentMax {
-			// Also stops a long digit string from overflowing.
 			return false
 		}
 	}
@@ -313,7 +325,7 @@ func (t *trafficClassifier) isReplicationProtocol(protocol string) bool {
 // as in "/replicate:xyz". Folders such as "replicate" or "replicated_runs" stay
 // user traffic.
 func (t *trafficClassifier) isReplicationPath(value string) bool {
-	if len(t.replicationPrefixes) == 0 {
+	if len(t.replicationStarts) == 0 {
 		return false
 	}
 	v := t.fold(value)
@@ -321,11 +333,9 @@ func (t *trafficClassifier) isReplicationPath(value string) bool {
 		return false
 	}
 
-	for _, segment := range strings.Split(v, "/") {
-		for _, prefix := range t.replicationPrefixes {
-			if strings.HasPrefix(segment, prefix+":") {
-				return true
-			}
+	for i, start := range t.replicationStarts {
+		if strings.HasPrefix(v, start) || strings.Contains(v, t.replicationSegments[i]) {
+			return true
 		}
 	}
 	return false

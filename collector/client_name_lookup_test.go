@@ -84,6 +84,18 @@ func TestClientNameLookupResolvesUnqualifiedNames(t *testing.T) {
 	})
 }
 
+// TestNoClientLookupWithoutDNSEnrichment covers DNS enrichment turned off: a
+// bare name keeps its host but is not marked for a lookup nothing would run.
+func TestNoClientLookupWithoutDNSEnrichment(t *testing.T) {
+	c := NewCorrelatorWithConfig(CorrelatorConfig{TTL: 5 * time.Second, Logger: newSiteTestLogger()})
+	t.Cleanup(c.Stop)
+
+	record := recordForHost(c, "b9p04p7188")
+	assert.Equal(t, "b9p04p7188", record.clientHostname)
+	assert.False(t, record.needsClientNameLookup)
+	assert.False(t, record.NeedsEnrichment())
+}
+
 // TestUnqualifiedClientResolvesToASite is the end of the chain: with the address
 // in hand the site resolver places the client by CRIC netroute, so a CERN worker
 // node reading from CERN EOS comes out LAN instead of UNKNOWN.
