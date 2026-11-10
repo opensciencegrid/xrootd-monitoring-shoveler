@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -427,10 +428,11 @@ func (d *dnsRecordEnricher) Enrich(ctx context.Context, record *CollectorRecord)
 func clientNameCacheKey(host string) string { return "name:" + host }
 
 // lookupClientAddress resolves a client host name to a single address, through
-// the same cache and timeout as the reverse lookups. A name that does not
-// resolve is cached as an empty answer so a busy worker node that DNS cannot
-// place is not looked up again for every record it produces — the "1000 packets
-// must not all hit DNS" constraint applies to failures most of all.
+// the same cache and timeout as the reverse lookups. A name DNS says does not
+// exist is cached as an empty answer, so a busy worker node DNS cannot place is
+// looked up once per cache lifetime. A timeout or other temporary error is
+// retried on the next record, so a slow resolver at startup costs a few
+// lookups instead of an hour of unplaced records.
 func (c *Correlator) lookupClientAddress(parentCtx context.Context, host string) string {
 	if !c.enableDNSEnrichment || host == "" {
 		return ""
@@ -452,7 +454,9 @@ func (c *Correlator) lookupClientAddress(parentCtx context.Context, host string)
 	addrs, err := c.dnsResolver.LookupHost(lookupCtx, host)
 	if err != nil || len(addrs) == 0 {
 		c.logger.Debugf("client name lookup failed for %s: %v", host, err)
-		c.dnsCache.Set(key, "")
+		if err == nil || isNameNotFound(err) {
+			c.dnsCache.Set(key, "")
+		}
 		return ""
 	}
 
@@ -463,6 +467,13 @@ func (c *Correlator) lookupClientAddress(parentCtx context.Context, host string)
 	c.logger.Debugf("client name lookup success: %s -> %s", host, addr)
 	c.dnsCache.Set(key, addr)
 	return addr
+}
+
+// isNameNotFound reports whether DNS answered that the name does not exist
+// (NXDOMAIN), which is the one failure worth caching.
+func isNameNotFound(err error) bool {
+	var dnsErr *net.DNSError
+	return errors.As(err, &dnsErr) && dnsErr.IsNotFound
 }
 
 func extractDomainFromHostname(hostname string) string {

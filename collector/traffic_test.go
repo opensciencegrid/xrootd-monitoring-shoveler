@@ -287,6 +287,11 @@ func TestXRootDInternalSignals(t *testing.T) {
 			wantInternal: false,
 		},
 		{
+			name: "a user folder named replicate", user: "jdoe", userInfoKnown: true,
+			filename:     "/eos/user/j/jdoe/replicate/out.root",
+			wantInternal: false,
+		},
+		{
 			name: "a protocol that only starts with replicate", user: "cmsuser", userInfoKnown: true,
 			protocol: "replicated", filename: "/store/data/file.root",
 			wantInternal: false,

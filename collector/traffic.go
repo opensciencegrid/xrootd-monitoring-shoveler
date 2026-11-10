@@ -41,9 +41,7 @@ var (
 	DefaultTrafficInternalUsers = []string{"root"}
 
 	// DefaultTrafficReplicationPrefixes match a replication operation. MonALISA
-	// looks for "/replicate:" in the path; matching each "/"-separated segment
-	// against "replicate" and "replicate:..." covers that form and a bare
-	// "replicate" protocol too.
+	// looks for "/replicate:" in the path; the protocol "replicate" counts too.
 	DefaultTrafficReplicationPrefixes = []string{"replicate"}
 )
 
@@ -73,9 +71,9 @@ type TrafficConfig struct {
 	// DefaultTrafficJobAgents, and "none" turns the rule off.
 	JobAgents string
 
-	// ReplicationPrefixes mark a replication operation. A "/"-separated segment of
-	// the protocol, the appinfo or the path matches when it is the prefix or
-	// starts with the prefix and a colon. nil means
+	// ReplicationPrefixes mark a replication operation: a protocol equal to the
+	// prefix, or a "/"-separated segment of the appinfo or the path that starts
+	// with the prefix and a colon. nil means
 	// DefaultTrafficReplicationPrefixes; an empty list turns the rule off.
 	ReplicationPrefixes []string
 
@@ -100,11 +98,15 @@ func (c TrafficConfig) withDefaults() TrafficConfig {
 	return c
 }
 
-// jobAgentRange returns the job-agent range in force. A value that does not
-// parse falls back to DefaultTrafficJobAgents, and err says why. The rule is
-// off when last < first.
+// jobAgentRange returns the job-agent range in force. Empty is the default, and
+// a value that does not parse falls back to DefaultTrafficJobAgents with err
+// saying why. The rule is off when last < first.
 func (c TrafficConfig) jobAgentRange() (first, last int, err error) {
-	first, last, err = parseJobAgentRange(c.withDefaults().JobAgents)
+	value := c.JobAgents
+	if strings.TrimSpace(value) == "" {
+		value = DefaultTrafficJobAgents
+	}
+	first, last, err = parseJobAgentRange(value)
 	if err != nil {
 		first, last, _ = parseJobAgentRange(DefaultTrafficJobAgents)
 	}
@@ -213,9 +215,9 @@ func (t *trafficClassifier) ClassifyXRootDInternal(record *CollectorRecord) (int
 	// MonALISA looks for "/replicate:" in the dict info, which is the path for a
 	// transfer and the appinfo for an application record; the protocol is checked
 	// too so a replication protocol is caught on its own.
-	if t.isReplicationOperation(record.Protocol) ||
-		t.isReplicationOperation(record.AppInfo) ||
-		t.isReplicationOperation(record.Filename) {
+	if t.isReplicationProtocol(record.Protocol) ||
+		t.isReplicationPath(record.AppInfo) ||
+		t.isReplicationPath(record.Filename) {
 		return true, TrafficSignalReplication
 	}
 
@@ -296,11 +298,23 @@ func (t *trafficClassifier) isJobAgentID(user string) bool {
 	return id >= t.jobAgentMin
 }
 
-// isReplicationOperation reports whether a value names a replication operation:
-// one of its "/"-separated segments is a configured prefix ("replicate", as a
-// protocol) or starts with it plus a colon ("/replicate:xyz" in a path). User
-// directories like "replicated_runs" stay user traffic.
-func (t *trafficClassifier) isReplicationOperation(value string) bool {
+// isReplicationProtocol reports whether the protocol is a replication marker
+// ("replicate").
+func (t *trafficClassifier) isReplicationProtocol(protocol string) bool {
+	p := t.fold(protocol)
+	for _, prefix := range t.replicationPrefixes {
+		if p == prefix {
+			return true
+		}
+	}
+	return false
+}
+
+// isReplicationPath reports whether a path or appinfo names a replication
+// operation: one of its "/"-separated segments starts with a marker and a colon,
+// as in "/replicate:xyz". Folders such as "replicate" or "replicated_runs" stay
+// user traffic.
+func (t *trafficClassifier) isReplicationPath(value string) bool {
 	if len(t.replicationPrefixes) == 0 {
 		return false
 	}
@@ -310,11 +324,8 @@ func (t *trafficClassifier) isReplicationOperation(value string) bool {
 	}
 
 	for _, segment := range strings.Split(v, "/") {
-		if segment == "" {
-			continue
-		}
 		for _, prefix := range t.replicationPrefixes {
-			if segment == prefix || strings.HasPrefix(segment, prefix+":") {
+			if strings.HasPrefix(segment, prefix+":") {
 				return true
 			}
 		}
@@ -328,7 +339,7 @@ func (t *trafficClassifier) isReplicationOperation(value string) bool {
 // SiteRegistry.resolveHost), and guessing here would produce a definite LAN or
 // WAN from an undecided endpoint.
 func classifyTrafficScope(srcSite, srcStatus, dstSite, dstStatus string) string {
-	if !siteStatusResolved(srcStatus) || !siteStatusResolved(dstStatus) {
+	if !isResolvedSiteStatus(srcStatus) || !isResolvedSiteStatus(dstStatus) {
 		return TrafficScopeUnknown
 	}
 	// Defence in depth: a resolved status always carries a site name.
@@ -339,18 +350,6 @@ func classifyTrafficScope(srcSite, srcStatus, dstSite, dstStatus string) string 
 		return TrafficScopeLAN
 	}
 	return TrafficScopeWAN
-}
-
-// siteStatusResolved reports whether a per-endpoint status settled the endpoint.
-// "ambiguous" is deliberately not one of them (see classifyTrafficScope).
-func siteStatusResolved(status string) bool {
-	switch status {
-	case SiteStatusResolved, SiteStatusResolvedConfig, SiteStatusResolvedOverride,
-		SiteStatusResolvedHostname, SiteStatusResolvedIP:
-		return true
-	default:
-		return false
-	}
 }
 
 // siteInternalFromScope derives site_internal_traffic from the scope, which is

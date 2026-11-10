@@ -42,7 +42,7 @@ func newClientLookupCorrelator(t *testing.T) (*Correlator, *int) {
 			if addrs, ok := cernWorkerNodes[host]; ok {
 				return addrs, nil
 			}
-			return nil, fmt.Errorf("no such host: %s", host)
+			return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
 		},
 		lookupFunc: func(_ context.Context, _ string) ([]string, error) {
 			return nil, fmt.Errorf("no PTR")

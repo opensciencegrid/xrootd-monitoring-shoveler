@@ -702,8 +702,9 @@ the `hostname` and `domain` methods need. A CERN worker node reading from CERN
 EOS then resolves through the CRIC netroute that owns its range and the record
 becomes `LAN` / `site_internal_traffic: true` instead of `UNKNOWN`.
 
-Answers are cached for `state.dns_cache_ttl`, **including failures**: a busy
-worker node that DNS cannot place is looked up once, not once per record. Only
+Answers are cached for `state.dns_cache_ttl`, including a name DNS says does
+not exist: a busy worker node that DNS cannot place is looked up once per cache
+lifetime. A timeout is retried on the next record. Only
 unqualified names trigger it — a client reported as an address or as an FQDN
 already carries what the resolver needs.
 
@@ -934,10 +935,10 @@ first hit wins:
 1. an account is one of `wlcg.traffic_internal_users` (default `root`)
 2. an account is an all-digit job-agent id within
    `wlcg.traffic_job_agents` (default `1-8`; `none` turns the rule off)
-3. the protocol, the appinfo or the path has a `/`-separated segment that is one
-   of `wlcg.traffic_replication_prefixes` (default `replicate`) or starts with it
-   and a colon, as in XrootD's `/replicate:` paths. A user directory such as
-   `/replicated_runs/` stays user traffic.
+3. the protocol is one of `wlcg.traffic_replication_prefixes` (default
+   `replicate`), or the appinfo or the path has a `/`-separated segment starting
+   with one of them and a colon, as in XrootD's `/replicate:` paths. A user
+   folder such as `/replicate/` or `/replicated_runs/` stays user traffic.
 
 Nothing else counts, and a record matching none of them is `false` rather than
 unknown: calling an ordinary user's transfer infrastructure traffic is the worse
