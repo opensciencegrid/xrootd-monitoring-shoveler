@@ -164,6 +164,14 @@ amqp:
 #  topic: mytopic
 #  cert: path/to/cert/file
 #  certkey: path/to/certkey/file
+#  # On by default in the collector: open one connection to every broker behind
+#  # the url alias. Each connection sends one message at a time and waits for its
+#  # broker's receipt, so with 6 brokers 6 messages are sent at once. This helps
+#  # sites far from the brokers, where waiting for each receipt is what limits
+#  # the sending rate. Messages can then arrive out of order. The alias is looked
+#  # up again every 10 minutes and after a failed connection. Set to false for a
+#  # single connection to the broker DNS picks.
+#  all_brokers: true
 
 # WLCG metadata holds the configurable producer/type values that are used
 # in the "metadata" block of WLCG-formatted records.

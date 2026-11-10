@@ -249,6 +249,7 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_STOMP_TOPIC` - STOMP topic (default: `xrootd.shoveler`)
 * `<PREFIX>_STOMP_CERT` - Client certificate path
 * `<PREFIX>_STOMP_CERTKEY` - Client certificate key path
+* `<PREFIX>_STOMP_ALL_BROKERS` - Open one connection to each broker behind the STOMP URL's alias, so several messages are sent at once (default: `true` for the collector, `false` for the shoveler). Messages can then arrive out of order
 
 **Listening Configuration (Shoveler Mode only):**
 * `SHOVELER_LISTEN_PORT` - UDP listening port (default: `9993`)
@@ -1183,6 +1184,8 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_queue_dropped` - Oldest messages dropped because the queue reached `queue_max_messages`
 - `shoveler_messages_published` - Messages the message bus confirmed receiving (refused messages are kept and retried)
 - `shoveler_rabbitmq_reconnects` - MQ reconnection count
+- `shoveler_stomp_connections` - Open connections to STOMP brokers
+- `shoveler_stomp_requeued` - STOMP messages put back in the queue after a failed send, for another broker to send
 
 **Collector Binary (additional):**
 - `shoveler_packets_parsed_ok` - Successfully parsed packets

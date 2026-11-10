@@ -92,6 +92,13 @@ amqp:
 #  topic: mytopic
 #  cert: path/to/cert/file
 #  certkey: path/to/certkey/file
+#  # Off by default in the shoveler, whose single connection sends packets in
+#  # the order they arrived. Set to true to open one connection to every broker
+#  # behind the url alias: each sends one message at a time and waits for its
+#  # broker's receipt, so with 6 brokers 6 messages are sent at once, which helps
+#  # sites far from the brokers. Messages can then arrive out of order. The alias
+#  # is looked up again every 10 minutes and after a failed connection.
+#  all_brokers: false
 
 listen:
   port: 9993

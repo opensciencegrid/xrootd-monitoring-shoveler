@@ -2,65 +2,61 @@ package shoveler
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	stomp "github.com/go-stomp/stomp/v3"
 )
 
+// StartStomp sends the queued messages to the STOMP broker in stomp.url, over
+// one connection to every broker behind the alias with stomp.all_brokers, or
+// over one connection otherwise. It runs until StopSTOMP.
 func StartStomp(config *Config, queue *ConfirmationQueue) {
-
-	// TODO: Get the username, password, server, topic from the config
-	stompUser := config.StompUser
-	stompPassword := config.StompPassword
-	stompUrl := config.StompURL
-	stompTopic := config.StompTopic
-	stompCert := config.StompCert
-	stompCertKey := config.StompCertKey
-
-	if !strings.HasPrefix(stompTopic, "/topic/") {
-		stompTopic = "/topic/" + stompTopic
+	out := newStompOutput(queue)
+	if !registerStomp(out) {
+		return
 	}
+	go out.feed()
 
-	stompSession := GetNewStompConnection(stompUser, stompPassword,
-		*stompUrl, stompTopic, stompCert, stompCertKey)
-
-	ticker := time.NewTicker(1 * time.Hour)
-	defer ticker.Stop()
-
-	messagesQueue := make(chan *MessageStruct)
-	go readMsgStomp(messagesQueue, queue)
-
-	// Message loop, constantly be dequeing and sending the message
-	for {
-		select {
-		// Add reconnection every hour to make sure connection to brokers is kept balanced
-		case <-ticker.C:
-			stompSession.handleReconnect()
-		case msgStruct := <-messagesQueue:
-			// Note: STOMP doesn't support multiple topics/destinations per session
-			// so we just use the Message and ignore the Exchange field
-			stompSession.publish(msgStruct.Message)
-		}
+	session := stompSessionFrom(config)
+	if config.StompAllBrokers {
+		newStompBrokers(session, out).run()
+		return
 	}
+	out.runSingle(&session)
+}
+
+// stompSessionFrom builds an unconnected session from the stomp settings.
+func stompSessionFrom(config *Config) StompSession {
+	topic := config.StompTopic
+	if !strings.HasPrefix(topic, "/topic/") {
+		topic = "/topic/" + topic
+	}
+	return newStompSession(config.StompUser, config.StompPassword, *config.StompURL,
+		topic, loadStompCert(config.StompCert, config.StompCertKey)...)
 }
 
 func GetNewStompConnection(username string, password string,
 	stompUrl url.URL, topic string, stompCert string, stompCertKey string) *StompSession {
-	if stompCert != "" && stompCertKey != "" {
-		cert, err := tls.LoadX509KeyPair(stompCert, stompCertKey)
-		if err != nil {
-			log.Errorln("Failed to load certificate:", err)
-		}
+	return NewStompConnection(username, password,
+		stompUrl, topic, loadStompCert(stompCert, stompCertKey)...)
+}
 
-		return NewStompConnection(username, password,
-			stompUrl, topic, cert)
-	} else {
-		return NewStompConnection(username, password,
-			stompUrl, topic)
+// loadStompCert loads the client certificate, or returns none when it is not configured
+func loadStompCert(stompCert string, stompCertKey string) []tls.Certificate {
+	if stompCert == "" || stompCertKey == "" {
+		return nil
 	}
+	cert, err := tls.LoadX509KeyPair(stompCert, stompCertKey)
+	if err != nil {
+		log.Errorln("Failed to load certificate:", err)
+	}
+	return []tls.Certificate{cert}
 }
 
 type StompSession struct {
@@ -70,87 +66,214 @@ type StompSession struct {
 	topic    string
 	cert     []tls.Certificate
 	conn     *stomp.Conn
+	// addr is the broker to dial, host:port. Empty means stompUrl, which leaves the
+	// choice of broker behind the alias to DNS.
+	addr string
+	// serverName is the name the broker's TLS certificate is checked against when
+	// addr is an IP address: the alias in stompUrl.
+	serverName string
+	// lost is closed when the current connection stops reading: the broker
+	// closed it, or go-stomp did after missed heartbeats.
+	lost <-chan struct{}
+}
+
+// dialAddr is the address this session connects to
+func (session *StompSession) dialAddr() string {
+	if session.addr != "" {
+		return session.addr
+	}
+	return session.stompUrl.String()
 }
 
 func NewStompConnection(username string, password string,
 	stompUrl url.URL, topic string, cert ...tls.Certificate) *StompSession {
-	session := StompSession{
+	session := newStompSession(username, password, stompUrl, topic, cert...)
+	session.handleReconnect()
+	return &session
+}
+
+// newStompSession builds an unconnected session.
+func newStompSession(username string, password string,
+	stompUrl url.URL, topic string, cert ...tls.Certificate) StompSession {
+	return StompSession{
 		username: username,
 		password: password,
 		stompUrl: stompUrl,
 		topic:    topic,
 		cert:     cert,
 	}
-
-	session.handleReconnect()
-
-	return &session
-}
-
-func readMsgStomp(messagesQueue chan<- *MessageStruct, queue *ConfirmationQueue) {
-	for {
-		msgStruct, err := queue.Dequeue()
-		if err != nil {
-			log.Errorln("Failed to read from queue:", err)
-			continue
-		}
-		messagesQueue <- msgStruct
-	}
 }
 
 // handleReconnect reconnects to the stomp server
 func (session *StompSession) handleReconnect() {
-	// Close the current session
-	if session.conn != nil {
-		err := session.conn.Disconnect()
-		if err != nil {
-			log.Errorln("Error handling the disconnection:", err.Error())
-		}
-	}
+	session.reconnect(nil)
+}
 
-reconnectLoop:
+// reconnect closes the current session and dials until a new one is open. It
+// returns false, with no session open, if stop is closed first; a nil stop never is.
+func (session *StompSession) reconnect(stop <-chan struct{}) bool {
 	for {
-		// Start a new session
-		conn, err := GetStompConnection(session)
+		err := session.connect()
 		if err == nil {
-			session.conn = conn
-			break reconnectLoop
-		} else {
-			log.Errorln("Failed to reconnect, retrying:", err.Error())
-			<-time.After(reconnectDelay)
+			return true
+		}
+		log.Errorln("Failed to reconnect to", session.dialAddr()+", retrying:", err.Error())
+		select {
+		case <-stop:
+			return false
+		case <-time.After(reconnectDelay):
 		}
 	}
 }
+
+// connect closes the current session and makes one attempt at a new one.
+func (session *StompSession) connect() error {
+	session.disconnect()
+	conn, err := GetStompConnection(session)
+	if err != nil {
+		return err
+	}
+	session.conn = conn
+	StompConnections.Inc()
+	return nil
+}
+
+// watchedConn closes lost when a read fails. go-stomp reads all the time, for
+// frames and heartbeats, so a connection that dies while idle is noticed
+// without waiting for the next send.
+type watchedConn struct {
+	net.Conn
+	lost chan struct{}
+	once sync.Once
+}
+
+func (w *watchedConn) Read(p []byte) (int, error) {
+	n, err := w.Conn.Read(p)
+	if err != nil {
+		w.once.Do(func() { close(w.lost) })
+	}
+	return n, err
+}
+
+// drop closes a connection that has already failed, with no DISCONNECT
+// handshake: disconnect would wait up to 30s for a receipt from a broker that
+// is gone.
+func (session *StompSession) drop() {
+	if session.conn == nil {
+		return
+	}
+	_ = session.conn.MustDisconnect()
+	session.conn = nil
+	StompConnections.Dec()
+}
+
+// disconnect closes the current session, if there is one
+func (session *StompSession) disconnect() {
+	if session.conn == nil {
+		return
+	}
+	err := session.conn.Disconnect()
+	if err != nil {
+		log.Errorln("Error handling the disconnection:", err.Error())
+	}
+	session.conn = nil
+	StompConnections.Dec()
+}
+
+// connectTimeout bounds connecting to a broker: the TCP dial, the TLS handshake
+// and the STOMP CONNECT. go-stomp sets no deadline on them, so a broker that
+// takes the connection but never answers would block the reconnect forever. A
+// var so tests can shorten it.
+var connectTimeout = 30 * time.Second
+
+// stompTLSRootCAs are the CAs a broker's certificate is checked against; nil
+// is the system's. A var so tests can trust a test broker.
+var stompTLSRootCAs *x509.CertPool
 
 func GetStompConnection(session *StompSession) (*stomp.Conn, error) {
+	dialer := net.Dialer{Timeout: connectTimeout}
+	dialed, err := dialer.Dial("tcp", session.dialAddr())
+	if err != nil {
+		return nil, err
+	}
+	_ = dialed.SetDeadline(time.Now().Add(connectTimeout))
+
+	conn := dialed
+	var opts []func(*stomp.Conn) error
 	if session.cert != nil {
-		netConn, err := tls.Dial("tcp", session.stompUrl.String(), &tls.Config{Certificates: session.cert})
-		if err != nil {
+		serverName := session.serverName
+		if serverName == "" {
+			serverName, _, _ = net.SplitHostPort(session.dialAddr())
+		}
+		tlsConn := tls.Client(dialed, &tls.Config{Certificates: session.cert, ServerName: serverName, RootCAs: stompTLSRootCAs})
+		if err := tlsConn.Handshake(); err != nil {
+			_ = dialed.Close()
 			return nil, fmt.Errorf("failed to connect using TLS: %w", err)
 		}
-		return stomp.Connect(netConn)
+		conn = tlsConn
+	} else {
+		// As stomp.Dial does: the host header is the broker's address
+		host, _, _ := net.SplitHostPort(dialed.RemoteAddr().String())
+		opts = append(opts, stomp.ConnOpt.Host(host), stomp.ConnOpt.Login(session.username, session.password))
 	}
-	cfg := stomp.ConnOpt.Login(session.username, session.password)
-	return stomp.Dial("tcp", session.stompUrl.String(), cfg)
+
+	// Watch the connection go-stomp reads from. Over TLS a broker that closes
+	// cleanly ends the TLS stream while the read underneath succeeds.
+	watched := &watchedConn{Conn: conn, lost: make(chan struct{})}
+	stompConn, err := stomp.Connect(watched, opts...)
+	if err != nil {
+		_ = watched.Close() // stomp.Connect leaves it open on failure
+		return nil, err
+	}
+	_ = dialed.SetDeadline(time.Time{})
+	session.lost = watched.lost
+	return stompConn, nil
 }
 
-// publish will send the message to the stomp message bus
-// It will also handle any error in sending by calling handleReconnect
-func (session *StompSession) publish(msg []byte) {
-sendMessageLoop:
+// publish sends the message to the stomp message bus, reconnecting after each
+// failed send until the broker confirms it. It returns false, with the message
+// unconfirmed, once stop is closed.
+func (session *StompSession) publish(msg []byte, stop <-chan struct{}) bool {
+	fresh := false // the connection was opened for this retry
 	for {
-		err := session.conn.Send(
-			session.topic,
-			"text/plain",
-			msg,
-			stomp.SendOpt.Receipt)
-
-		if err != nil {
-			log.Errorln("Failed to publish message:", err)
-			session.handleReconnect()
-		} else {
+		err := session.send(msg)
+		if err == nil {
 			MessagesPublished.Inc()
-			break sendMessageLoop
+			return true
 		}
+		log.Errorln("Failed to publish message:", err)
+		session.drop()
+		// A broker restart breaks a connection once, so the first failure
+		// reconnects at once. A send that fails again on a new connection waits
+		// reconnectDelay, so a broker that takes connections but fails every
+		// send is not retried in a loop.
+		wait := time.Duration(0)
+		if fresh {
+			wait = reconnectDelay
+		}
+		select {
+		case <-stop:
+			return false
+		case <-time.After(wait):
+		}
+		if !session.reconnect(stop) {
+			return false
+		}
+		// A shutdown may have saved the message while this reconnected.
+		select {
+		case <-stop:
+			return false
+		default:
+		}
+		fresh = true
 	}
+}
+
+// send sends one message and waits for the broker's receipt
+func (session *StompSession) send(msg []byte) error {
+	return session.conn.Send(
+		session.topic,
+		"text/plain",
+		msg,
+		stomp.SendOpt.Receipt)
 }
