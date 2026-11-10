@@ -802,16 +802,12 @@ func parseUserInfo(data []byte) (parser.UserInfo, error) {
 	}, nil
 }
 
-// isIPPattern checks if a string looks like an IP address pattern
-// Based on Python regex: r"^[\[\:f\d\.]+" (starts with [, :, f, or digits/dots)
+// isIPPattern reports whether s is an IP address literal, in any form XRootD
+// reports one: bracketed, with a zone, or IPv4-mapped. Parsing the whole value
+// keeps host names that start with "f" or a digit (fermicloud12.fnal.gov,
+// fwn042) on the host name path.
 func isIPPattern(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	// Check if it starts with IP-like characters
-	firstChar := s[0]
-	return firstChar == '[' || firstChar == ':' || firstChar == 'f' ||
-		(firstChar >= '0' && firstChar <= '9') || firstChar == '.'
+	return net.ParseIP(extractIPFromHost(s)) != nil
 }
 
 // canonicalServerIP derives the canonical upstream-server IP from a packet's

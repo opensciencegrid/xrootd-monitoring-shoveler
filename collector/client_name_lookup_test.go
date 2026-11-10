@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -144,4 +145,60 @@ func TestOnlyUnqualifiedClientsAreLookedUp(t *testing.T) {
 
 	// And the address of a client reported as a literal still reaches the resolver.
 	assert.Equal(t, net.ParseIP("188.185.205.157"), endpointIP("188.185.205.157"))
+}
+
+// recordForHost builds the record a close produces for a client XRootD reported
+// as host.
+func recordForHost(c *Correlator, host string) *CollectorRecord {
+	serverID := "1234567890#127.0.0.1:1234"
+	userInfo := parser.UserInfo{Protocol: "root", Username: "jdoe", Pid: 1, Sid: 1, Host: host}
+	c.userMap.Set(BuildUserInfoKey(serverID, userInfo), &UserState{UserID: 100, UserInfo: userInfo})
+	c.dictMap.Set(BuildDictIDKey(serverID, 100), userInfo)
+
+	state := &FileState{FileID: 1, UserID: 100, Filename: "/store/f.root", ServerID: serverID}
+	closeRec := parser.FileCloseRecord{Header: parser.FileHeader{RecType: 'c', FileId: 1, UserId: 100}}
+	packet := &parser.Packet{Header: parser.Header{ServerStart: 1234567890}, RemoteAddr: "127.0.0.1:1234"}
+	return c.createCorrelatedRecord(state, closeRec, packet, time.Now().Unix())
+}
+
+// TestClientHostKind checks which path each kind of client host takes. Names
+// that start with "f" or a digit used to be taken for addresses, which lost
+// their domain and kept the unqualified ones from being looked up.
+func TestClientHostKind(t *testing.T) {
+	c, _ := newClientLookupCorrelator(t)
+
+	for _, host := range []string{"fermicloud12.fnal.gov", "fts3.cern.ch", "1wn.example.org"} {
+		t.Run("name "+host, func(t *testing.T) {
+			record := recordForHost(c, host)
+			assert.Equal(t, host, record.clientHostname)
+			assert.NotEmpty(t, record.UserDomain)
+			assert.False(t, record.needsDNSEnrichment)
+			assert.False(t, record.needsClientNameLookup)
+		})
+	}
+
+	for _, host := range []string{"fwn042", "1wn-b07", "b9p04p7188"} {
+		t.Run("unqualified "+host, func(t *testing.T) {
+			record := recordForHost(c, host)
+			assert.True(t, record.needsClientNameLookup)
+			assert.Equal(t, host, record.clientLookupName)
+			assert.False(t, record.needsDNSEnrichment)
+		})
+	}
+
+	for host, ip := range map[string]string{
+		"192.0.2.10":          "192.0.2.10",
+		"[2001:db8::1]":       "2001:db8::1",
+		"fd00::1":             "fd00::1",
+		"fe80::1%eth0":        "fe80::1",
+		"[::ffff:192.0.2.10]": "192.0.2.10",
+		"::ffff:192.0.2.11":   "192.0.2.11",
+	} {
+		t.Run("address "+host, func(t *testing.T) {
+			record := recordForHost(c, host)
+			assert.True(t, record.needsDNSEnrichment)
+			assert.Equal(t, ip, record.enrichmentIP)
+			assert.False(t, record.needsClientNameLookup)
+		})
+	}
 }
