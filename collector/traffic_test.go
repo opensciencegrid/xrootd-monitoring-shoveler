@@ -96,7 +96,6 @@ func TestTrafficScopeFromResolvedSites(t *testing.T) {
 			scope := classifyTrafficScope(c.src, c.srcSt, c.dst, c.dstSt)
 			assert.Equal(t, c.wantScope, scope)
 			assert.Equal(t, c.wantInternal, siteInternalFromScope(scope))
-			assert.Equal(t, negate(c.wantInternal), remoteAccessFrom(siteInternalFromScope(scope)))
 		})
 	}
 }
@@ -601,15 +600,12 @@ func TestTrafficEnricherRegistration(t *testing.T) {
 	})
 }
 
-// negate mirrors a site_internal_traffic expectation into the remote_access one
-// the same scope must produce: the inverse where there is an answer, and still
-// no answer where there is none.
-func negate(internal *bool) *bool {
-	if internal == nil {
-		return nil
-	}
-	remote := !*internal
-	return &remote
+// TestRemoteAccessFrom checks remote_access is the opposite of
+// site_internal_traffic, and absent when it is.
+func TestRemoteAccessFrom(t *testing.T) {
+	assert.Equal(t, boolValue(true), remoteAccessFrom(boolValue(false)), "WAN is remote")
+	assert.Equal(t, boolValue(false), remoteAccessFrom(boolValue(true)), "LAN is local")
+	assert.Nil(t, remoteAccessFrom(nil), "UNKNOWN has no answer")
 }
 
 // TestRemoteAccessIgnoresXRootDInternal pins that remote_access reports the
@@ -641,7 +637,6 @@ func TestRemoteAccessIgnoresXRootDInternal(t *testing.T) {
 			wlcg, err := ConvertToWLCG(record, WLCGMetadata{}, nil)
 			assert.NoError(t, err)
 			assert.Equal(t, c.want, wlcg.RemoteAccess)
-			assert.Equal(t, negate(wlcg.SiteInternalTraffic), wlcg.RemoteAccess)
 		})
 	}
 }

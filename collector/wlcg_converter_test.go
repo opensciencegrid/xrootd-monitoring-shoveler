@@ -739,40 +739,21 @@ func TestConvertGStreamToWLCG_CustomMetadata(t *testing.T) {
 	}
 }
 
-// TestResolveIPVer pins ipver to &I= alone. What the client host happens to be
-// makes no difference: the host column varies across these cases and never
-// changes the answer.
+// TestResolveIPVer maps each &I= value to ipver. Only &I= decides.
 func TestResolveIPVer(t *testing.T) {
-	tests := []struct {
-		name        string
+	for _, tt := range []struct {
 		inetVersion string
-		host        string
 		want        string
 	}{
-		{"inet version 4, host is a name", "4", "client.example.com", ipVer4},
-		{"inet version 6, host is a name", "6", "client.example.com", ipVer6},
-		{"inet version 4, host is an address", "4", "192.168.1.10", ipVer4},
-		{"inet version 6, host is an address", "6", "2001:1458:d00:35::100:d4a", ipVer6},
-		// &I= alone decides, as for ipv6. On a dual-stack listener an IPv4 peer
-		// is the mapped ::ffff:a.b.c.d form and xrootd may report 6 for it; that
-		// answer is published as it stands.
-		{"mapped peer does not override inet version", "6", "::ffff:192.168.1.10", ipVer6},
-		{"dotted peer does not override inet version", "6", "192.168.1.10", ipVer6},
-		{"v6 peer does not override inet version", "4", "2001:1458:d00:35::100:d4a", ipVer4},
-		// No &I=: "unknown", the state the ipv6 boolean cannot express.
-		{"no inet version, host is a name", "", "client.example.com", ipVerUnknown},
-		{"no inet version, host is a v4 address", "", "192.168.1.10", ipVerUnknown},
-		{"no inet version, host is a v6 address", "", "2001:1458:d00:35::100:d4a", ipVerUnknown},
-		{"no user record at all", "", "", ipVerUnknown},
-		{"unknown host placeholder", "", "unknown", ipVerUnknown},
-		{"unrecognised inet version", "7", "client.example.com", ipVerUnknown},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			record := &CollectorRecord{Host: tt.host, clientInetVersion: tt.inetVersion}
+		{"4", ipVer4},
+		{"6", ipVer6},
+		{"", ipVerUnknown},  // xrootd sent no &I=
+		{"7", ipVerUnknown}, // a value xrootd does not use
+	} {
+		t.Run(fmt.Sprintf("%q", tt.inetVersion), func(t *testing.T) {
+			record := &CollectorRecord{clientInetVersion: tt.inetVersion}
 			if got := resolveIPVer(record); got != tt.want {
-				t.Errorf("resolveIPVer(inet=%q, host=%q) = %q, want %q", tt.inetVersion, tt.host, got, tt.want)
+				t.Errorf("resolveIPVer(%q) = %q, want %q", tt.inetVersion, got, tt.want)
 			}
 		})
 	}

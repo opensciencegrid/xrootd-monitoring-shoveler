@@ -883,8 +883,8 @@ the packet, as upstream.
 
 #### Internal traffic flags
 
-Every WLCG record answers two independent questions about the transfer: where it
-went on the network, and who generated it. Four fields carry the answers, next
+Every WLCG file-transfer record answers two questions about the transfer: where
+it went on the network, and who generated it. Four fields carry the answers, next
 to the `user` the record already had:
 
 | field | type | meaning |
@@ -896,7 +896,8 @@ to the `user` the record already had:
 
 They are written only while `wlcg.enabled` is on. `wlcg.traffic_enabled` (default
 true) switches them off again, and a collector with either off emits exactly what
-it emitted before.
+it emitted before. Cache and third-party-copy (TPC) records from the g-stream
+carry none of these fields.
 
 ##### Network scope
 
@@ -981,11 +982,12 @@ accounts or replication paths are named differently sets them here.
 
 #### IP version
 
-With `wlcg.enabled` on, every WLCG record also carries `ipver`, the FTS schema's
-IP version field: `ipv4`, `ipv6`, or `unknown` when XRootD reported no `&I=` for
-the client. It comes from the same `&I=` value as the existing `ipv6` boolean,
-so the two always agree; `unknown` is the case `ipv6: false` cannot tell apart
-from IPv4.
+With `wlcg.enabled` on, every WLCG file-transfer record also carries `ipver`.
+This is the FTS schema's IP version field: `ipv4`, `ipv6`, or `unknown` when
+XRootD reported no `&I=` for the client. It comes from the same `&I=` value as
+the `ipv6` boolean, so the two always agree. `unknown` marks the case that
+`ipv6: false` mixes up with IPv4. Cache and TPC records from the g-stream carry
+no `ipver`.
 
 #### Exclusions vs. the drop filter
 

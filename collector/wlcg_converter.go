@@ -171,14 +171,12 @@ const (
 // resolveIPVer maps the address family xrootd reported onto the FTS schema's
 // string: "ipv4", "ipv6", or "unknown".
 //
-// The only input is &I= on the login record, trimmed once when the record is
-// built. The ipv6 boolean is set from that same value, so the two agree.
-// ipver adds a third state: "unknown" when xrootd sent no &I=, where ipv6 can
-// only say false.
+// It reads &I= from the login record, trimmed once when the record is built.
+// The ipv6 boolean comes from the same value, so the two agree. ipver adds a
+// third state: "unknown" when xrootd sent no &I=. ipv6 shows false for that.
 //
-// The client host and server_ip play no part. server_ip is where the
-// monitoring datagram came from (see canonicalServerIP), the server's path to
-// this collector, so it says nothing about the transfer.
+// Only &I= decides. server_ip is where the monitoring datagram came from (see
+// canonicalServerIP), so it describes the path to this collector.
 func resolveIPVer(record *CollectorRecord) string {
 	switch record.clientInetVersion {
 	case "4":
@@ -288,17 +286,15 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 	// WLCG rules could match on it; here we just publish it, with record_vo and
 	// vo_source so a reader can see where it came from.
 	//
-	// With it off, "vo" stays as the packet reported it and neither record_vo nor
-	// vo_source is written.
+	// ipver, the FTS schema's IP version, is a WLCG-mode field too.
+	// VOResolution is on exactly when wlcg.enabled is.
+	//
+	// With it off, "vo" stays as the packet reported it, and record_vo,
+	// vo_source and ipver are left off the record.
 	if meta.VOResolution.Enabled {
 		wlcg.RecordVO = record.recordVO()
 		wlcg.VO = record.resolvedVO
 		wlcg.VOSource = record.voSource
-	}
-
-	// ipver, the FTS schema's IP version, is a WLCG-mode field like record_vo.
-	// VOResolution is enabled exactly when wlcg.enabled is.
-	if meta.VOResolution.Enabled {
 		wlcg.IPVer = resolveIPVer(record)
 	}
 

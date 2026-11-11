@@ -63,13 +63,15 @@ state:
 #   vo: cms                                   # VO set for collector running at a specific VO. If not set, the VO is determined by the record, scitags, and config in the order of vo_order.
 #   vo_order: ["record", "scitags", "config"]   # VO order to determine the resolution of the VO.
 #
-# With wlcg.enabled on, every WLCG record also carries ipver (ipv4/ipv6/unknown).
+# With wlcg.enabled on, every WLCG file-transfer record also carries ipver
+# (ipv4/ipv6/unknown).
 #
-# Internal traffic flags. With wlcg.enabled on, every WLCG record also carries
-# traffic_scope (LAN/WAN/UNKNOWN), site_internal_traffic and remote_access (both
-# absent when the topology is unknown) and xrootd_internal_traffic. The rules below have general
-# WLCG/XRootD defaults and only need setting at a site that names its system
-# accounts or replication paths differently.
+# Internal traffic flags. With wlcg.enabled on, every WLCG file-transfer record
+# also carries four fields: traffic_scope (LAN/WAN/UNKNOWN),
+# site_internal_traffic, remote_access and xrootd_internal_traffic. The two
+# site fields are absent when the topology is unknown. Cache and TPC records
+# from the g-stream carry none of these fields. The rules below have general WLCG/XRootD defaults. Set them only
+# at a site that names its system accounts or replication paths differently.
 #
 #   traffic_enabled: true                        # emit the four fields (default true)
 #   traffic_internal_users: ["root"]             # accounts XRootD uses for its own work ([] = off)

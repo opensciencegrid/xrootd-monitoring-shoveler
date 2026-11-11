@@ -154,13 +154,13 @@ type CollectorRecord struct {
 	// user id looks exactly like a numeric job-agent account.
 	userInfoKnown bool `json:"-"`
 
-	// clientInetVersion is the trimmed "4"/"6" of the user record's &I=: the address
-	// family the reporting server saw the client connect over. It is the only
-	// authoritative statement about a transfer's IP version, since a connection
-	// has exactly one family and server_ip cannot stand in for it: that address
-	// is the monitoring UDP path to this collector, not the transfer.
+	// clientInetVersion is the trimmed "4" or "6" of the user record's &I=: the
+	// address family the reporting server saw the client connect over. It is
+	// the one source for a transfer's IP version. server_ip describes the
+	// monitoring path to this collector, so it says nothing about the transfer.
 	//
-	// Empty when no user record was correlated
+	// It is empty when the correlator found no user record, or the login had no
+	// &I=.
 	clientInetVersion string `json:"-"`
 }
 
