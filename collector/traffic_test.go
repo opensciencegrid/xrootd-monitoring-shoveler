@@ -96,7 +96,7 @@ func TestTrafficScopeFromResolvedSites(t *testing.T) {
 			scope := classifyTrafficScope(c.src, c.srcSt, c.dst, c.dstSt)
 			assert.Equal(t, c.wantScope, scope)
 			assert.Equal(t, c.wantInternal, siteInternalFromScope(scope))
-			assert.Equal(t, negate(c.wantInternal), remoteAccessFromScope(scope))
+			assert.Equal(t, negate(c.wantInternal), remoteAccessFrom(siteInternalFromScope(scope)))
 		})
 	}
 }

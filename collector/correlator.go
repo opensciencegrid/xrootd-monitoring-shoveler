@@ -135,7 +135,7 @@ type CollectorRecord struct {
 
 	// Traffic classification results, filled in by trafficRecordEnricher after
 	// the sites are resolved. Carriers for the WLCG converter and deliberately
-	// NOT serialized: the three classification fields are emitted on the WLCG
+	// NOT serialized: the four classification fields are emitted on the WLCG
 	// record only.
 	//
 	// trafficScope is the canonical topology answer (LAN/WAN/UNKNOWN); empty

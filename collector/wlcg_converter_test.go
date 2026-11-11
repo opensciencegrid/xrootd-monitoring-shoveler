@@ -753,14 +753,13 @@ func TestResolveIPVer(t *testing.T) {
 		{"inet version 6, host is a name", "6", "client.example.com", ipVer6},
 		{"inet version 4, host is an address", "4", "192.168.1.10", ipVer4},
 		{"inet version 6, host is an address", "6", "2001:1458:d00:35::100:d4a", ipVer6},
-		// The address is not consulted, so it cannot correct &I= either. On a
-		// dual-stack listener an IPv4 peer is the mapped ::ffff:a.b.c.d form and
-		// xrootd may report 6 for it; that answer is published as it stands.
+		// &I= alone decides, as for ipv6. On a dual-stack listener an IPv4 peer
+		// is the mapped ::ffff:a.b.c.d form and xrootd may report 6 for it; that
+		// answer is published as it stands.
 		{"mapped peer does not override inet version", "6", "::ffff:192.168.1.10", ipVer6},
 		{"dotted peer does not override inet version", "6", "192.168.1.10", ipVer6},
 		{"v6 peer does not override inet version", "4", "2001:1458:d00:35::100:d4a", ipVer4},
-		// No &I=, nothing else to fall back on: "unknown", never a default to
-		// either family. This is the state the ipv6 boolean cannot express.
+		// No &I=: "unknown", the state the ipv6 boolean cannot express.
 		{"no inet version, host is a name", "", "client.example.com", ipVerUnknown},
 		{"no inet version, host is a v4 address", "", "192.168.1.10", ipVerUnknown},
 		{"no inet version, host is a v6 address", "", "2001:1458:d00:35::100:d4a", ipVerUnknown},
@@ -791,7 +790,7 @@ func TestConvertToWLCGIPVer(t *testing.T) {
 		clientInetVersion: "4",
 	}
 
-	wlcg, err := ConvertToWLCG(record, WLCGMetadata{}, nil)
+	wlcg, err := ConvertToWLCG(record, wlcgModeMetadata(), nil)
 	if err != nil {
 		t.Fatalf("ConvertToWLCG returned error: %v", err)
 	}
@@ -841,12 +840,55 @@ func TestIPv6AndIPVerAgree(t *testing.T) {
 			packet := &parser.Packet{Header: parser.Header{ServerStart: 1234567890}, RemoteAddr: "127.0.0.1:1234"}
 			record := c.createCorrelatedRecord(state, closeRec, packet, time.Now().Unix())
 
-			wlcg, err := ConvertToWLCG(record, testWLCGMetadata(), nil)
+			wlcg, err := ConvertToWLCG(record, wlcgModeMetadata(), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if wlcg.IPv6 != tt.wantIPv6 || wlcg.IPVer != tt.wantVer {
 				t.Errorf("ipv6=%v ipver=%q, want ipv6=%v ipver=%q", wlcg.IPv6, wlcg.IPVer, tt.wantIPv6, tt.wantVer)
+			}
+		})
+	}
+}
+
+// wlcgModeMetadata is testWLCGMetadata with wlcg.enabled on, as the binary
+// builds it.
+func wlcgModeMetadata() WLCGMetadata {
+	meta := testWLCGMetadata()
+	meta.VOResolution.Enabled = true
+	return meta
+}
+
+// TestIPVerOnlyInWLCGMode checks ipver follows wlcg.enabled: written in WLCG
+// mode, "unknown" included, and left off the record otherwise, so the legacy
+// output stays as it was.
+func TestIPVerOnlyInWLCGMode(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		meta WLCGMetadata
+		inet string
+		want string // "" means the field is absent
+	}{
+		{"WLCG mode, IPv4", wlcgModeMetadata(), "4", `"ipver":"ipv4"`},
+		{"WLCG mode, no &I=", wlcgModeMetadata(), "", `"ipver":"unknown"`},
+		{"legacy output", testWLCGMetadata(), "4", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			record := &CollectorRecord{Timestamp: time.Now(), Filename: "/store/f.root", clientInetVersion: tt.inet}
+			wlcg, err := ConvertToWLCG(record, tt.meta, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc, err := wlcg.ToJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.want == "" {
+				if strings.Contains(string(doc), `"ipver"`) {
+					t.Errorf("legacy output has ipver: %s", doc)
+				}
+			} else if !strings.Contains(string(doc), tt.want) {
+				t.Errorf("want %s in %s", tt.want, doc)
 			}
 		})
 	}

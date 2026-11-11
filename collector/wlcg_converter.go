@@ -29,7 +29,7 @@ type WLCGRecord struct {
 	ReadSingleBytes        int64                  `json:"read_single_bytes"`
 	ReadVectorBytes        int64                  `json:"read_vector_bytes"`
 	IPv6                   bool                   `json:"ipv6"`
-	IPVer                  string                 `json:"ipver"`
+	IPVer                  string                 `json:"ipver,omitempty"` // WLCG mode only
 	StartTime              int64                  `json:"start_time"`
 	EndTime                int64                  `json:"end_time"`
 	OperationTime          int64                  `json:"operation_time"`
@@ -96,10 +96,9 @@ type WLCGRecord struct {
 	// an end user. It is a pointer only so the field is absent, rather than a
 	// meaningless false, on records nothing classified.
 	//
-	// RemoteAccess is the inverse of SiteInternalTraffic: true for WAN, false
-	// for LAN, absent when nothing resolved, and is kept for consistency with
-	// the FTS schema, which names the same question that way. XRootD-internal
-	// traffic is not subtracted from it.
+	// RemoteAccess is the opposite of SiteInternalTraffic, the name the FTS
+	// schema uses for the same question: true for WAN, false for LAN, and absent
+	// with it. It covers XRootD-internal traffic too.
 	SiteInternalTraffic   *bool  `json:"site_internal_traffic,omitempty"`
 	RemoteAccess          *bool  `json:"remote_access,omitempty"`
 	TrafficScope          string `json:"traffic_scope,omitempty"`
@@ -173,15 +172,13 @@ const (
 // string: "ipv4", "ipv6", or "unknown".
 //
 // The only input is &I= on the login record, trimmed once when the record is
-// built. The ipv6 boolean is set from that same value, so the two agree. What ipver
-// adds is a third state: a missing &I= is "unknown", not a default to either
-// family. The boolean cannot make that distinction — ipv6 false covers both
-// "xrootd said 4" and "xrootd said nothing".
+// built. The ipv6 boolean is set from that same value, so the two agree.
+// ipver adds a third state: "unknown" when xrootd sent no &I=, where ipv6 can
+// only say false.
 //
-// No other address is used to fill a gap. The client host is ignored even when
-// it is a literal IP, and so is server_ip: that is the source of the monitoring
-// datagram this collector received (see canonicalServerIP), which is the
-// server-to-collector path and says nothing about the transfer.
+// The client host and server_ip play no part. server_ip is where the
+// monitoring datagram came from (see canonicalServerIP), the server's path to
+// this collector, so it says nothing about the transfer.
 func resolveIPVer(record *CollectorRecord) string {
 	switch record.clientInetVersion {
 	case "4":
@@ -246,7 +243,6 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 		ReadSingleBytes:        record.Read,
 		ReadVectorBytes:        record.Readv,
 		IPv6:                   record.IPv6,
-		IPVer:                  resolveIPVer(record),
 		StartTime:              record.StartTime,
 		EndTime:                record.EndTime,
 		OperationTime:          record.OperationTime,
@@ -300,18 +296,24 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 		wlcg.VOSource = record.voSource
 	}
 
+	// ipver, the FTS schema's IP version, is a WLCG-mode field like record_vo.
+	// VOResolution is enabled exactly when wlcg.enabled is.
+	if meta.VOResolution.Enabled {
+		wlcg.IPVer = resolveIPVer(record)
+	}
+
 	// Traffic classification. trafficRecordEnricher worked both answers out after
 	// the sites were resolved; here they are only published. An empty scope means
 	// nothing classified this record (WLCG mode or wlcg.traffic_enabled is off),
-	// and then none of the three fields is written.
+	// and then none of the four fields is written.
 	//
-	// site_internal_traffic is derived from the scope here rather than carried
-	// separately, so "LAN implies internal, WAN implies not, UNKNOWN implies no
+	// site_internal_traffic is derived from the scope, and remote_access from
+	// site_internal_traffic, so "LAN is internal, WAN is remote, UNKNOWN has no
 	// answer" holds by construction. "user" keeps the value the record reported.
 	if record.trafficScope != "" {
 		wlcg.TrafficScope = record.trafficScope
 		wlcg.SiteInternalTraffic = siteInternalFromScope(record.trafficScope)
-		wlcg.RemoteAccess = remoteAccessFromScope(record.trafficScope)
+		wlcg.RemoteAccess = remoteAccessFrom(wlcg.SiteInternalTraffic)
 		xrootdInternal := record.xrootdInternal
 		wlcg.XRootDInternalTraffic = &xrootdInternal
 	}

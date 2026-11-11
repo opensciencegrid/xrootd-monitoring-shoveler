@@ -57,7 +57,7 @@ const (
 // shoveler.WLCGConfig for the keys behind each field.
 type TrafficConfig struct {
 	// Enabled turns the classification on. It defaults to true, but takes effect
-	// only while wlcg.enabled is on: the three fields are emitted on the WLCG
+	// only while wlcg.enabled is on: the four fields are emitted on the WLCG
 	// record only.
 	Enabled bool
 
@@ -379,23 +379,14 @@ func siteInternalFromScope(scope string) *bool {
 	}
 }
 
-// remoteAccessFromScope derives remote_access from the scope: the negative of
-// site_internal_traffic, WAN being remote and LAN local, and nil when the
-// topology did not resolve so the field is left off rather than published as a
-// false.
-//
-// XRootD-internal traffic is not subtracted here.
-func remoteAccessFromScope(scope string) *bool {
-	remote := true
-	local := false
-	switch scope {
-	case TrafficScopeWAN:
-		return &remote
-	case TrafficScopeLAN:
-		return &local
-	default:
+// remoteAccessFrom derives remote_access from site_internal_traffic: its
+// opposite, and absent when it is.
+func remoteAccessFrom(siteInternal *bool) *bool {
+	if siteInternal == nil {
 		return nil
 	}
+	remote := !*siteInternal
+	return &remote
 }
 
 // trafficRecordEnricher stamps the scope and the XRootD-internal verdict on a

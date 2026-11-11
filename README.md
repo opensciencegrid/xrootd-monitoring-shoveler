@@ -884,13 +884,14 @@ the packet, as upstream.
 #### Internal traffic flags
 
 Every WLCG record answers two independent questions about the transfer: where it
-went on the network, and who generated it. Three fields carry the answers, next
+went on the network, and who generated it. Four fields carry the answers, next
 to the `user` the record already had:
 
 | field | type | meaning |
 |---|---|---|
 | `traffic_scope` | `LAN` / `WAN` / `UNKNOWN` | the canonical topology answer |
 | `site_internal_traffic` | bool, or absent | both ends at the same site; absent when the topology is unknown |
+| `remote_access` | bool, or absent | the opposite of `site_internal_traffic`, as the FTS schema names it; absent with it |
 | `xrootd_internal_traffic` | bool | XRootD generated the operation itself, rather than an end user |
 
 They are written only while `wlcg.enabled` is on. `wlcg.traffic_enabled` (default
@@ -902,11 +903,11 @@ it emitted before.
 The scope is read from the `src_site` and `dst_site`
 [the site resolver](#srcdst-site-resolution) already worked out:
 
-| src/dst sites | `traffic_scope` | `site_internal_traffic` |
-|---|---|---|
-| both resolved, equal | `LAN` | `true` |
-| both resolved, different | `WAN` | `false` |
-| either one unresolved | `UNKNOWN` | **not written** |
+| src/dst sites | `traffic_scope` | `site_internal_traffic` | `remote_access` |
+|---|---|---|---|
+| both resolved, equal | `LAN` | `true` | `false` |
+| both resolved, different | `WAN` | `false` | `true` |
+| either one unresolved | `UNKNOWN` | **not written** | **not written** |
 
 `site_internal_traffic` is derived from the scope, so the two can never
 disagree: `LAN` always means `true`, `WAN` always means `false`, and an
@@ -968,7 +969,7 @@ not rule it out.
 ```yaml
 wlcg:
   enabled: true
-  traffic_enabled: true                        # emit the three fields (default true)
+  traffic_enabled: true                        # emit the four fields (default true)
   traffic_internal_users: ["root"]             # system accounts ([] = off)
   traffic_job_agents: "1-8"                    # numeric job-agent accounts ("none" = off)
   traffic_replication_prefixes: ["replicate"]  # replication markers ([] = off)
@@ -977,6 +978,14 @@ wlcg:
 
 The defaults are general WLCG/XRootD ones, not CMS values. A site whose system
 accounts or replication paths are named differently sets them here.
+
+#### IP version
+
+With `wlcg.enabled` on, every WLCG record also carries `ipver`, the FTS schema's
+IP version field: `ipv4`, `ipv6`, or `unknown` when XRootD reported no `&I=` for
+the client. It comes from the same `&I=` value as the existing `ipv6` boolean,
+so the two always agree; `unknown` is the case `ipv6: false` cannot tell apart
+from IPv4.
 
 #### Exclusions vs. the drop filter
 
