@@ -508,6 +508,14 @@ func buildCorrelatorConfig(ctx context.Context, config *shoveler.Config, logger 
 		WLCGExcludeVOs:          config.WLCG.ExcludeVOs,
 		WLCGExcludePathPrefixes: config.WLCG.ExcludePathPrefixes,
 
+		Traffic: collector.TrafficConfig{
+			Enabled:             config.WLCG.TrafficEnabled,
+			InternalUsers:       config.WLCG.TrafficInternalUsers,
+			JobAgents:           config.WLCG.TrafficJobAgents,
+			ReplicationPrefixes: config.WLCG.TrafficReplicationPrefixes,
+			CaseSensitive:       config.WLCG.TrafficCaseSensitive,
+		},
+
 		DropPathPrefixes: config.Filter.DropPathPrefixes,
 		DropVOs:          config.Filter.DropVOs,
 		PerServerMetrics: config.MetricsPerServer,

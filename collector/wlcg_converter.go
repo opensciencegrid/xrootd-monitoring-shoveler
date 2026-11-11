@@ -29,6 +29,7 @@ type WLCGRecord struct {
 	ReadSingleBytes        int64                  `json:"read_single_bytes"`
 	ReadVectorBytes        int64                  `json:"read_vector_bytes"`
 	IPv6                   bool                   `json:"ipv6"`
+	IPVer                  string                 `json:"ipver,omitempty"` // WLCG mode only
 	StartTime              int64                  `json:"start_time"`
 	EndTime                int64                  `json:"end_time"`
 	OperationTime          int64                  `json:"operation_time"`
@@ -78,6 +79,30 @@ type WLCGRecord struct {
 	CRABRetry              string                 `json:"CRAB_Retry,omitempty"`
 	CRABWorkflow           string                 `json:"CRAB_Workflow,omitempty"`
 	Metadata               map[string]interface{} `json:"metadata"`
+
+	// The two traffic classifications, both read from the src/dst sites above and
+	// from the record's account, protocol and path. They are written only while
+	// WLCG mode and wlcg.traffic_enabled are on, so a collector without them
+	// emits exactly what it emitted before.
+	//
+	// SiteInternalTraffic is true when both ends resolved to the same RCSite and
+	// false when they resolved to different ones. It is a pointer because an
+	// unresolved topology is neither: the field is then left off the record, as a
+	// false would claim the two ends were resolved and found apart. Read
+	// TrafficScope == "UNKNOWN" for that case.
+	//
+	// XRootDInternalTraffic is an independent axis: whether XRootD generated the
+	// operation itself (replication, a system or job-agent account) rather than
+	// an end user. It is a pointer only so the field is absent, rather than a
+	// meaningless false, on records nothing classified.
+	//
+	// RemoteAccess is the opposite of SiteInternalTraffic, the name the FTS
+	// schema uses for the same question: true for WAN, false for LAN, and absent
+	// with it. It covers XRootD-internal traffic too.
+	SiteInternalTraffic   *bool  `json:"site_internal_traffic,omitempty"`
+	RemoteAccess          *bool  `json:"remote_access,omitempty"`
+	TrafficScope          string `json:"traffic_scope,omitempty"`
+	XRootDInternalTraffic *bool  `json:"xrootd_internal_traffic,omitempty"`
 }
 
 // IsWLCGPacket determines if a record should be converted to WLCG format
@@ -134,6 +159,33 @@ func deriveOperation(record *CollectorRecord) string {
 	default:
 		return "unknown"
 	}
+}
+
+// IP version values published as ipver.
+const (
+	ipVer4       = "ipv4"
+	ipVer6       = "ipv6"
+	ipVerUnknown = "unknown"
+)
+
+// resolveIPVer maps the address family xrootd reported onto the FTS schema's
+// string: "ipv4", "ipv6", or "unknown".
+//
+// It reads &I= from the login record, trimmed once when the record is built.
+// The ipv6 boolean comes from the same value, so the two agree. ipver adds a
+// third state: "unknown" when xrootd sent no &I=. ipv6 shows false for that.
+//
+// Only &I= decides. server_ip is where the monitoring datagram came from (see
+// canonicalServerIP), so it describes the path to this collector.
+func resolveIPVer(record *CollectorRecord) string {
+	switch record.clientInetVersion {
+	case "4":
+		return ipVer4
+	case "6":
+		return ipVer6
+	}
+
+	return ipVerUnknown
 }
 
 // ConvertToWLCG converts a CollectorRecord to WLCG format
@@ -234,12 +286,32 @@ func ConvertToWLCG(record *CollectorRecord, meta WLCGMetadata, scitags *ScitagsR
 	// WLCG rules could match on it; here we just publish it, with record_vo and
 	// vo_source so a reader can see where it came from.
 	//
-	// With it off, "vo" stays as the packet reported it and neither record_vo nor
-	// vo_source is written.
+	// ipver, the FTS schema's IP version, is a WLCG-mode field too.
+	// VOResolution is on exactly when wlcg.enabled is.
+	//
+	// With it off, "vo" stays as the packet reported it, and record_vo,
+	// vo_source and ipver are left off the record.
 	if meta.VOResolution.Enabled {
 		wlcg.RecordVO = record.recordVO()
 		wlcg.VO = record.resolvedVO
 		wlcg.VOSource = record.voSource
+		wlcg.IPVer = resolveIPVer(record)
+	}
+
+	// Traffic classification. trafficRecordEnricher worked both answers out after
+	// the sites were resolved; here they are only published. An empty scope means
+	// nothing classified this record (WLCG mode or wlcg.traffic_enabled is off),
+	// and then none of the four fields is written.
+	//
+	// site_internal_traffic is derived from the scope, and remote_access from
+	// site_internal_traffic, so "LAN is internal, WAN is remote, UNKNOWN has no
+	// answer" holds by construction. "user" keeps the value the record reported.
+	if record.trafficScope != "" {
+		wlcg.TrafficScope = record.trafficScope
+		wlcg.SiteInternalTraffic = siteInternalFromScope(record.trafficScope)
+		wlcg.RemoteAccess = remoteAccessFrom(wlcg.SiteInternalTraffic)
+		xrootdInternal := record.xrootdInternal
+		wlcg.XRootDInternalTraffic = &xrootdInternal
 	}
 
 	// Parse appinfo for CRAB information if present

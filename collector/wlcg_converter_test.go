@@ -2,9 +2,13 @@ package collector
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
+	"github.com/sirupsen/logrus"
 )
 
 // testWLCGMetadata returns sample WLCG metadata for converter tests.
@@ -732,5 +736,141 @@ func TestConvertGStreamToWLCG_CustomMetadata(t *testing.T) {
 	}
 	if tm.Type != "tpc" {
 		t.Errorf("tpc Type = %v, expected tpc (structural constant)", tm.Type)
+	}
+}
+
+// TestResolveIPVer maps each &I= value to ipver. Only &I= decides.
+func TestResolveIPVer(t *testing.T) {
+	for _, tt := range []struct {
+		inetVersion string
+		want        string
+	}{
+		{"4", ipVer4},
+		{"6", ipVer6},
+		{"", ipVerUnknown},  // xrootd sent no &I=
+		{"7", ipVerUnknown}, // a value xrootd does not use
+	} {
+		t.Run(fmt.Sprintf("%q", tt.inetVersion), func(t *testing.T) {
+			record := &CollectorRecord{clientInetVersion: tt.inetVersion}
+			if got := resolveIPVer(record); got != tt.want {
+				t.Errorf("resolveIPVer(%q) = %q, want %q", tt.inetVersion, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestConvertToWLCGIPVer checks the field actually reaches the emitted record,
+// and that server_ip has no say in it: an IPv6 monitoring path carrying an IPv4
+// client's records must still report "4".
+func TestConvertToWLCGIPVer(t *testing.T) {
+	record := &CollectorRecord{
+		Timestamp:         time.Now(),
+		Host:              "client.example.com",
+		ServerIP:          "2001:1458:d00:35::100:d4a",
+		Filename:          "/store/data/file.root",
+		clientInetVersion: "4",
+	}
+
+	wlcg, err := ConvertToWLCG(record, wlcgModeMetadata(), nil)
+	if err != nil {
+		t.Fatalf("ConvertToWLCG returned error: %v", err)
+	}
+
+	if wlcg.IPVer != ipVer4 {
+		t.Errorf("IPVer = %v, expected %v", wlcg.IPVer, ipVer4)
+	}
+
+	jsonBytes, err := wlcg.ToJSON()
+	if err != nil {
+		t.Fatalf("ToJSON returned error: %v", err)
+	}
+	if !strings.Contains(string(jsonBytes), `"ipver":"ipv4"`) {
+		t.Errorf("emitted record is missing ipver: %s", jsonBytes)
+	}
+}
+
+// TestIPv6AndIPVerAgree builds records through the correlator and checks that
+// the ipv6 boolean and ipver always give the same family, padded &I= values
+// included.
+func TestIPv6AndIPVerAgree(t *testing.T) {
+	c := NewCorrelatorWithConfig(CorrelatorConfig{TTL: time.Minute, Logger: logrus.New()})
+	defer c.Stop()
+
+	for _, tt := range []struct {
+		inet     string
+		wantIPv6 bool
+		wantVer  string
+	}{
+		{"6", true, ipVer6},
+		{" 6 ", true, ipVer6},
+		{"6\r", true, ipVer6},
+		{"4", false, ipVer4},
+		{" 4", false, ipVer4},
+		{"", false, ipVerUnknown},
+		{"7", false, ipVerUnknown},
+	} {
+		t.Run(fmt.Sprintf("%q", tt.inet), func(t *testing.T) {
+			serverID := "1234567890#127.0.0.1:1234"
+			userInfo := parser.UserInfo{Protocol: "root", Username: "jdoe", Pid: 1, Sid: 1, Host: "client.example.com"}
+			c.userMap.Set(BuildUserInfoKey(serverID, userInfo), &UserState{
+				UserID: 100, UserInfo: userInfo, AuthInfo: parser.AuthInfo{InetVersion: tt.inet},
+			})
+			c.dictMap.Set(BuildDictIDKey(serverID, 100), userInfo)
+			state := &FileState{FileID: 1, UserID: 100, Filename: "/store/f.root", ServerID: serverID}
+			closeRec := parser.FileCloseRecord{Header: parser.FileHeader{RecType: 'c', FileId: 1, UserId: 100}}
+			packet := &parser.Packet{Header: parser.Header{ServerStart: 1234567890}, RemoteAddr: "127.0.0.1:1234"}
+			record := c.createCorrelatedRecord(state, closeRec, packet, time.Now().Unix())
+
+			wlcg, err := ConvertToWLCG(record, wlcgModeMetadata(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if wlcg.IPv6 != tt.wantIPv6 || wlcg.IPVer != tt.wantVer {
+				t.Errorf("ipv6=%v ipver=%q, want ipv6=%v ipver=%q", wlcg.IPv6, wlcg.IPVer, tt.wantIPv6, tt.wantVer)
+			}
+		})
+	}
+}
+
+// wlcgModeMetadata is testWLCGMetadata with wlcg.enabled on, as the binary
+// builds it.
+func wlcgModeMetadata() WLCGMetadata {
+	meta := testWLCGMetadata()
+	meta.VOResolution.Enabled = true
+	return meta
+}
+
+// TestIPVerOnlyInWLCGMode checks ipver follows wlcg.enabled: written in WLCG
+// mode, "unknown" included, and left off the record otherwise, so the legacy
+// output stays as it was.
+func TestIPVerOnlyInWLCGMode(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		meta WLCGMetadata
+		inet string
+		want string // "" means the field is absent
+	}{
+		{"WLCG mode, IPv4", wlcgModeMetadata(), "4", `"ipver":"ipv4"`},
+		{"WLCG mode, no &I=", wlcgModeMetadata(), "", `"ipver":"unknown"`},
+		{"legacy output", testWLCGMetadata(), "4", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			record := &CollectorRecord{Timestamp: time.Now(), Filename: "/store/f.root", clientInetVersion: tt.inet}
+			wlcg, err := ConvertToWLCG(record, tt.meta, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc, err := wlcg.ToJSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.want == "" {
+				if strings.Contains(string(doc), `"ipver"`) {
+					t.Errorf("legacy output has ipver: %s", doc)
+				}
+			} else if !strings.Contains(string(doc), tt.want) {
+				t.Errorf("want %s in %s", tt.want, doc)
+			}
+		})
 	}
 }

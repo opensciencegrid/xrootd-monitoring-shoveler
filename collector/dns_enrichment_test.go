@@ -3,6 +3,7 @@ package collector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,16 @@ import (
 type mockDNSResolver struct {
 	lookupFunc  func(ctx context.Context, addr string) ([]string, error)
 	lookupCount atomic.Int64
+	// hostFunc backs LookupHost (the forward direction). nil resolves nothing,
+	// which is what a test that only exercises reverse lookups wants.
+	hostFunc func(ctx context.Context, host string) ([]string, error)
+}
+
+func (m *mockDNSResolver) LookupHost(ctx context.Context, host string) ([]string, error) {
+	if m.hostFunc == nil {
+		return nil, fmt.Errorf("no such host: %s", host)
+	}
+	return m.hostFunc(ctx, host)
 }
 
 func (m *mockDNSResolver) LookupAddr(ctx context.Context, addr string) ([]string, error) {

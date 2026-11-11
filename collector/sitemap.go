@@ -43,6 +43,19 @@ const (
 	SiteStatusNoApplicableMethod = "no_applicable_method" // none of the configured methods could apply to this endpoint
 )
 
+// isResolvedSiteStatus reports whether a per-endpoint status settled the
+// endpoint. "ambiguous" names a candidate site but stays unresolved (see
+// classifyTrafficScope).
+func isResolvedSiteStatus(status string) bool {
+	switch status {
+	case SiteStatusResolved, SiteStatusResolvedConfig, SiteStatusResolvedOverride,
+		SiteStatusResolvedHostname, SiteStatusResolvedIP:
+		return true
+	default:
+		return false
+	}
+}
+
 // The methods that can map one endpoint to an RCSite, named as they appear in
 // site.resolution_order. Each uses a different identifier and the first hit
 // wins, so the order is a statement of which identifier we trust most.
@@ -484,10 +497,14 @@ func (s *siteRecordEnricher) Enrich(ctx context.Context, record *CollectorRecord
 		return
 	}
 
-	// The server IP is always known (from the packet source address). A client
-	// IP is only available when the client was reported as an IP literal; when it
-	// was a name we have no address to fall back on, so IP resolution is skipped.
+	// The server IP is always known (from the packet source address).
+	// The client address: the literal it was reported as, or the one the DNS
+	// enricher resolved for a name-reported client. Without the second, a client
+	// XRootD named rather than numbered has nothing for the "ip" method to match.
 	clientIP := endpointIP(record.Host)
+	if clientIP == nil && record.clientIP != "" {
+		clientIP = net.ParseIP(record.clientIP)
+	}
 	server := s.resolveEndpoint(siteEndpoint{
 		host:        record.ServerHostname,
 		ip:          endpointIP(record.ServerIP),
@@ -544,15 +561,13 @@ func (s *siteRecordEnricher) resolveEndpoint(ep siteEndpoint) siteResolution {
 	var failure siteResolution
 	for _, method := range order {
 		site, status := s.resolveBy(method, ep)
-		switch status {
-		case SiteStatusResolved, SiteStatusResolvedConfig, SiteStatusResolvedOverride, SiteStatusResolvedHostname, SiteStatusResolvedIP:
+		if isResolvedSiteStatus(status) {
 			return siteResolution{site: site, status: status, method: method}
-		default:
-			// Carries the site along with the reason, because an ambiguous match
-			// still names a candidate. method stays empty: nothing here resolved,
-			// so this must not count towards the resolved-by-method totals.
-			failure = worseSiteFailure(failure, siteResolution{site: site, status: status, failedBy: method})
 		}
+		// Carries the site along with the reason, because an ambiguous match
+		// still names a candidate. method stays empty: nothing here resolved,
+		// so this must not count towards the resolved-by-method totals.
+		failure = worseSiteFailure(failure, siteResolution{site: site, status: status, failedBy: method})
 	}
 	if failure.status == "" {
 		failure.status = SiteStatusNoApplicableMethod
