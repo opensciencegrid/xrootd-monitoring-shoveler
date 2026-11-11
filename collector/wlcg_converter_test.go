@@ -2,9 +2,13 @@ package collector
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/opensciencegrid/xrootd-monitoring-shoveler/parser"
+	"github.com/sirupsen/logrus"
 )
 
 // testWLCGMetadata returns sample WLCG metadata for converter tests.
@@ -762,7 +766,6 @@ func TestResolveIPVer(t *testing.T) {
 		{"no inet version, host is a v6 address", "", "2001:1458:d00:35::100:d4a", ipVerUnknown},
 		{"no user record at all", "", "", ipVerUnknown},
 		{"unknown host placeholder", "", "unknown", ipVerUnknown},
-		{"whitespace around inet version", " 6 ", "client.example.com", ipVer6},
 		{"unrecognised inet version", "7", "client.example.com", ipVerUnknown},
 	}
 
@@ -803,5 +806,48 @@ func TestConvertToWLCGIPVer(t *testing.T) {
 	}
 	if !strings.Contains(string(jsonBytes), `"ipver":"ipv4"`) {
 		t.Errorf("emitted record is missing ipver: %s", jsonBytes)
+	}
+}
+
+// TestIPv6AndIPVerAgree builds records through the correlator and checks that
+// the ipv6 boolean and ipver always give the same family, padded &I= values
+// included.
+func TestIPv6AndIPVerAgree(t *testing.T) {
+	c := NewCorrelatorWithConfig(CorrelatorConfig{TTL: time.Minute, Logger: logrus.New()})
+	defer c.Stop()
+
+	for _, tt := range []struct {
+		inet     string
+		wantIPv6 bool
+		wantVer  string
+	}{
+		{"6", true, ipVer6},
+		{" 6 ", true, ipVer6},
+		{"6\r", true, ipVer6},
+		{"4", false, ipVer4},
+		{" 4", false, ipVer4},
+		{"", false, ipVerUnknown},
+		{"7", false, ipVerUnknown},
+	} {
+		t.Run(fmt.Sprintf("%q", tt.inet), func(t *testing.T) {
+			serverID := "1234567890#127.0.0.1:1234"
+			userInfo := parser.UserInfo{Protocol: "root", Username: "jdoe", Pid: 1, Sid: 1, Host: "client.example.com"}
+			c.userMap.Set(BuildUserInfoKey(serverID, userInfo), &UserState{
+				UserID: 100, UserInfo: userInfo, AuthInfo: parser.AuthInfo{InetVersion: tt.inet},
+			})
+			c.dictMap.Set(BuildDictIDKey(serverID, 100), userInfo)
+			state := &FileState{FileID: 1, UserID: 100, Filename: "/store/f.root", ServerID: serverID}
+			closeRec := parser.FileCloseRecord{Header: parser.FileHeader{RecType: 'c', FileId: 1, UserId: 100}}
+			packet := &parser.Packet{Header: parser.Header{ServerStart: 1234567890}, RemoteAddr: "127.0.0.1:1234"}
+			record := c.createCorrelatedRecord(state, closeRec, packet, time.Now().Unix())
+
+			wlcg, err := ConvertToWLCG(record, testWLCGMetadata(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if wlcg.IPv6 != tt.wantIPv6 || wlcg.IPVer != tt.wantVer {
+				t.Errorf("ipv6=%v ipver=%q, want ipv6=%v ipver=%q", wlcg.IPv6, wlcg.IPVer, tt.wantIPv6, tt.wantVer)
+			}
+		})
 	}
 }

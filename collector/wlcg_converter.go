@@ -172,8 +172,8 @@ const (
 // resolveIPVer maps the address family xrootd reported onto the FTS schema's
 // string: "ipv4", "ipv6", or "unknown".
 //
-// The only input is &I= on the login record, used as xrootd sent it. The ipv6
-// boolean is built from the same field, so the two never disagree. What ipver
+// The only input is &I= on the login record, trimmed once when the record is
+// built. The ipv6 boolean is set from that same value, so the two agree. What ipver
 // adds is a third state: a missing &I= is "unknown", not a default to either
 // family. The boolean cannot make that distinction — ipv6 false covers both
 // "xrootd said 4" and "xrootd said nothing".
@@ -183,7 +183,7 @@ const (
 // datagram this collector received (see canonicalServerIP), which is the
 // server-to-collector path and says nothing about the transfer.
 func resolveIPVer(record *CollectorRecord) string {
-	switch strings.TrimSpace(record.clientInetVersion) {
+	switch record.clientInetVersion {
 	case "4":
 		return ipVer4
 	case "6":

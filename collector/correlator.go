@@ -154,7 +154,7 @@ type CollectorRecord struct {
 	// user id looks exactly like a numeric job-agent account.
 	userInfoKnown bool `json:"-"`
 
-	// clientInetVersion is the raw "4"/"6" of the user record's &I=: the address
+	// clientInetVersion is the trimmed "4"/"6" of the user record's &I=: the address
 	// family the reporting server saw the client connect over. It is the only
 	// authoritative statement about a transfer's IP version, since a connection
 	// has exactly one family and server_ip cannot stand in for it: that address
@@ -1429,11 +1429,9 @@ func (c *Correlator) createCorrelatedRecord(state *FileState, rec parser.FileClo
 			appInfo = userInfo.AppInfo
 		}
 
-		// Check if IPv6
-		clientInetVersion = userInfo.AuthInfo.InetVersion
-		if userInfo.AuthInfo.InetVersion == "6" {
-			ipv6 = true
-		}
+		// The IP family, read once: ipv6 and ipver both come from this value.
+		clientInetVersion = strings.TrimSpace(userInfo.AuthInfo.InetVersion)
+		ipv6 = clientInetVersion == "6"
 
 		// Extract token information if available
 		if userInfo.TokenInfo.Subject != "" {
