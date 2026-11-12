@@ -22,10 +22,28 @@ input:
 
 # State management (collector mode only)
 state:
-  # Time-to-live for state entries in seconds (5 minutes default)
+  # Lifetime of the 'd' (path) and 'i' (app info) dictionary records, in
+  # seconds. They are only needed until the file open that uses them.
   entry_ttl: 300
-  # Maximum number of state entries (0 for unlimited)
-  max_entries: 10000
+  # The rest of the state lives until what it describes ends. These lifetimes
+  # are in seconds, and 0 gives the default. user_ttl and server_ttl cannot be
+  # turned off, so a negative value also gives the default for them.
+  # user_ttl: 300        # 5 min: keep a session this long after its disconnect, for closes that arrive late
+  # user_idle_ttl: 86400 # 1 day: drop a session with no activity and no open files (its disconnect was lost). <0: never
+  # file_ttl: 604800     # 7 days: drop an open file not heard of this long (its close was lost). <0: never
+  #                      # On a server that sends XFR records ("xfr" on xrootd.monitor), this is
+  #                      # the time since the last XFR record. Elsewhere it is the time since the open.
+  #                      # With max_memory set: 7200, and only on servers that send XFR
+  # server_ttl: 172800   # 2 days: drop a server incarnation, and all it owns, after this long silent
+  # Memory: the correlation state (open files, sessions, dictionary records)
+  # is bounded by evicting the least recently used entries first.
+  # max_memory: 4G       # cap on the process's memory (K/M/G/T; 0 = unbounded).
+  #                      # Best effort: set any cgroup MemoryMax= above it, never at it.
+  #
+  # Maximum number of correlation entries (0 = no limit). When full, the least
+  # recently used entry is removed. If you set it, allow for all concurrent
+  # sessions and open files; otherwise leave it at 0 and use max_memory.
+  max_entries: 0
   # DNS enrichment settings (replaces reverse DNS lookup)
   # enable_dns_enrichment: false
   # dns_cache_ttl: 3600       # Time-to-live for DNS cache entries in seconds
@@ -62,6 +80,18 @@ state:
 #   exclude_path_prefixes: ["/pnfs/dune"]       # These path prefixes are excluded from the WLCG feed
 #   vo: cms                                   # VO set for collector running at a specific VO. If not set, the VO is determined by the record, scitags, and config in the order of vo_order.
 #   vo_order: ["record", "scitags", "config"]   # VO order to determine the resolution of the VO.
+#
+# Internal traffic flags. With wlcg.enabled on, every WLCG record also carries
+# traffic_scope (LAN/WAN/UNKNOWN), site_internal_traffic (absent when the
+# topology is unknown) and xrootd_internal_traffic. The rules below have general
+# WLCG/XRootD defaults and only need setting at a site that names its system
+# accounts or replication paths differently.
+#
+#   traffic_enabled: true                        # emit the three fields (default true)
+#   traffic_internal_users: ["root"]             # accounts XRootD uses for its own work ([] = off)
+#   traffic_job_agents: "1-8"                    # numeric job-agent accounts, "N" or "N-M" ("none" = off)
+#   traffic_replication_prefixes: ["replicate"]  # replication markers in the protocol, appinfo or path ([] = off)
+#   traffic_case_sensitive: false                # match accounts and markers exactly as written
 
 # Record drop filter (collector mode only)
 # Records matching any VO (case-insensitive) OR any path prefix are dropped

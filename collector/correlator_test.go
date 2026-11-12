@@ -805,53 +805,44 @@ func TestCorrelator_ServerInfo(t *testing.T) {
 	assert.Equal(t, "TEST_SITE", recs[0].Site)
 }
 
-func TestCorrelator_ServerInfoTTL(t *testing.T) {
-	// Use a very short TTL for testing
-	ttl := 200 * time.Millisecond
-	correlator := NewCorrelator(ttl, 0, nil)
+func TestCorrelator_ServerInfoLivesWithIncarnation(t *testing.T) {
+	// The server identity is kept for as long as the server keeps sending
+	// anything, and goes when the incarnation has been silent for ServerTTL.
+	correlator := NewCorrelatorWithConfig(CorrelatorConfig{
+		TTL:       100 * time.Millisecond, // sweeps every 10ms
+		ServerTTL: 200 * time.Millisecond,
+	})
 	defer correlator.Stop()
 
 	serverID := "2000#192.168.1.1:1094"
-	serverInfo := &parser.ServerInfo{
-		Site:     "TEST_SITE_TTL",
-		Port:     "1094",
-		Instance: "ttl-test",
-		Program:  "xrootd",
-		Version:  "5.0.0",
+	identPacket := func() *parser.Packet {
+		return &parser.Packet{
+			Header:     parser.Header{Code: parser.PacketTypeMap, ServerStart: 2000},
+			RemoteAddr: "192.168.1.1:1094",
+			ServerInfo: &parser.ServerInfo{Site: "TEST_SITE_TTL", Port: "1094", Program: "xrootd"},
+		}
 	}
 
-	// Store initial server info
-	correlator.handleServerInfo(serverInfo, serverID)
-
-	// Verify it's stored
+	_, err := correlator.ProcessPacket(identPacket())
+	require.NoError(t, err)
 	_, exists := correlator.serverMap.Get(serverID)
 	require.True(t, exists, "Server info should be stored initially")
 
-	// Wait a bit but not long enough for expiry
-	time.Sleep(100 * time.Millisecond)
+	// Any packet from the incarnation keeps it alive
+	time.Sleep(120 * time.Millisecond)
+	_, err = correlator.ProcessPacket(identPacket())
+	require.NoError(t, err)
+	time.Sleep(120 * time.Millisecond)
 
-	// Send another server info packet (simulating periodic updates)
-	// This should reset the TTL
-	correlator.handleServerInfo(serverInfo, serverID)
-
-	// Wait another 150ms (total 250ms from first insert, but only 150ms from refresh)
-	time.Sleep(150 * time.Millisecond)
-
-	// Server info should still exist because TTL was reset
 	val, exists := correlator.serverMap.Get(serverID)
-	assert.True(t, exists, "Server info should still exist after TTL reset")
-	if exists {
-		info, ok := val.(*parser.ServerInfo)
-		require.True(t, ok)
-		assert.Equal(t, "TEST_SITE_TTL", info.Site)
-	}
+	require.True(t, exists, "Server info should still exist while the server is sending")
+	assert.Equal(t, "TEST_SITE_TTL", val.(*parser.ServerInfo).Site)
 
-	// Wait for TTL to expire (another 100ms, making it 250ms since last refresh)
-	time.Sleep(100 * time.Millisecond)
-
-	// Now it should be expired
+	// Silent for longer than ServerTTL: the incarnation is reaped (with room
+	// for the janitor's sweep on a loaded machine)
+	time.Sleep(400 * time.Millisecond)
 	_, exists = correlator.serverMap.Get(serverID)
-	assert.False(t, exists, "Server info should be expired after TTL without refresh")
+	assert.False(t, exists, "Server info should go with its silent incarnation")
 }
 
 func TestCorrelator_TokenAugmentsUser(t *testing.T) {

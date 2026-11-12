@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -37,6 +38,25 @@ type WLCGConfig struct {
 	// VOOrder is the order the sources are tried in, first hit wins.
 	// Defaults to ["record", "scitags", "config"]. Enabled only.
 	VOOrder []string
+
+	// Traffic classification: traffic_scope, site_internal_traffic and
+	// xrootd_internal_traffic on the WLCG record. Enabled only.
+	//
+	// TrafficEnabled defaults to true, so a WLCG-mode collector gets the fields
+	// without extra configuration; set it false to leave them off the records.
+	//
+	// The rest are the rules, with defaults matching the MonALISA xrootd
+	// collector: accounts "root", job-agent ids 1-8, and paths or protocols
+	// naming a "replicate" operation. They are deployment values rather than
+	// business logic, so a site that names its system accounts differently sets
+	// them here instead of patching the classifier. Each is left unset here when
+	// the operator says nothing and the collector package supplies the default,
+	// so each default lives in one place.
+	TrafficEnabled             bool
+	TrafficInternalUsers       []string // system accounts, exact match (default ["root"]; [] turns the rule off)
+	TrafficJobAgents           string   // numeric job-agent accounts, "N" or "N-M" (default "1-8"; "none" turns the rule off)
+	TrafficReplicationPrefixes []string // replication markers (default ["replicate"]; [] turns the rule off)
+	TrafficCaseSensitive       bool     // match accounts and prefixes case-sensitively (default false)
 
 	// Metadata: producer/type values written into WLCG-formatted records.
 	Producer        string // metadata.producer for file-transfer (file-close) records
@@ -137,8 +157,17 @@ type InputConfig struct {
 }
 
 type StateConfig struct {
-	EntryTTL   int // TTL in seconds for state entries
-	MaxEntries int // Max entries in state map (0 for unlimited)
+	EntryTTL   int // TTL in seconds for 'd'/'i' dictionary records (paths, app info)
+	MaxEntries int // Hard cap on correlation entries, evicting least recently used (0 for unlimited)
+	MaxMemory  int // Process memory cap in bytes, met by evicting least recently used state (0 for unlimited)
+
+	// Lifetimes of the rest of the correlation state, in seconds. A value of 0
+	// gives the default. A negative value turns off the idle and file
+	// lifetimes, and gives the default for the other two.
+	UserTTL     int // keep a session this long after its disconnect (default 300)
+	UserIdleTTL int // drop an idle session with no open files after this long (default 86400)
+	FileTTL     int // drop an open file not heard of this long: silent with XFR, else its age (default 604800; with max_memory 7200, on XFR servers only)
+	ServerTTL   int // drop a server incarnation silent this long (default 172800)
 
 	// DNS Enrichment configuration
 	EnableDNSEnrichment bool // Enable DNS enrichment with caching and worker pool
@@ -331,6 +360,20 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	c.State.EntryTTL = viper.GetInt("state.entry_ttl")
 	viper.SetDefault("state.max_entries", 0) // unlimited by default
 	c.State.MaxEntries = viper.GetInt("state.max_entries")
+	viper.SetDefault("state.max_memory", "0") // unbounded; accepts K/M/G/T suffixes
+	if n, err := ParseByteSize(viper.GetString("state.max_memory")); err != nil {
+		log.Warningf("Ignoring state.max_memory: %v", err)
+	} else {
+		c.State.MaxMemory = n
+	}
+	viper.SetDefault("state.user_ttl", 300) // 5 minutes after the disconnect
+	c.State.UserTTL = viper.GetInt("state.user_ttl")
+	viper.SetDefault("state.user_idle_ttl", 86400) // 1 day
+	c.State.UserIdleTTL = viper.GetInt("state.user_idle_ttl")
+	viper.SetDefault("state.file_ttl", 0) // 0: the correlator's default, 7 days (2 h with max_memory)
+	c.State.FileTTL = viper.GetInt("state.file_ttl")
+	viper.SetDefault("state.server_ttl", 172800) // 2 days
+	c.State.ServerTTL = viper.GetInt("state.server_ttl")
 
 	// DNS Enrichment configuration
 	viper.SetDefault("state.enable_dns_enrichment", false) // disabled by default
@@ -660,7 +703,7 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	// inferring it, which is both certain and free; it also covers LAN clients
 	// unless site.local_site_lan_clients is false. site.resolution_order sets
 	// which methods are tried and in what order (first hit wins).
-	c.Site.LocalSite = viper.GetString("site.local_site")
+	c.Site.LocalSite = strings.TrimSpace(viper.GetString("site.local_site"))
 	viper.SetDefault("site.local_site_lan_clients", true)
 	c.Site.LocalSiteLANClients = viper.GetBool("site.local_site_lan_clients")
 	viper.SetDefault("site.resolution_order", []string{"config", "hostname", "ip", "domain"})
@@ -729,6 +772,28 @@ func (c *Config) ReadConfigWithPathAndPrefix(configPath string, envPrefix string
 	// collector package, so it lives in one place.
 	c.WLCG.VOOrder = viper.GetStringSlice("wlcg.vo_order")
 
+	// Traffic classification (collector mode, WLCG mode only). On by default once
+	// wlcg.enabled is set, since the three fields are what a WLCG site wants from
+	// the src/dst sites it already resolves. The rules follow the MonALISA xrootd
+	// collector, as the XRootD team suggested, and only need setting at a site
+	// that names its system accounts or replication paths differently. Their
+	// defaults live in the collector package, as with wlcg.vo_order.
+	viper.SetDefault("wlcg.traffic_enabled", true)
+	c.WLCG.TrafficEnabled = viper.GetBool("wlcg.traffic_enabled")
+	c.WLCG.TrafficInternalUsers = viper.GetStringSlice("wlcg.traffic_internal_users")
+	c.WLCG.TrafficJobAgents = viper.GetString("wlcg.traffic_job_agents")
+	c.WLCG.TrafficReplicationPrefixes = viper.GetStringSlice("wlcg.traffic_replication_prefixes")
+	// Viper returns nil for YAML [] too. Keep an explicit [] as an empty list so
+	// it turns the rule off; nil takes the default.
+	if c.WLCG.TrafficInternalUsers == nil && viper.IsSet("wlcg.traffic_internal_users") {
+		c.WLCG.TrafficInternalUsers = []string{}
+	}
+	if c.WLCG.TrafficReplicationPrefixes == nil && viper.IsSet("wlcg.traffic_replication_prefixes") {
+		c.WLCG.TrafficReplicationPrefixes = []string{}
+	}
+	viper.SetDefault("wlcg.traffic_case_sensitive", false)
+	c.WLCG.TrafficCaseSensitive = viper.GetBool("wlcg.traffic_case_sensitive")
+
 	// Record drop filter (collector mode only); defaults to drop nothing.
 	c.Filter.DropPathPrefixes = viper.GetStringSlice("filter.drop_path_prefixes")
 	c.Filter.DropVOs = viper.GetStringSlice("filter.drop_vos")
@@ -761,4 +826,37 @@ func (c *Config) readInputToken() {
 		log.Panicln("amqp.oauth is enabled, so the rabbitmq input can't use the OAuth publish token:",
 			"put credentials in input.broker_url or set input.token_location")
 	}
+}
+
+// ParseByteSize parses a byte count for state.max_memory, with an optional
+// binary K, M, G or T suffix ("512M", "4G", "1073741824"). An empty string
+// is 0.
+func ParseByteSize(v string) (int, error) {
+	v = strings.TrimSpace(strings.ToUpper(v))
+	v = strings.TrimSuffix(strings.TrimSuffix(v, "B"), "I")
+	if v == "" {
+		return 0, nil
+	}
+	shift := 0
+	switch v[len(v)-1] {
+	case 'K':
+		shift = 10
+	case 'M':
+		shift = 20
+	case 'G':
+		shift = 30
+	case 'T':
+		shift = 40
+	}
+	if shift > 0 {
+		v = v[:len(v)-1]
+	}
+	n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid byte size %q", v)
+	}
+	if n > (1<<62)>>shift {
+		return 0, fmt.Errorf("byte size %q is too large", v)
+	}
+	return int(n << shift), nil
 }
