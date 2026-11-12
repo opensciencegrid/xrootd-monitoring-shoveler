@@ -25,20 +25,20 @@ state:
   # Lifetime of the 'd' (path) and 'i' (app info) dictionary records, in
   # seconds. They are only needed until the file open that uses them.
   entry_ttl: 300
-  # The rest of the state ends with what it describes, not on a timer from
-  # when it was written
-  # user_ttl: 300        # keep a session this long after its disconnect, for late (out of order) closes
-  #                      # (cannot be turned off: 0 or negative means the default: 300)
-  # user_idle_ttl: 86400 # drop a session with no disconnect, no activity and no open files (<0: never) - 1 day
-  # file_ttl: 604800     # drop an open file not heard of this long (its close was lost): - 7 days
-  #                      # silence on servers that send XFR records ("xfr" on
-  #                      # xrootd.monitor), else the open's age. <0 = off
-  # server_ttl: 172800   # drop a server incarnation, and all it owns, after this long silent - 2 days
+  # The rest of the state lives until what it describes ends. These lifetimes
+  # are in seconds, and 0 gives the default. user_ttl and server_ttl cannot be
+  # turned off, so a negative value also gives the default for them.
+  # user_ttl: 300        # 5 min: keep a session this long after its disconnect, for closes that arrive late
+  # user_idle_ttl: 86400 # 1 day: drop a session with no activity and no open files (its disconnect was lost). <0: never
+  # file_ttl: 604800     # 7 days: drop an open file not heard of this long (its close was lost). <0: never
+  #                      # On a server that sends XFR records ("xfr" on xrootd.monitor), this is
+  #                      # the time since the last XFR record. Elsewhere it is the time since the open.
+  # server_ttl: 172800   # 2 days: drop a server incarnation, and all it owns, after this long silent
   # Maximum number of entries in each state map (0: no limit). Leave this at 0.
-  # A full map refuses new entries instead of evicting old ones, and since
-  # sessions and open files now live until their disconnect or close (or the
-  # TTLs above), a map can stay full for days. Meanwhile new logins and opens
-  # are dropped, and their records come out with host "unknown".
+  # A full map refuses new entries and evicts nothing. Sessions and open files
+  # now live until their disconnect or close (or the lifetimes above), so a
+  # map can stay full for days. While it is full, new logins and opens are
+  # dropped, and their records come out with host "unknown".
   max_entries: 0
   # DNS enrichment settings (replaces reverse DNS lookup)
   # enable_dns_enrichment: false

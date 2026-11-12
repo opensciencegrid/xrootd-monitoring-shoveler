@@ -169,9 +169,15 @@ Configure state management parameters:
 
 ```yaml
 state:
-  entry_ttl: 300              # Time-to-live for state entries in seconds
-  max_entries: 10000          # Maximum state entries (0 for unlimited)
+  entry_ttl: 300              # Lifetime of 'd' (path) and 'i' (app info) records, in seconds
+  max_entries: 0              # Maximum entries in each state map (0 for unlimited)
+  # user_ttl: 300             # Keep a session this long after its disconnect
+  # user_idle_ttl: 86400      # Drop a session with no activity and no open files after this long
+  # file_ttl: 604800          # Drop an open file whose close never arrived after this long
+  # server_ttl: 172800        # Drop a server incarnation, and all it owns, after this long silent
 ```
+
+Sessions and open files live until their disconnect or close. The four lifetimes above clean up when a disconnect or close is lost. Leave `max_entries` at 0: a full map refuses new logins and opens, and their records come out with host `unknown`.
 
 See [config-collector.yaml](config/config-collector.yaml) for a complete example.
 
@@ -198,8 +204,12 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `<PREFIX>_INPUT_FOLLOW` - Follow file mode like tail: `true` or `false`
 
 **State Management (Collector Mode only, prefix: `COLLECTOR_`):**
-* `COLLECTOR_STATE_ENTRY_TTL` - TTL for state entries in seconds (default: `300`)
-* `COLLECTOR_STATE_MAX_ENTRIES` - Maximum state entries, 0 for unlimited (default: `0`)
+* `COLLECTOR_STATE_ENTRY_TTL` - Lifetime of 'd' (path) and 'i' (app info) dictionary records in seconds (default: `300`)
+* `COLLECTOR_STATE_USER_TTL` - Seconds to keep a session after its disconnect, for closes that arrive late (default: `300`)
+* `COLLECTOR_STATE_USER_IDLE_TTL` - Seconds before a session with no activity and no open files is dropped, negative to turn off (default: `86400`)
+* `COLLECTOR_STATE_FILE_TTL` - Seconds before an open file whose close never arrived is dropped, negative to turn off (default: `604800`). On a server that sends XFR records, this counts from the last XFR record. Elsewhere it counts from the open.
+* `COLLECTOR_STATE_SERVER_TTL` - Seconds before a silent server incarnation is dropped with all its state (default: `172800`)
+* `COLLECTOR_STATE_MAX_ENTRIES` - Maximum entries in each state map, 0 for unlimited (default: `0`)
 * `COLLECTOR_STATE_ENABLE_DNS_ENRICHMENT` - Enable DNS enrichment of monitoring records: `true` or `false` (default: `false`)
 * `COLLECTOR_STATE_DNS_CACHE_TTL` - DNS cache time-to-live in seconds (default: `3600`)
 * `COLLECTOR_STATE_ENRICHMENT_WORKERS` - Number of concurrent DNS enrichment worker routines (default: `5`)
@@ -1034,7 +1044,7 @@ output:
 
 # State management
 state:
-  entry_ttl: 300    # seconds before an unmatched open is evicted
+  entry_ttl: 300    # seconds to keep 'd' and 'i' dictionary records
   max_entries: 0    # 0 = unlimited
 
 # Enable debug logging to see every packet and correlation decision
@@ -1276,7 +1286,7 @@ The project provides two binaries with distinct processing pipelines:
 6. Emit structured collector record
 7. Enqueue to message bus (or write to file)
 
-The collector uses a TTL-based state map with automatic cleanup to track file operations across multiple packets. This enables correlation of file open events with their corresponding close events to compute accurate latency and transfer metrics.
+The collector keeps state across packets so it can match each file open with its close and compute latency and transfer metrics. A session lives until its disconnect, and an open file lives until its close. The `state.*_ttl` lifetimes clean up when a disconnect or close is lost.
 
 ### Message Bus Integration
 
@@ -1328,6 +1338,11 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 **Note:** The enrichment queue grows lazily in memory up to `COLLECTOR_STATE_ENRICHMENT_QUEUE_SIZE`; `1000000` queued request descriptors are about `32 MiB`, but the retained `CollectorRecord` objects are much larger and can exceed `600 MiB` before counting string data.
 - `shoveler_ttl_evictions` - State entries evicted due to TTL
 - `shoveler_records_emitted` - Collector records emitted
+- `shoveler_expired_users_total{reason}` - Sessions removed from the state, by `reason`: `disconnected` (the grace after a disconnect ran out) or `idle` (no disconnect, quiet for `state.user_idle_ttl`). A rising `idle` count with live sessions behind it means `user_idle_ttl` is too short
+- `shoveler_stale_opens_total{reason}` - Open files dropped without a close, by `reason`: `disconnect` (still open when the session ended) or `file_ttl`
+- `shoveler_reaped_servers_total` - Server incarnations dropped after `state.server_ttl` with no packet
+- `shoveler_file_xfr_records_total` - In-flight XFR records received. Zero means no server here has `xfr` on its `xrootd.monitor` line, so `state.file_ttl` counts from each open
+- `shoveler_file_disconnect_records_total` - Session disconnect records received
 - `shoveler_site_resolved_by_method{role,method}` - Transfer endpoints resolved to an RCSite, by which resolution method produced it
 - `shoveler_site_unresolved{role,reason}` - Transfer endpoints no method could resolve, by reason
 - `shoveler_site_registry_domains` / `shoveler_site_registry_hosts` / `shoveler_site_ip_routes` - Size of the currently loaded CRIC domain map / SE endpoint map / route table
@@ -1437,10 +1452,11 @@ for _, r := range packet.FileRecords {
 
 ### State Management
 
-The collector uses a TTL-based concurrent state map (`collector/state.go`) to track file operations:
+The collector uses a concurrent state map (`collector/state.go`) to track file operations:
 
 **Features:**
-- Automatic TTL-based expiration
+- Per-entry expiry: a fixed deadline, an idle lifetime, or both
+- A grace deadline for an entry whose subject ended (a disconnected session)
 - Background janitor for cleanup
 - Configurable max entries (prevents unbounded memory growth)
 - Thread-safe (RWMutex)
@@ -1531,6 +1547,8 @@ The correlator scopes all state map entries by server ID to properly handle:
 - Server restarts (detected via server start timestamp changes)
 - Multiple network interfaces on the same server
 
+A server incarnation that sends nothing for `state.server_ttl` is dropped with all its entries. This removes the state of a server that restarted or went away.
+
 ## Testing
 
 ### Unit Tests
@@ -1588,10 +1606,10 @@ go test -cover ./...
 
 ### Collector Mode
 - **Parse Time:** 0.01-1ms per packet (tracked via histogram)
-- **State Memory:** Bounded by `max_entries * ~1KB`
+- **State Memory:** Grows with the number of live sessions and open files, about 1KB per entry
 - **CPU:** Additional ~10% for parsing and correlation
 - **Suitable For:** Moderate-volume monitoring (< 10k packets/sec)
-- **Memory Safety:** TTL-based cleanup prevents unbounded growth
+- **Memory Safety:** Disconnects and closes free their state. The `state.*_ttl` lifetimes free state whose disconnect or close was lost
 
 ## Migration Guide
 
@@ -1607,7 +1625,7 @@ No changes required! The `shoveler` binary preserves existing behavior.
    ```yaml
    state:
      entry_ttl: 300      # seconds
-     max_entries: 10000  # 0 for unlimited
+     max_entries: 0      # 0 for unlimited
    ```
 
 3. Run the collector:

@@ -159,10 +159,12 @@ type StateConfig struct {
 	EntryTTL   int // TTL in seconds for 'd'/'i' dictionary records (paths, app info)
 	MaxEntries int // Max entries in state map (0 for unlimited)
 
-	// Lifetimes of the rest of the correlation state, in seconds. Each starts
-	UserTTL     int // keep a session this long after its disconnect (default 300; <=0 means the default)
-	UserIdleTTL int // drop an idle session with no open files after this long (default 86400, <0 disables)
-	FileTTL     int // drop an open file not heard of this long: silent with XFR, else its age (default 604800; <0 disables)
+	// Lifetimes of the rest of the correlation state, in seconds. A value of 0
+	// gives the default. A negative value turns off the idle and file
+	// lifetimes, and gives the default for the other two.
+	UserTTL     int // keep a session this long after its disconnect (default 300)
+	UserIdleTTL int // drop an idle session with no open files after this long (default 86400)
+	FileTTL     int // drop an open file not heard of this long: silent with XFR, else its age (default 604800)
 	ServerTTL   int // drop a server incarnation silent this long (default 172800)
 
 	// DNS Enrichment configuration

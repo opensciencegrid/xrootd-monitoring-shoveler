@@ -290,8 +290,9 @@ func (u *UserState) hasOpenFiles() bool { return u.nOpen.Load() > 0 }
 // time in every packet header, which is what BuildServerID keys state by.
 type incarnation struct {
 	// sawXfr records that this incarnation sends in-flight XFR records for its
-	// open files ("xfr" on its xrootd.monitor fstat line). There a silent open
-	// file is evidence of a lost close; see CorrelatorConfig.FileTTL.
+	// open files ("xfr" on its xrootd.monitor fstat line). On such a server a
+	// silent open file means its close was lost. The file TTL does not read it
+	// yet: every XFR record restarts its file's idle lifetime on any server.
 	sawXfr atomic.Bool
 }
 
