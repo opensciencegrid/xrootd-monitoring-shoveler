@@ -8,8 +8,14 @@ import (
 )
 
 func TestHandleDisconnect(t *testing.T) {
-	// Create correlator with reasonable TTL
-	correlator := NewCorrelator(300*time.Second, 10000, nil)
+	// A disconnect starts the session's grace period (UserTTL) rather than
+	// deleting it, so a close that arrives after it still finds its client.
+	correlator := NewCorrelatorWithConfig(CorrelatorConfig{
+		TTL:        300 * time.Second,
+		MaxEntries: 10000,
+		UserTTL:    100 * time.Millisecond,
+	})
+	defer correlator.Stop()
 	serverID := "12345#host:1094"
 
 	// Create and store a user record first
@@ -60,12 +66,22 @@ func TestHandleDisconnect(t *testing.T) {
 	// Handle the disconnect
 	correlator.handleDisconnect(discRec, serverID)
 
-	// Verify user is removed from both maps
+	// Still there during the grace period
+	if _, exists := correlator.dictMap.Get(dictKey); !exists {
+		t.Error("User should stay in dictMap during the grace period")
+	}
+	if _, exists := correlator.userMap.Get(userInfoKey); !exists {
+		t.Error("User should stay in userMap during the grace period")
+	}
+
+	time.Sleep(150 * time.Millisecond)
+
+	// Gone from both maps once it is over
 	if _, exists := correlator.dictMap.Get(dictKey); exists {
-		t.Error("User should be removed from dictMap after disconnect")
+		t.Error("User should be removed from dictMap after the grace period")
 	}
 	if _, exists := correlator.userMap.Get(userInfoKey); exists {
-		t.Error("User should be removed from userMap after disconnect")
+		t.Error("User should be removed from userMap after the grace period")
 	}
 }
 
@@ -90,7 +106,12 @@ func TestHandleDisconnect_UserNotFound(t *testing.T) {
 
 func TestProcessPacket_Disconnect(t *testing.T) {
 	// Create correlator
-	correlator := NewCorrelator(300*time.Second, 10000, nil)
+	correlator := NewCorrelatorWithConfig(CorrelatorConfig{
+		TTL:        300 * time.Second,
+		MaxEntries: 10000,
+		UserTTL:    100 * time.Millisecond,
+	})
+	defer correlator.Stop()
 
 	// Create a user record and process it
 	userPacket := &parser.Packet{
@@ -152,8 +173,12 @@ func TestProcessPacket_Disconnect(t *testing.T) {
 		t.Error("Disconnect should not return a collector record")
 	}
 
-	// Verify user is removed
+	// Verify user is removed once the grace period is over
+	if _, exists := correlator.dictMap.Get(dictKey); !exists {
+		t.Error("User should stay in dictMap during the grace period")
+	}
+	time.Sleep(150 * time.Millisecond)
 	if _, exists := correlator.dictMap.Get(dictKey); exists {
-		t.Error("User should be removed from dictMap after disconnect packet")
+		t.Error("User should be removed from dictMap after the grace period")
 	}
 }
