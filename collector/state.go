@@ -282,7 +282,10 @@ func (sm *StateMap) evict(key string, node *list.Element) (removed, pinned bool)
 		return false, false
 	}
 	if keep {
-		entry.node = sm.lru.insert(sm, key, stateSize(key, entry.Value))
+		// Charge the size the node already had. Measuring again would read
+		// the value's fields, and the packet goroutine can be writing a
+		// session's fields in place while eviction runs on the memory loop's.
+		entry.node = sm.lru.insert(sm, key, node.Value.(*lruNode).bytes)
 		sm.mu.Unlock()
 		return false, true
 	}

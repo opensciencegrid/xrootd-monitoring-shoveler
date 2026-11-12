@@ -596,7 +596,9 @@ func NewCorrelatorWithConfig(config CorrelatorConfig) *Correlator {
 	c.servers.SetOnExpire(c.serverExpired)
 
 	if config.EnableDNSEnrichment {
-		c.dnsCache = NewStateMap(config.DNSCacheTTL, config.MaxEntries, config.DNSCacheTTL/10)
+		// No entry cap: state.max_entries bounds the correlation entries, and
+		// cache entries expire on DNSCacheTTL
+		c.dnsCache = NewStateMap(config.DNSCacheTTL, 0, config.DNSCacheTTL/10)
 		dns := &dnsRecordEnricher{correlator: c}
 		if config.SiteRegistry != nil {
 			// A bare client name is only looked up for the site resolver, which

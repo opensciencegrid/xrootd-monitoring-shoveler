@@ -279,6 +279,42 @@ func TestLRU_AllPinnedStops(t *testing.T) {
 	checkAccounting(t, idx, m...)
 }
 
+// Passing over a pinned session does not read its fields. The memory loop
+// evicts on its own goroutine while the packet goroutine updates a session in
+// place, as an 'i' record does with AppInfo. Run with -race to catch a read.
+func TestLRU_PinnedSessionNotReadOnEvict(t *testing.T) {
+	c := NewCorrelatorWithConfig(CorrelatorConfig{TTL: time.Minute})
+	defer c.Stop()
+	snapRun(t, c, snapLogin())
+	snapRun(t, c, snapOpen(true))
+
+	var us *UserState
+	for _, v := range c.userMap.GetAll() {
+		us = v.(*UserState)
+	}
+	require.NotNil(t, us)
+	require.True(t, us.hasOpenFiles())
+	// Keep the open file too, so the session stays pinned for the whole loop
+	c.stateMap.SetPinned(func(string, interface{}) bool { return true })
+
+	c.lru.mu.Lock()
+	c.lru.maxBytes = 1
+	c.lru.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 1000; i++ {
+			c.lru.enforce()
+		}
+	}()
+	for i := 0; i < 1000; i++ {
+		us.AppInfo = fmt.Sprint(i)
+	}
+	<-done
+	assert.Equal(t, 1, c.GetUserMapSize(), "the session with a file open is kept")
+}
+
 func withFileID(p *parser.Packet, id uint32) *parser.Packet {
 	o := p.FileRecords[1].(parser.FileOpenRecord)
 	o.Header.FileId = id

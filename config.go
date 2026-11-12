@@ -828,9 +828,9 @@ func (c *Config) readInputToken() {
 	}
 }
 
-// ParseByteSize parses a byte count with an optional binary K, M, G or T
-// suffix ("512M", "4G", "1073741824"), --max-memory
-// takes. An empty string is 0.
+// ParseByteSize parses a byte count for state.max_memory, with an optional
+// binary K, M, G or T suffix ("512M", "4G", "1073741824"). An empty string
+// is 0.
 func ParseByteSize(v string) (int, error) {
 	v = strings.TrimSpace(strings.ToUpper(v))
 	v = strings.TrimSuffix(strings.TrimSuffix(v, "B"), "I")

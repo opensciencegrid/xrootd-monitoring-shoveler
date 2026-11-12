@@ -170,14 +170,19 @@ Configure state management parameters:
 ```yaml
 state:
   entry_ttl: 300              # Lifetime of 'd' (path) and 'i' (app info) records, in seconds
-  max_entries: 0              # Maximum entries in each state map (0 for unlimited)
+  # max_memory: 4G            # Cap on the process memory, K/M/G/T suffix (0 for unlimited)
+  max_entries: 0              # Maximum correlation entries, all maps together (0 for unlimited)
   # user_ttl: 300             # Keep a session this long after its disconnect
   # user_idle_ttl: 86400      # Drop a session with no activity and no open files after this long
   # file_ttl: 604800          # Drop an open file whose close never arrived after this long
   # server_ttl: 172800        # Drop a server incarnation, and all it owns, after this long silent
 ```
 
-Sessions and open files live until their disconnect or close. The four lifetimes above clean up when a disconnect or close is lost. Leave `max_entries` at 0: a full map refuses new logins and opens, and their records come out with host `unknown`.
+Sessions and open files live until their disconnect or close. The four lifetimes above clean up when a disconnect or close is lost.
+
+To bound memory, set `max_memory`. All correlation entries (open files, sessions, dictionary records) are on one least recently used list. When the state needs room, the collector removes the entries unused for the longest time first. Every 15 seconds it measures its own memory and adjusts how much the state may use. This is best effort, so set any cgroup `MemoryMax=` above `max_memory`. With `max_memory` set, `file_ttl` defaults to 7200 and applies only on servers that send XFR records. Elsewhere the LRU removes opens whose close was lost.
+
+A session with files open is never evicted: its next open would lose the client. `max_entries` is a hard cap on the number of entries and uses the same eviction order. If you set it, allow for all concurrent sessions and open files.
 
 See [config-collector.yaml](config/config-collector.yaml) for a complete example.
 
@@ -207,9 +212,10 @@ See [config-collector.yaml](config/config-collector.yaml) for a complete example
 * `COLLECTOR_STATE_ENTRY_TTL` - Lifetime of 'd' (path) and 'i' (app info) dictionary records in seconds (default: `300`)
 * `COLLECTOR_STATE_USER_TTL` - Seconds to keep a session after its disconnect, for closes that arrive late (default: `300`)
 * `COLLECTOR_STATE_USER_IDLE_TTL` - Seconds before a session with no activity and no open files is dropped, negative to turn off (default: `86400`)
-* `COLLECTOR_STATE_FILE_TTL` - Seconds before an open file whose close never arrived is dropped, negative to turn off (default: `604800`). On a server that sends XFR records, this counts from the last XFR record. Elsewhere it counts from the open.
+* `COLLECTOR_STATE_FILE_TTL` - Seconds before an open file whose close never arrived is dropped, negative to turn off (default: `604800`). On a server that sends XFR records, this counts from the last XFR record. Elsewhere it counts from the open. With `max_memory` set, the default is `7200` and it applies only on servers that send XFR records.
 * `COLLECTOR_STATE_SERVER_TTL` - Seconds before a silent server incarnation is dropped with all its state (default: `172800`)
-* `COLLECTOR_STATE_MAX_ENTRIES` - Maximum entries in each state map, 0 for unlimited (default: `0`)
+* `COLLECTOR_STATE_MAX_MEMORY` - Cap on the process memory, with an optional K, M, G or T suffix such as `4G`. The collector meets it by evicting the least recently used correlation entries. 0 for unlimited (default: `0`)
+* `COLLECTOR_STATE_MAX_ENTRIES` - Maximum correlation entries, all maps together. The least recently used entry is evicted past it. 0 for unlimited (default: `0`)
 * `COLLECTOR_STATE_ENABLE_DNS_ENRICHMENT` - Enable DNS enrichment of monitoring records: `true` or `false` (default: `false`)
 * `COLLECTOR_STATE_DNS_CACHE_TTL` - DNS cache time-to-live in seconds (default: `3600`)
 * `COLLECTOR_STATE_ENRICHMENT_WORKERS` - Number of concurrent DNS enrichment worker routines (default: `5`)
@@ -1343,6 +1349,12 @@ The shoveler exports Prometheus metrics for monitoring. Common metrics include:
 - `shoveler_reaped_servers_total` - Server incarnations dropped after `state.server_ttl` with no packet
 - `shoveler_file_xfr_records_total` - In-flight XFR records received. Zero means no server here has `xfr` on its `xrootd.monitor` line, so `state.file_ttl` counts from each open
 - `shoveler_file_disconnect_records_total` - Session disconnect records received
+- `shoveler_state_entries` - Current correlation entries (open files, sessions, dictionary records)
+- `shoveler_state_evicted_total` - Correlation entries evicted to stay within `state.max_memory` or `state.max_entries`. A steady rate means the limit binds and the collector loses correlation
+- `shoveler_state_evict_pinned_total` - Times eviction passed over an entry of a session that has files open
+- `shoveler_state_budget_utilization` - Fraction of the state's byte budget in use (0 when `state.max_memory` is off). The budget is an estimate, so read this as a ratio and not as process memory
+- `shoveler_state_max_memory_bytes` - The `state.max_memory` cap in force (0 when off)
+- `shoveler_state_memory_floored_total` - Memory control ticks over `state.max_memory` with the state already at its smallest budget. The memory is outside the correlation state, for example in the enrichment or output queues
 - `shoveler_site_resolved_by_method{role,method}` - Transfer endpoints resolved to an RCSite, by which resolution method produced it
 - `shoveler_site_unresolved{role,reason}` - Transfer endpoints no method could resolve, by reason
 - `shoveler_site_registry_domains` / `shoveler_site_registry_hosts` / `shoveler_site_ip_routes` - Size of the currently loaded CRIC domain map / SE endpoint map / route table
@@ -1458,7 +1470,8 @@ The collector uses a concurrent state map (`collector/state.go`) to track file o
 - Per-entry expiry: a fixed deadline, an idle lifetime, or both
 - A grace deadline for an entry whose subject ended (a disconnected session)
 - Background janitor for cleanup
-- Configurable max entries (prevents unbounded memory growth)
+- Optional LRU index shared by several maps (`state.max_memory`, `state.max_entries`): evicts the least recently used entries first
+- Configurable max entries per map, for a map without the LRU index
 - Thread-safe (RWMutex)
 - O(1) operations
 - DNS enrichment for IP-to-hostname resolution
@@ -1606,10 +1619,10 @@ go test -cover ./...
 
 ### Collector Mode
 - **Parse Time:** 0.01-1ms per packet (tracked via histogram)
-- **State Memory:** Grows with the number of live sessions and open files, about 1KB per entry
+- **State Memory:** Grows with the number of live sessions and open files, about 1KB per entry. `state.max_memory` caps it
 - **CPU:** Additional ~10% for parsing and correlation
 - **Suitable For:** Moderate-volume monitoring (< 10k packets/sec)
-- **Memory Safety:** Disconnects and closes free their state. The `state.*_ttl` lifetimes free state whose disconnect or close was lost
+- **Memory Safety:** Disconnects and closes free their state. The `state.*_ttl` lifetimes free state whose disconnect or close was lost. `state.max_memory` evicts the least recently used entries when the process nears its cap
 
 ## Migration Guide
 
